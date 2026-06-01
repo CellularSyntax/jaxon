@@ -153,6 +153,7 @@ def _integrate_one_fiber_m_max(
         [jnp.zeros((1, n), dtype=jnp.float64), Ve_seq[:-1]], axis=0
     )
 
+    @jax.checkpoint
     def step(carry, s):
         Vi, Vp, st, m_max = carry
         M, H, MP, S = st

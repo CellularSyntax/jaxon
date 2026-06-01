@@ -190,12 +190,9 @@ def time_jaxley(cfg: ModelConfig, n: int, device_str: str) -> tuple[float, float
 
     device_str: "cpu" or "gpu" — selects the JAX default device.
     """
-    target_device = None
-    for d in jax.devices():
-        if device_str in d.device_kind.lower() or d.platform == device_str:
-            target_device = d
-            break
-    if target_device is None:
+    try:
+        target_device = jax.devices(device_str)[0]
+    except RuntimeError:
         raise RuntimeError(f"No JAX device matching '{device_str}' found")
 
     with jax.default_device(target_device):
@@ -226,7 +223,11 @@ def run_model(model_key: str) -> dict:
     print(f"Model: {cfg.name}")
     print(f"{'='*60}")
 
-    has_gpu = any(d.platform == "gpu" for d in jax.devices())
+    try:
+        jax.devices("gpu")
+        has_gpu = True
+    except RuntimeError:
+        has_gpu = False
     results = {
         "model": model_key,
         "name": cfg.name,

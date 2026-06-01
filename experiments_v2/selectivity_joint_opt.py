@@ -65,7 +65,7 @@ SIGMA_S_M       = 0.3
 
 
 def main():
-    print(f"[joint-opt] seed={SEED}, N_FIBERS={N_FIBERS}, N_NODES={N_NODES}")
+    print(f"[joint-opt] seed={SEED}, N_FIBERS={N_FIBERS}, N_NODES={N_NODES}", flush=True)
 
     # ── nerve + cuff ──────────────────────────────────────────────────────────
     nerve = make_synthetic_nerve(
@@ -74,6 +74,10 @@ def main():
         target_fraction=TARGET_FRACTION,
         seed=SEED,
     )
+    n_tgt = int(nerve.target_mask.sum())
+    d_min, d_max = float(nerve.fiber_diam.min()), float(nerve.fiber_diam.max())
+    print(f"[joint-opt] Nerve: {N_FIBERS} fibers  targets={n_tgt}/{N_FIBERS} ({n_tgt/N_FIBERS*100:.0f}%)  "
+          f"D=[{d_min:.1f},{d_max:.1f}] µm", flush=True)
 
     N_STEPS = int(T_STOP / DT)
     t_grid  = (np.arange(N_STEPS) + 1) * DT
@@ -85,7 +89,7 @@ def main():
     )
 
     # ── field precomputation (numpy, for rect warm-start) ─────────────────────
-    print("[joint-opt] Precomputing fields ...")
+    print("[joint-opt] Precomputing fields ...", flush=True)
     Ve_unit, node_indices, geoms = precompute_ve_unit(
         nerve_geom=nerve, n_nodes=N_NODES, contact_xyz_um=contact_xyz,
         sigma_S_m=SIGMA_S_M,
@@ -100,7 +104,7 @@ def main():
     )
 
     # ── solver statics ────────────────────────────────────────────────────────
-    print("[joint-opt] Building solver statics ...")
+    print("[joint-opt] Building solver statics ...", flush=True)
     fs_batch = stack_fiber_statics(geoms, DT)
     s0_batch = initial_states_batch(geoms)
 
@@ -116,10 +120,10 @@ def main():
         jnp.asarray(node_indices, dtype=jnp.int32),
     )
     si_baseline = selectivity_index(np.array(m_max_zero), nerve.target_mask)
-    print(f"[joint-opt] Baseline SI = {si_baseline:+.3f}")
+    print(f"[joint-opt] Baseline SI = {si_baseline:+.3f}", flush=True)
 
     # ── rect optimisation (warm-start) ────────────────────────────────────────
-    print("[joint-opt] Rect optimisation ...")
+    print(f"[joint-opt] Rect optimisation ({N_OPT_RECT} iters) ...", flush=True)
     t0 = time.time()
     rect_res = run_rect_optimization(
         fiber_statics_batch=fs_batch,
@@ -134,13 +138,15 @@ def main():
     )
     t_rect = time.time() - t0
     si_rect = rect_res["history"]["si"][-1]
-    print(f"[joint-opt] Rect SI = {si_rect:+.3f}  ({t_rect:.1f}s)")
+    print(f"[joint-opt] Rect done: SI {si_baseline:+.3f} → {si_rect:+.3f}  "
+          f"amps={[f'{a:+.2f}' for a in rect_res['amps']]} mA  "
+          f"({t_rect:.0f}s)", flush=True)
 
     # ── JAX arrays for differentiable field ───────────────────────────────────
     fiber_xy_j, all_centers_j = build_fiber_arrays(nerve, geoms)
 
     # ── joint optimisation ────────────────────────────────────────────────────
-    print("[joint-opt] Joint optimisation (amps + positions) ...")
+    print(f"[joint-opt] Joint optimisation ({N_OPT_JOINT} iters, amps + positions) ...", flush=True)
     t0 = time.time()
     joint_res = run_joint_optimization(
         fiber_statics_batch=fs_batch,
@@ -161,13 +167,12 @@ def main():
     )
     t_joint = time.time() - t0
     si_joint = joint_res["history"]["si"][-1]
-    print(f"[joint-opt] Joint SI = {si_joint:+.3f}  ({t_joint:.1f}s)")
-
-    # ── displacement stats ────────────────────────────────────────────────────
     xyz_disp = joint_res["contact_xyz_um"] - contact_xyz
     disp_um  = np.linalg.norm(xyz_disp, axis=1)
-    print(f"[joint-opt] Contact displacement: "
-          f"mean={disp_um.mean():.1f} µm  max={disp_um.max():.1f} µm")
+    amps_joint_str = "  ".join(f"{a:+.2f}" for a in joint_res["amps"])
+    print(f"[joint-opt] Joint done: SI {si_rect:+.3f} → {si_joint:+.3f}  "
+          f"disp mean={disp_um.mean():.1f} max={disp_um.max():.1f} µm  "
+          f"amps=[{amps_joint_str}] mA  ({t_joint:.0f}s)", flush=True)
 
     # ── save results ──────────────────────────────────────────────────────────
     result = {
@@ -235,8 +240,8 @@ def main():
     fig.tight_layout()
     fig.savefig(OUT / "fig_joint_opt.png", dpi=150)
     plt.close(fig)
-    print(f"  → {OUT / 'fig_joint_opt.png'}")
-    print(f"\n[joint-opt] All outputs in {OUT}")
+    print(f"  → {OUT / 'fig_joint_opt.png'}", flush=True)
+    print(f"\n[joint-opt] All outputs in {OUT}", flush=True)
 
 
 if __name__ == "__main__":

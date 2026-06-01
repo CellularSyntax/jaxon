@@ -108,11 +108,14 @@ def run_rect_optimization(
             best_loss = float(loss_val)
             best_amps = np.array(amps)
 
-        if verbose and (i % max(1, n_steps // 10) == 0 or i == n_steps - 1):
+        if verbose and (i % max(1, n_steps // 20) == 0 or i == n_steps - 1):
             dt_ms = (time.time() - t0) * 1000
+            amps_np = np.array(amps)
+            amp_str = "  ".join(f"{a:+.2f}" for a in amps_np)
             print(
                 f"  [{i:3d}/{n_steps}] loss={float(loss_val):.4f}  "
-                f"SI={history['si'][-1]:+.3f}  dt={dt_ms:.0f}ms",
+                f"SI={history['si'][-1]:+.3f}  "
+                f"amps=[{amp_str}] mA  dt={dt_ms:.0f}ms",
                 flush=True,
             )
 
@@ -197,11 +200,15 @@ def run_waveform_optimization(
             best_loss = float(loss_val)
             best_u = np.array(u)
 
-        if verbose and (i % max(1, n_steps // 10) == 0 or i == n_steps - 1):
+        if verbose and (i % max(1, n_steps // 20) == 0 or i == n_steps - 1):
             dt_ms = (time.time() - t0) * 1000
+            u_np = np.array(u)
+            rms = float(np.sqrt(np.mean(u_np ** 2)))
+            peak = float(np.abs(u_np).max())
             print(
                 f"  [{i:3d}/{n_steps}] loss={float(loss_val):.4f}  "
-                f"SI={history['si'][-1]:+.3f}  dt={dt_ms:.0f}ms",
+                f"SI={history['si'][-1]:+.3f}  "
+                f"rms={rms:.3f} mA  peak={peak:.3f} mA  dt={dt_ms:.0f}ms",
                 flush=True,
             )
 
@@ -306,11 +313,16 @@ def run_joint_optimization(
             best_amps = np.array(amps)
             best_xyz  = np.array(xyz)
 
-        if verbose and (i % max(1, n_steps // 10) == 0 or i == n_steps - 1):
+        if verbose and (i % max(1, n_steps // 20) == 0 or i == n_steps - 1):
             dt_ms = (time.time() - t0) * 1000
+            xyz_np = np.array(xyz)
+            disp   = np.linalg.norm(xyz_np - contact_xyz_init, axis=1)
+            amps_np = np.array(amps)
+            amp_str = "  ".join(f"{a:+.2f}" for a in amps_np)
             print(
-                f"  [{i:3d}/{n_steps}] loss={float(loss_val):.4f}  "
-                f"SI={si:+.3f}  dt={dt_ms:.0f}ms",
+                f"  [{i:3d}/{n_steps}] loss={float(loss_val):.4f}  SI={si:+.3f}  "
+                f"disp mean={disp.mean():.1f} max={disp.max():.1f} µm  "
+                f"amps=[{amp_str}] mA  dt={dt_ms:.0f}ms",
                 flush=True,
             )
 

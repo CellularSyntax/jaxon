@@ -81,6 +81,10 @@ def _run_one_seed(seed: int, verbose: bool = True) -> dict:
         target_fraction=TARGET_FRACTION,
         seed=seed,
     )
+    n_tgt = int(nerve.target_mask.sum())
+    d_min, d_max = float(nerve.fiber_diam.min()), float(nerve.fiber_diam.max())
+    print(f"{label} Nerve: {N_FIBERS} fibers  targets={n_tgt}/{N_FIBERS} ({n_tgt/N_FIBERS*100:.0f}%)  "
+          f"D=[{d_min:.1f},{d_max:.1f}] µm", flush=True)
 
     N_STEPS = int(T_STOP / DT)
     t_grid  = (np.arange(N_STEPS) + 1) * DT
@@ -91,7 +95,7 @@ def _run_one_seed(seed: int, verbose: bool = True) -> dict:
         cuff_z_um=0.0,
     )
 
-    print(f"{label} Precomputing fields ...")
+    print(f"{label} Precomputing fields ...", flush=True)
     Ve_unit, node_indices, geoms = precompute_ve_unit(
         nerve_geom=nerve, n_nodes=N_NODES, contact_xyz_um=contact_xyz
     )
@@ -103,7 +107,7 @@ def _run_one_seed(seed: int, verbose: bool = True) -> dict:
         nerve_geom=nerve, n_nodes=N_NODES, contact_xyz_um=contact_xyz
     )
 
-    print(f"{label} Building solver statics ...")
+    print(f"{label} Building solver statics ...", flush=True)
     fs_batch = stack_fiber_statics(geoms, DT)
     s0_batch = initial_states_batch(geoms)
 
@@ -121,7 +125,8 @@ def _run_one_seed(seed: int, verbose: bool = True) -> dict:
     si_baseline = selectivity_index(np.array(m_max_zero), nerve.target_mask)
 
     # ── rect ──
-    print(f"{label} Rect optimisation ...")
+    print(f"{label} Baseline SI = {si_baseline:+.3f}", flush=True)
+    print(f"{label} Rect optimisation ({N_OPT_RECT} iters) ...", flush=True)
     t0 = time.time()
     rect_res = run_rect_optimization(
         fiber_statics_batch=fs_batch,
@@ -135,13 +140,17 @@ def _run_one_seed(seed: int, verbose: bool = True) -> dict:
         verbose=verbose,
     )
     t_rect = time.time() - t0
+    si_rect = rect_res["history"]["si"][-1]
+    print(f"{label} Rect done: SI {si_baseline:+.3f} → {si_rect:+.3f}  "
+          f"amps={[f'{a:+.2f}' for a in rect_res['amps']]} mA  "
+          f"({t_rect:.0f}s)", flush=True)
 
     # ── waveform (warm-start from rect) ──
     u_init = np.zeros((N_CONTACTS, N_STEPS), dtype=np.float64)
     for k in range(N_CONTACTS):
         u_init[k] = float(rect_res["amps"][k]) * pulse_mask
 
-    print(f"{label} Waveform optimisation ...")
+    print(f"{label} Waveform optimisation ({N_OPT_WAVE} iters) ...", flush=True)
     t0 = time.time()
     wave_res = run_waveform_optimization(
         fiber_statics_batch=fs_batch,
@@ -156,6 +165,8 @@ def _run_one_seed(seed: int, verbose: bool = True) -> dict:
         verbose=verbose,
     )
     t_wave = time.time() - t0
+    si_wave = wave_res["history"]["si"][-1]
+    print(f"{label} Wave done: SI {si_rect:+.3f} → {si_wave:+.3f}  ({t_wave:.0f}s)", flush=True)
 
     result = {
         "seed": seed,

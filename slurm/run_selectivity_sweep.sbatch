@@ -46,6 +46,6 @@ export SEED_START=\"${SEED_START}\"
 export SEED_END=\"${SEED_END}\"
 bash \"${PROJECT_ROOT}/slurm/setup_env.sh\"
 echo '[job] Running experiments_v2/selectivity_sweep.py seeds ${SEED_START}..${SEED_END} ...'
-python experiments_v2/selectivity_sweep.py
+python -u experiments_v2/selectivity_sweep.py
 echo '[job] Done. Outputs in outputs/selectivity_sweep/'
 "

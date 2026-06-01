@@ -88,7 +88,8 @@ def run_rect_optimization(
     best_amps  = np.array(amps0)
 
     if verbose:
-        print(f"  Rect optimisation: K={K} contacts, T={T} steps, {n_steps} iters")
+        print(f"  Rect optimisation: K={K} contacts, T={T} steps, {n_steps} iters", flush=True)
+        print(f"  [iter 0] XLA compile — may take 10-30 min on first run ...", flush=True)
 
     for i in range(n_steps):
         t0 = time.time()
@@ -111,7 +112,8 @@ def run_rect_optimization(
             dt_ms = (time.time() - t0) * 1000
             print(
                 f"  [{i:3d}/{n_steps}] loss={float(loss_val):.4f}  "
-                f"SI={history['si'][-1]:+.3f}  dt={dt_ms:.0f}ms"
+                f"SI={history['si'][-1]:+.3f}  dt={dt_ms:.0f}ms",
+                flush=True,
             )
 
     return {"amps": best_amps, "history": history}
@@ -176,7 +178,8 @@ def run_waveform_optimization(
     best_u    = np.array(u0)
 
     if verbose:
-        print(f"  Waveform optimisation: K={K} contacts, T={T} timesteps, {n_steps} iters")
+        print(f"  Waveform optimisation: K={K} contacts, T={T} timesteps, {n_steps} iters", flush=True)
+        print(f"  [iter 0] XLA compile — may take 10-30 min on first run ...", flush=True)
 
     for i in range(n_steps):
         t0 = time.time()
@@ -198,7 +201,8 @@ def run_waveform_optimization(
             dt_ms = (time.time() - t0) * 1000
             print(
                 f"  [{i:3d}/{n_steps}] loss={float(loss_val):.4f}  "
-                f"SI={history['si'][-1]:+.3f}  dt={dt_ms:.0f}ms"
+                f"SI={history['si'][-1]:+.3f}  dt={dt_ms:.0f}ms",
+                flush=True,
             )
 
     return {"u": best_u, "history": history}
@@ -281,7 +285,8 @@ def run_joint_optimization(
     best_xyz  = np.array(contact_xyz_init)
 
     if verbose:
-        print(f"  Joint optimisation: K={K} contacts, {n_steps} iters")
+        print(f"  Joint optimisation: K={K} contacts, {n_steps} iters", flush=True)
+        print(f"  [iter 0] XLA compile — may take 10-30 min on first run ...", flush=True)
 
     for i in range(n_steps):
         t0 = time.time()
@@ -305,7 +310,8 @@ def run_joint_optimization(
             dt_ms = (time.time() - t0) * 1000
             print(
                 f"  [{i:3d}/{n_steps}] loss={float(loss_val):.4f}  "
-                f"SI={si:+.3f}  dt={dt_ms:.0f}ms"
+                f"SI={si:+.3f}  dt={dt_ms:.0f}ms",
+                flush=True,
             )
 
     return {"amps": best_amps, "contact_xyz_um": best_xyz, "history": history}

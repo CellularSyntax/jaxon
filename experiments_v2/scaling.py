@@ -54,7 +54,7 @@ OUT = ensure_dir(ROOT / "outputs" / "scaling")
 # Stop adding N-values once cumulative time exceeds this; extrapolate instead.
 PYFIBERS_BUDGET_S = 120.0
 
-N_FIBERS = [1, 10, 100]
+N_FIBERS = [1, 10, 100, 1000, 10000]
 
 
 # ── Model registry ────────────────────────────────────────────────────────────

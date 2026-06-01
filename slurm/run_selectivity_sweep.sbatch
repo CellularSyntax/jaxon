@@ -8,12 +8,12 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
 #SBATCH -t 24:00:00
-#SBATCH -o logs/%x-%j.out
-#SBATCH -e logs/%x-%j.err
+#SBATCH --array=0-9
+#SBATCH -o logs/%x-%A-%a.out
+#SBATCH -e logs/%x-%A-%a.err
 
-# Spatial selectivity sweep: N_NERVES=12 synthetic nerve realisations,
-# each with rectangular-pulse + arbitrary-waveform optimisation.
-# Outputs: outputs/selectivity_sweep/
+# Spatial selectivity sweep: 100 synthetic nerve realisations split across
+# 10 array tasks (10 seeds each).  Aggregate analysis: analyze_selectivity_sweep.py
 #
 # Submit from the project root:
 #   cd /path/to/jaxley_fibers
@@ -24,10 +24,15 @@ set -euo pipefail
 PROJECT_ROOT="${PROJECT_ROOT:-$SLURM_SUBMIT_DIR}"
 CONTAINER_IMAGE="${CONTAINER_IMAGE:-nvcr.io#nvidia/pytorch:25.03-py3}"
 
+SEEDS_PER_TASK=10
+SEED_START=$(( SLURM_ARRAY_TASK_ID * SEEDS_PER_TASK ))
+SEED_END=$(( SEED_START + SEEDS_PER_TASK ))
+
 mkdir -p "${PROJECT_ROOT}/logs" "${PROJECT_ROOT}/outputs"
 
-echo "Project root : ${PROJECT_ROOT}"
-echo "Container    : ${CONTAINER_IMAGE}"
+echo "Project root  : ${PROJECT_ROOT}"
+echo "Container     : ${CONTAINER_IMAGE}"
+echo "Array task    : ${SLURM_ARRAY_TASK_ID}  seeds ${SEED_START}..${SEED_END}"
 
 srun \
   --container-image="${CONTAINER_IMAGE}" \
@@ -37,8 +42,10 @@ srun \
 set -euo pipefail
 export PROJECT_ROOT=\"${PROJECT_ROOT}\"
 export JAX_ENABLE_X64=1
+export SEED_START=\"${SEED_START}\"
+export SEED_END=\"${SEED_END}\"
 bash \"${PROJECT_ROOT}/slurm/setup_env.sh\"
-echo '[job] Running experiments_v2/selectivity_sweep.py ...'
+echo '[job] Running experiments_v2/selectivity_sweep.py seeds ${SEED_START}..${SEED_END} ...'
 python experiments_v2/selectivity_sweep.py
 echo '[job] Done. Outputs in outputs/selectivity_sweep/'
 "

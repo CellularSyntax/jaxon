@@ -24,6 +24,7 @@ Run from project root (GPU recommended):
 """
 from __future__ import annotations
 
+import os
 import sys
 import pathlib
 import json
@@ -54,7 +55,7 @@ from experiments_v2.utils import ensure_dir
 OUT = ensure_dir(ROOT / "outputs" / "selectivity_sweep")
 
 # ─────────────────────────────────────────────────── sweep parameters ─────────
-N_NERVES        = 12
+N_NERVES        = 100   # total seeds across all array tasks
 N_FIBERS        = 20
 N_NODES         = 101          # n_comp = 100×11 + 1 = 1101
 N_CONTACTS      = 6
@@ -185,76 +186,33 @@ def _run_one_seed(seed: int, verbose: bool = True) -> dict:
 
 
 def main():
+    # SLURM array support: set SEED_START / SEED_END env vars per task.
+    # Falls back to running all N_NERVES seeds locally.
+    seed_start = int(os.environ.get("SEED_START", 0))
+    seed_end   = int(os.environ.get("SEED_END", N_NERVES))
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--seeds", type=int, nargs="+",
-                        default=list(range(N_NERVES)),
-                        help="Which seeds to run (default: 0..N_NERVES-1)")
+                        default=list(range(seed_start, seed_end)),
+                        help="Which seeds to run (default: SEED_START..SEED_END-1)")
     parser.add_argument("--quiet", action="store_true")
     args = parser.parse_args()
 
-    all_results = []
+    print(f"[sweep] Running seeds {args.seeds[0]}..{args.seeds[-1]} "
+          f"({len(args.seeds)} seeds)")
+
     for seed in args.seeds:
-        out_path = OUT / f"data_seed_{seed}.json"
+        out_path = OUT / f"data_seed_{seed:04d}.json"
         if out_path.exists():
             print(f"Skipping seed={seed} (output exists)")
-            with open(out_path) as f:
-                all_results.append(json.load(f))
             continue
         res = _run_one_seed(seed, verbose=not args.quiet)
         with open(out_path, "w") as f:
             json.dump(res, f, indent=2)
-        all_results.append(res)
-        print(f"[seed={seed}]  rect SI={res['rect']['final_si']:+.3f}  "
+        print(f"[seed={seed:04d}]  rect SI={res['rect']['final_si']:+.3f}  "
               f"wave SI={res['waveform']['final_si']:+.3f}")
 
-    if len(all_results) < 2:
-        print("Not enough results for aggregate figures.")
-        return
-
-    # ── aggregate figures ──────────────────────────────────────────────────────
-    si_base = [r["si_baseline"] for r in all_results]
-    si_rect = [r["rect"]["final_si"] for r in all_results]
-    si_wave = [r["waveform"]["final_si"] for r in all_results]
-
-    # Violin plot
-    fig, ax = plt.subplots(figsize=(5, 4))
-    vp = ax.violinplot([si_base, si_rect, si_wave], showmedians=True)
-    for pc, c in zip(vp["bodies"], ["C7", "C0", "C2"]):
-        pc.set_facecolor(c); pc.set_alpha(0.7)
-    ax.set_xticks([1, 2, 3]); ax.set_xticklabels(["Baseline", "Rect", "Waveform"])
-    ax.set_ylabel("Selectivity Index (SI)")
-    ax.set_title(f"SI across {len(all_results)} nerve realisations")
-    ax.axhline(0, color="k", ls="--", lw=0.8)
-    ax.set_ylim(-1.05, 1.05)
-    fig.tight_layout()
-    fig.savefig(OUT / "fig_sweep_si_violin.png", dpi=150)
-    plt.close(fig)
-
-    # Loss curves
-    n_iter_rect = min(len(r["rect"]["loss_history"]) for r in all_results)
-    n_iter_wave = min(len(r["waveform"]["loss_history"]) for r in all_results)
-    loss_rect = np.array([r["rect"]["loss_history"][:n_iter_rect] for r in all_results])
-    loss_wave = np.array([r["waveform"]["loss_history"][:n_iter_wave] for r in all_results])
-
-    fig, axes = plt.subplots(1, 2, figsize=(10, 4))
-    for data, ax, title in [
-        (loss_rect, axes[0], "Rectangular"),
-        (loss_wave, axes[1], "Arbitrary waveform"),
-    ]:
-        mu = data.mean(0); sig = data.std(0)
-        x = np.arange(len(mu))
-        ax.plot(x, mu, "C0"); ax.fill_between(x, mu - sig, mu + sig, alpha=0.2, color="C0")
-        ax.set_xlabel("Iteration"); ax.set_ylabel("WQ loss")
-        ax.set_title(f"{title} (mean ± 1σ,  n={len(all_results)})")
-    fig.tight_layout()
-    fig.savefig(OUT / "fig_sweep_loss_curves.png", dpi=150)
-    plt.close(fig)
-
-    print(f"\nAll outputs saved to {OUT}")
-    print(f"\nAggregate summary (n={len(all_results)} seeds):")
-    print(f"  Baseline SI: {np.mean(si_base):.3f} ± {np.std(si_base):.3f}")
-    print(f"  Rect     SI: {np.mean(si_rect):.3f} ± {np.std(si_rect):.3f}")
-    print(f"  Waveform SI: {np.mean(si_wave):.3f} ± {np.std(si_wave):.3f}")
+    print(f"\n[sweep] Done. Run analyze_selectivity_sweep.py for aggregate figures.")
 
 
 if __name__ == "__main__":

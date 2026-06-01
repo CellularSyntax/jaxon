@@ -135,15 +135,23 @@ def _make_jax_setup(D: float):
 
 
 def _make_jit_runner(static, mfn, state0, Ve_unit):
-    """Compile a JIT runner: (amp_mA, pulse_shape) -> peak Vm at centre."""
-    Ve_j = jnp.asarray(Ve_unit, dtype=jnp.float64)
+    """Compile a JIT runner: (amp_mA, pulse_shape) -> peak Vm over all nodes.
+
+    record='all' is required for correct anodic threshold detection: the AP
+    originates at virtual-cathode peripheral nodes (not the centre), so
+    recording only the centre gives wrong thresholds at short pulse widths.
+    """
+    Ve_j    = jnp.asarray(Ve_unit, dtype=jnp.float64)
+    is_node = static["is_node"]
 
     @jax.jit
     def run(amp_mA, pulse_shape):
         Ve = Ve_j * (amp_mA / -1.0)
-        trace, _ = integrate(static, mfn, state0, Ve, pulse_shape, DT,
-                             v_rest=V_REST, record="center")
-        return jnp.max(trace)
+        (Vi_all, Vp_all), _ = integrate(static, mfn, state0, Ve, pulse_shape, DT,
+                                        v_rest=V_REST, record="all")
+        Vm_all   = Vi_all - Vp_all
+        Vm_nodes = jnp.where(is_node[None, :], Vm_all, -jnp.inf)
+        return jnp.max(Vm_nodes)
 
     return run
 

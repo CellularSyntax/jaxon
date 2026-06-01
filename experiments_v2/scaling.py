@@ -36,10 +36,15 @@ import jax
 import jax.numpy as jnp
 import jaxley as jx
 
-from jaxfibers.fibers.mrg    import build_mrg,   node_indices as mrg_node_indices
-from jaxfibers.fibers.sundt  import build_sundt,  node_indices as sundt_node_indices
+from jaxfibers.fibers.mrg     import build_mrg,     node_indices as mrg_node_indices
+from jaxfibers.fibers.sundt   import build_sundt,   node_indices as sundt_node_indices
+from jaxfibers.fibers.rattay  import build_rattay,  node_indices as rattay_node_indices
+from jaxfibers.fibers.sweeney import build_sweeney, node_indices as sweeney_node_indices
 from jaxfibers.stim.intracellular import rectangular_pulse, attach_intra_pulse
-from jaxfibers.nrn_baseline  import run_intracellular, run_intracellular_sundt
+from jaxfibers.nrn_baseline  import (
+    run_intracellular, run_intracellular_sundt,
+    run_intracellular_rattay, run_intracellular_sweeney,
+)
 
 from experiments_v2.utils import ensure_dir, save_json
 
@@ -105,6 +110,38 @@ MODEL_REGISTRY: dict[str, ModelConfig] = {
         pf_run_fn=run_intracellular_sundt,
         pf_kwargs=dict(diameter=0.8, n_nodes=51, i_amp_nA=0.5,
                        i_delay_ms=1.0, i_dur_ms=0.5, dt_ms=0.005, tstop_ms=10.0),
+    ),
+    "Rattay": ModelConfig(
+        key="Rattay",
+        name="Rattay C-fiber (D=0.8 µm, N=51 compartments)",
+        diameter=0.8,
+        n_nodes=51,
+        dt_ms=0.005,
+        tstop_ms=10.0,
+        i_amp_nA=0.5,
+        i_delay_ms=1.0,
+        i_dur_ms=0.2,
+        build_fn=build_rattay,
+        node_idx_fn=rattay_node_indices,
+        pf_run_fn=run_intracellular_rattay,
+        pf_kwargs=dict(diameter=0.8, n_nodes=51, i_amp_nA=0.5,
+                       i_delay_ms=1.0, i_dur_ms=0.2, dt_ms=0.005, tstop_ms=10.0),
+    ),
+    "Sweeney": ModelConfig(
+        key="Sweeney",
+        name="Sweeney myelinated (D=10 µm, N=21 nodes)",
+        diameter=10.0,
+        n_nodes=21,
+        dt_ms=0.005,
+        tstop_ms=5.0,
+        i_amp_nA=1.0,
+        i_delay_ms=1.0,
+        i_dur_ms=0.1,
+        build_fn=build_sweeney,
+        node_idx_fn=sweeney_node_indices,
+        pf_run_fn=run_intracellular_sweeney,
+        pf_kwargs=dict(diameter=10.0, n_nodes=21, i_amp_nA=1.0,
+                       i_delay_ms=1.0, i_dur_ms=0.1, dt_ms=0.005, tstop_ms=5.0),
     ),
 }
 

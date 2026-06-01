@@ -14,7 +14,7 @@
 # Run all experiments_v2 scripts sequentially in a single job.
 # Useful for a clean full-reproduction run.
 #
-# Expected wall time: ~24–36 h on A16 (scaling + MRG + Sundt validation).
+# Expected wall time: ~48–72 h on A16 (scaling + MRG + Sundt + Rattay + Sweeney validation).
 # Adjust -t above if needed (max for a16 QOS: 72 h).
 #
 # Submit from the project root:
@@ -57,6 +57,8 @@ run_exp() {
 run_exp experiments_v2/scaling.py
 run_exp experiments_v2/mrg_validation.py
 run_exp experiments_v2/sundt_validation.py
+run_exp experiments_v2/rattay_validation.py
+run_exp experiments_v2/sweeney_validation.py
 
 echo ''
 echo '========================================================='

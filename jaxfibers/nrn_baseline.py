@@ -305,8 +305,12 @@ def find_threshold_extracellular_waveform(
         fiber = build_mrg_pyfibers(diameter=diameter, n_nodes=n_nodes, temperature=temperature)
     elif fiber_model == "sundt":
         fiber = build_sundt_pyfibers(diameter=diameter, n_nodes=n_nodes, temperature=temperature)
+    elif fiber_model == "rattay":
+        fiber = build_rattay_pyfibers(diameter=diameter, n_nodes=n_nodes, temperature=temperature)
+    elif fiber_model == "sweeney":
+        fiber = build_sweeney_pyfibers(diameter=diameter, n_nodes=n_nodes, temperature=temperature)
     else:
-        raise ValueError(f"Unknown fiber_model '{fiber_model}'. Use 'mrg' or 'sundt'.")
+        raise ValueError(f"Unknown fiber_model '{fiber_model}'. Use 'mrg', 'sundt', 'rattay', or 'sweeney'.")
 
     probe_idx = fiber.loc_index(0.5)
     fiber.potentials = fiber.point_source_potentials(
@@ -335,6 +339,194 @@ def find_threshold_extracellular_waveform(
         else:
             hi = mid
     return lo
+
+
+# ── Rattay (unmyelinated C-fiber) wrappers ────────────────────────────────────
+
+def build_rattay_pyfibers(diameter: float = 0.8, n_nodes: int = 21,
+                          temperature: float = 37.0,
+                          passive_end_nodes: bool = False):
+    """Wrap PyFibers `build_fiber(RATTAY, ...)`."""
+    return build_fiber(
+        fiber_model=FiberModel.RATTAY,
+        diameter=diameter,
+        n_nodes=n_nodes,
+        temperature=temperature,
+        passive_end_nodes=passive_end_nodes,
+    )
+
+
+def run_intracellular_rattay(
+    diameter: float = 0.8,
+    n_nodes: int = 21,
+    temperature: float = 37.0,
+    i_delay_ms: float = 1.0,
+    i_dur_ms: float = 0.1,
+    i_amp_nA: float = 0.5,
+    dt_ms: float = 0.005,
+    tstop_ms: float = 10.0,
+    probe_loc: float = 0.5,
+    passive_end_nodes: bool = False,
+) -> NrnRunResult:
+    """Intracellular pulse on Rattay C-fiber, record V_m and gates."""
+    fiber = build_rattay_pyfibers(diameter=diameter, n_nodes=n_nodes,
+                                  temperature=temperature,
+                                  passive_end_nodes=passive_end_nodes)
+    probe_idx = fiber.loc_index(probe_loc)
+    fiber.record_vm()
+    fiber.record_gating(indices=[probe_idx])
+
+    stim = IntraStim(
+        dt=dt_ms,
+        tstop=tstop_ms,
+        istim_ind=probe_idx,
+        clamp_kws=dict(
+            delay=i_delay_ms,
+            pw=i_dur_ms,
+            dur=tstop_ms,
+            freq=1000.0 / max(tstop_ms, 1.0),
+            amp=i_amp_nA,
+        ),
+    )
+    stim.run_sim(stimamp=1.0, fiber=fiber, ap_detect_location=probe_loc,
+                 fail_on_end_excitation=False)
+    t  = np.array(fiber.time)
+    vm = np.array([np.array(v) for v in fiber.vm])
+    gates = {k: np.array(v[0]) for k, v in fiber.gating.items()}
+    n_aps = fiber.apc[probe_idx].n
+    return NrnRunResult(t_ms=t, vm_mV=vm, gates=gates, n_nodes=fiber.nodecount,
+                        probe_node_idx=probe_idx, n_aps_at_probe=int(n_aps))
+
+
+def run_extracellular_rattay(
+    diameter: float = 0.8,
+    n_nodes: int = 21,
+    temperature: float = 37.0,
+    src_height_um: float = 1000.0,
+    sigma_S_m: float = 0.3,
+    pw_ms: float = 0.1,
+    delay_ms: float = 1.0,
+    amp_mA: float = -1.0,
+    dt_ms: float = 0.005,
+    tstop_ms: float = 10.0,
+    probe_loc: float = 0.5,
+    passive_end_nodes: bool = False,
+) -> NrnRunResult:
+    """Extracellular point-source rectangular pulse on Rattay C-fiber."""
+    fiber = build_rattay_pyfibers(diameter=diameter, n_nodes=n_nodes,
+                                  temperature=temperature,
+                                  passive_end_nodes=passive_end_nodes)
+    probe_idx = fiber.loc_index(probe_loc)
+    fiber.record_vm()
+    fiber.record_gating(indices=[probe_idx])
+
+    fiber.potentials = fiber.point_source_potentials(
+        x=0.0, y=src_height_um, z=fiber.length / 2.0, i0=amp_mA, sigma=sigma_S_m,
+    )
+    waveform = lambda t: np.where((t >= delay_ms) & (t < delay_ms + pw_ms), 1.0, 0.0)
+    stim = ScaledStim(waveform=waveform, dt=dt_ms, tstop=tstop_ms)
+    stim.run_sim(stimamp=1.0, fiber=fiber, ap_detect_location=probe_loc,
+                 fail_on_end_excitation=False)
+    t  = np.array(fiber.time)
+    vm = np.array([np.array(v) for v in fiber.vm])
+    gates = {k: np.array(v[0]) for k, v in fiber.gating.items()}
+    n_aps = fiber.apc[probe_idx].n
+    return NrnRunResult(t_ms=t, vm_mV=vm, gates=gates, n_nodes=fiber.nodecount,
+                        probe_node_idx=probe_idx, n_aps_at_probe=int(n_aps))
+
+
+# ── Sweeney (myelinated) wrappers ─────────────────────────────────────────────
+
+def build_sweeney_pyfibers(diameter: float = 10.0, n_nodes: int = 21,
+                            temperature: float = 37.0,
+                            passive_end_nodes: bool = False):
+    """Wrap PyFibers `build_fiber(SWEENEY, ...)`."""
+    return build_fiber(
+        fiber_model=FiberModel.SWEENEY,
+        diameter=diameter,
+        n_nodes=n_nodes,
+        temperature=temperature,
+        passive_end_nodes=passive_end_nodes,
+    )
+
+
+def run_intracellular_sweeney(
+    diameter: float = 10.0,
+    n_nodes: int = 21,
+    temperature: float = 37.0,
+    i_delay_ms: float = 1.0,
+    i_dur_ms: float = 0.1,
+    i_amp_nA: float = 1.0,
+    dt_ms: float = 0.005,
+    tstop_ms: float = 8.0,
+    probe_loc: float = 0.5,
+    passive_end_nodes: bool = False,
+) -> NrnRunResult:
+    """Intracellular pulse on Sweeney myelinated fiber, record V_m and gates."""
+    fiber = build_sweeney_pyfibers(diameter=diameter, n_nodes=n_nodes,
+                                   temperature=temperature,
+                                   passive_end_nodes=passive_end_nodes)
+    probe_idx = fiber.loc_index(probe_loc)
+    fiber.record_vm()
+    fiber.record_gating(indices=[probe_idx])
+
+    stim = IntraStim(
+        dt=dt_ms,
+        tstop=tstop_ms,
+        istim_ind=probe_idx,
+        clamp_kws=dict(
+            delay=i_delay_ms,
+            pw=i_dur_ms,
+            dur=tstop_ms,
+            freq=1000.0 / max(tstop_ms, 1.0),
+            amp=i_amp_nA,
+        ),
+    )
+    stim.run_sim(stimamp=1.0, fiber=fiber, ap_detect_location=probe_loc,
+                 fail_on_end_excitation=False)
+    t  = np.array(fiber.time)
+    vm = np.array([np.array(v) for v in fiber.vm])
+    gates = {k: np.array(v[0]) for k, v in fiber.gating.items()}
+    n_aps = fiber.apc[probe_idx].n
+    return NrnRunResult(t_ms=t, vm_mV=vm, gates=gates, n_nodes=fiber.nodecount,
+                        probe_node_idx=probe_idx, n_aps_at_probe=int(n_aps))
+
+
+def run_extracellular_sweeney(
+    diameter: float = 10.0,
+    n_nodes: int = 21,
+    temperature: float = 37.0,
+    src_height_um: float = 1000.0,
+    sigma_S_m: float = 0.3,
+    pw_ms: float = 0.1,
+    delay_ms: float = 1.0,
+    amp_mA: float = -1.0,
+    dt_ms: float = 0.005,
+    tstop_ms: float = 8.0,
+    probe_loc: float = 0.5,
+    passive_end_nodes: bool = False,
+) -> NrnRunResult:
+    """Extracellular point-source rectangular pulse on Sweeney myelinated fiber."""
+    fiber = build_sweeney_pyfibers(diameter=diameter, n_nodes=n_nodes,
+                                   temperature=temperature,
+                                   passive_end_nodes=passive_end_nodes)
+    probe_idx = fiber.loc_index(probe_loc)
+    fiber.record_vm()
+    fiber.record_gating(indices=[probe_idx])
+
+    fiber.potentials = fiber.point_source_potentials(
+        x=0.0, y=src_height_um, z=fiber.length / 2.0, i0=amp_mA, sigma=sigma_S_m,
+    )
+    waveform = lambda t: np.where((t >= delay_ms) & (t < delay_ms + pw_ms), 1.0, 0.0)
+    stim = ScaledStim(waveform=waveform, dt=dt_ms, tstop=tstop_ms)
+    stim.run_sim(stimamp=1.0, fiber=fiber, ap_detect_location=probe_loc,
+                 fail_on_end_excitation=False)
+    t  = np.array(fiber.time)
+    vm = np.array([np.array(v) for v in fiber.vm])
+    gates = {k: np.array(v[0]) for k, v in fiber.gating.items()}
+    n_aps = fiber.apc[probe_idx].n
+    return NrnRunResult(t_ms=t, vm_mV=vm, gates=gates, n_nodes=fiber.nodecount,
+                        probe_node_idx=probe_idx, n_aps_at_probe=int(n_aps))
 
 
 def find_threshold_extracellular_sundt(

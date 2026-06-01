@@ -49,7 +49,7 @@ from jaxfibers.channels.rattay_channels import RattayHH
 from jaxfibers.nrn_baseline import build_mrg_pyfibers, build_rattay_pyfibers
 from pyfibers.stimulation import ScaledStim
 
-from experiments_v2.utils import make_pulse_array, PULSES
+from experiments_v2.utils import make_pulse_array, pulse_array_to_callable, PULSES
 
 OUT = pathlib.Path(ROOT / "outputs" / "smoke_test_sd")
 OUT.mkdir(parents=True, exist_ok=True)
@@ -235,11 +235,14 @@ def jax_diagnostics(static, membrane_fn, state0, Ve_unit, nodes, centers, mid,
 
 # ── PyFibers diagnostics ──────────────────────────────────────────────────────
 
-def pf_diagnostics(fiber_builder, amp_mA, pw_ms, tstop_ms=TSTOP, label=""):
+def pf_diagnostics(fiber_builder, amp_mA, pulse_arr, pw_ms, tstop_ms=TSTOP, label=""):
     """Run PyFibers at given amp and return diagnostics.
 
     Captures stdout (warnings), checks center and end-node AP count.
     fiber_builder: callable() -> fiber (pre-built, will be rebuilt each call).
+    pulse_arr: normalised pulse array (from make_pulse_array) — applied via
+               pulse_array_to_callable so the correct waveform shape is used.
+    pw_ms: pulse width in ms (only used for metadata, not waveform construction).
     """
     fiber = fiber_builder()
     probe_idx = fiber.loc_index(0.5)
@@ -258,7 +261,7 @@ def pf_diagnostics(fiber_builder, amp_mA, pw_ms, tstop_ms=TSTOP, label=""):
     fiber.potentials = fiber.point_source_potentials(
         x=0.0, y=SRC_H, z=fiber.length / 2.0, i0=amp_mA, sigma=SIGMA,
     )
-    waveform = lambda t: np.where((t >= DELAY) & (t < DELAY + pw_ms), 1.0, 0.0)
+    waveform = pulse_array_to_callable(pulse_arr, DT)
     stim = ScaledStim(waveform=waveform, dt=DT, tstop=tstop_ms)
 
     captured_stdout = io.StringIO()
@@ -407,7 +410,7 @@ def run_case(label, jax_setup_fn, pf_fiber_fn, pulse_key, pw_ms,
 
         # PF
         t0 = time.time()
-        pd = pf_diagnostics(pf_fiber_fn, amp, pw_ms, label=f"PF {amp:+.3f} mA")
+        pd = pf_diagnostics(pf_fiber_fn, amp, pulse_arr, pw_ms, label=f"PF {amp:+.3f} mA")
         t_pf = time.time() - t0
         print(f"    PF : center={pd['center_fires']} (APc={pd['center_aps']}) "
               f"end1={pd['end1_aps']} end2={pd['end2_aps']} "

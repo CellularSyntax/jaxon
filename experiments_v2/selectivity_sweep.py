@@ -56,14 +56,14 @@ OUT = ensure_dir(ROOT / "outputs" / "selectivity_sweep")
 
 # ─────────────────────────────────────────────────── sweep parameters ─────────
 N_NERVES        = 100   # total seeds across all array tasks
-N_FIBERS        = 20
-N_NODES         = 101          # n_comp = 100×11 + 1 = 1101
+N_FIBERS        = 100          # 5× more fibers → better population statistics (FD rect is cheap)
+N_NODES         = 21           # n_comp = 20×11 + 1 = 221 (~23 mm fiber for D=10 µm)
 N_CONTACTS      = 6
 NERVE_RADIUS_UM = 500.0
 CUFF_RADIUS_UM  = 1500.0
 TARGET_FRACTION = 0.30
 DT              = 0.005        # ms
-T_STOP          = 8.0          # ms
+T_STOP          = 4.0          # ms (was 8.0); AP peaks within 2 ms of stimulus end
 DELAY_MS        = 1.0
 PW_MS           = 0.1
 N_OPT_RECT      = 200

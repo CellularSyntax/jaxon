@@ -49,18 +49,18 @@ OUT = ensure_dir(ROOT / "outputs" / "selectivity_joint_opt")
 
 # ─────────────────────────────────────────────── experiment parameters ────────
 SEED            = 0
-N_FIBERS        = 20
-N_NODES         = 51          # smaller than sweep for faster local run
+N_FIBERS        = 200          # FD joint pass: 25×200=5000 effective fibers per step
+N_NODES         = 21           # n_comp = 20×11 + 1 = 221 (~23 mm fiber for D=10 µm)
 N_CONTACTS      = 6
 NERVE_RADIUS_UM = 500.0
 CUFF_RADIUS_UM  = 1500.0
 TARGET_FRACTION = 0.30
-DT              = 0.005       # ms
-T_STOP          = 8.0         # ms
+DT              = 0.005        # ms
+T_STOP          = 4.0          # ms (was 8.0); AP peaks within 2 ms of stimulus end
 DELAY_MS        = 1.0
 PW_MS           = 0.1
-N_OPT_RECT      = 150
-N_OPT_JOINT     = 150
+N_OPT_RECT      = 200
+N_OPT_JOINT     = 200
 SIGMA_S_M       = 0.3
 
 

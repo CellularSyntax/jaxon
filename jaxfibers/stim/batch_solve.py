@@ -228,3 +228,91 @@ def batch_integrate_m_max(
     return jax.vmap(
         lambda fs, s0, ve: _integrate_one_fiber_m_max(fs, s0, ve, dt)
     )(fiber_statics_batch, state0_batch, Ve_seq_batch)
+
+
+# ──────────────────────────────── memory-efficient FD forward pass ────────────
+
+def _integrate_one_fiber_m_max_fd(
+    fs: FiberStatics,
+    state0: tuple,
+    Ve_comb: jnp.ndarray,       # [n_comp]  static spatial profile
+    pulse_seq: jnp.ndarray,     # [T]       pulse amplitude at each step
+    pulse_prev_seq: jnp.ndarray,# [T]       pulse at previous step (0 at t=0)
+    dt: float,
+) -> jnp.ndarray:
+    """Like _integrate_one_fiber_m_max but avoids the [T, n_comp] Ve_seq tensor.
+
+    Ve at each step is computed on-the-fly as pulse[t] * Ve_comb.
+    This lets the FD optimizer pack (K+1)*N_FIBERS effective fibers into a
+    single batched forward pass without the T-dimension memory overhead.
+    """
+    n = fs.is_node.shape[0]
+    T = pulse_seq.shape[0]
+
+    def step(carry, s):
+        Vi, Vp, st, m_max = carry
+        M, H, MP, S = st
+        Vm = Vi - Vp
+        (a_m, b_m), (a_h, b_h), (a_mp, b_mp), (a_s, b_s) = AxnodeMyel._alpha_beta(Vm, _CELSIUS)
+        M2  = solve_gate_exponential(M,  dt, a_m,  b_m)
+        H2  = solve_gate_exponential(H,  dt, a_h,  b_h)
+        MP2 = solve_gate_exponential(MP, dt, a_mp, b_mp)
+        S2  = solve_gate_exponential(S,  dt, a_s,  b_s)
+        g_na     = _GNABAR  * M2 ** 3 * H2
+        g_nap    = _GNAPBAR * MP2 ** 3
+        g_k      = _GKBAR   * S2
+        A_in     = fs.A_in_cm2
+        g_pas_us = fs.g_pas * A_in * 1e6
+        g_node   = (g_na + g_nap + g_k + _GL) * A_in * 1e6
+        i_node   = (
+            (g_na + g_nap) * (Vm - _ENA)
+            + g_k          * (Vm - _EK)
+            + _GL          * (Vm - _EL)
+        ) * A_in * 1e6
+        i_pas    = g_pas_us * (Vm - V_REST)
+        g_eff    = jnp.where(fs.is_node, g_node,  g_pas_us)
+        i_ion    = jnp.where(fs.is_node, i_node,  i_pas)
+        Ve_cur   = pulse_seq[s]      * Ve_comb
+        Ve_prev  = pulse_prev_seq[s] * Ve_comb
+        Vi2, Vp2 = _be_step(
+            Vi, Vp, Ve_cur, Ve_prev, g_eff, i_ion,
+            fs.Cm_dt, fs.Cmy_dt, fs.gmy,
+            fs.Gi_diag, fs.Gp_diag, fs.Up, fs.Low, fs.is_node,
+        )
+        return (Vi2, Vp2, (M2, H2, MP2, S2), jnp.maximum(m_max, M2)), None
+
+    Vi0    = jnp.full(n, V_REST, dtype=jnp.float64)
+    Vp0    = jnp.zeros(n, dtype=jnp.float64)
+    m_max0 = jnp.zeros(n, dtype=jnp.float64)
+    (_, _, _, m_max_f), _ = jax.lax.scan(
+        step, (Vi0, Vp0, state0, m_max0), jnp.arange(T)
+    )
+    return m_max_f
+
+
+def batch_integrate_m_max_fd(
+    fiber_statics_batch: FiberStatics,
+    state0_batch: tuple,
+    Ve_comb_batch: jnp.ndarray,     # [n_fibers_total, n_comp]
+    pulse_seq: jnp.ndarray,         # [T]
+    pulse_prev_seq: jnp.ndarray,    # [T]
+    dt: float,
+) -> jnp.ndarray:
+    """Memory-efficient vmap for FD gradient computation.
+
+    Takes a static Ve_comb [n_comp] per fiber instead of a full Ve_seq [T, n_comp].
+    Ve at each timestep is computed as pulse[t] * Ve_comb inside the scan, so only
+    [n_fibers_total, n_comp] memory is needed (not [n_fibers_total, T, n_comp]).
+
+    Designed for use with the packed-FD optimizer: pass (K+1)*N_FIBERS effective
+    fibers (one per amplitude config) to compute all K+1 forward passes in parallel.
+
+    Returns
+    -------
+    m_max_batch : [n_fibers_total, n_comp]
+    """
+    return jax.vmap(
+        lambda fs, s0, vc: _integrate_one_fiber_m_max_fd(
+            fs, s0, vc, pulse_seq, pulse_prev_seq, dt
+        )
+    )(fiber_statics_batch, state0_batch, Ve_comb_batch)

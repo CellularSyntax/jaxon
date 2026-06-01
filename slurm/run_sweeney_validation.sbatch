@@ -38,6 +38,6 @@ export PROJECT_ROOT=\"${PROJECT_ROOT}\"
 export JAX_ENABLE_X64=1
 bash \"${PROJECT_ROOT}/slurm/setup_env.sh\"
 echo '[job] Running experiments_v2/sweeney_validation.py ...'
-python experiments_v2/sweeney_validation.py
+python -u experiments_v2/sweeney_validation.py
 echo '[job] Done. Outputs in outputs/sweeney_validation/'
 "

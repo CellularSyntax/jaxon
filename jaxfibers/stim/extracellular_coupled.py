@@ -150,7 +150,8 @@ def arrays_from_geometry(geom, dt):
 
 # ============================================================ time integration
 def integrate(static, membrane_fn, state0, Ve, pulse_mask, dt, v_rest=-80.0,
-              record="center", field_on_before_pulse=False, center_comp=None):
+              record="center", field_on_before_pulse=False, center_comp=None,
+              i_intra=None):
     """Backward-Euler integrate the coupled system.
 
     static       : dict from arrays_from_geometry(geom, dt)
@@ -166,6 +167,8 @@ def integrate(static, membrane_fn, state0, Ve, pulse_mask, dt, v_rest=-80.0,
                    (e.g. +1 cathodic / -1 anodic for biphasic). Step s covers
                    time interval [s*dt, (s+1)*dt]; output index s = Vm at (s+1)*dt.
     record       : 'center' (return center-node Vm trace) or 'all' (full Vi,Vp)
+    i_intra      : optional [nsteps, n_comp] intracellular injected current (nA).
+                   Positive = depolarizing. Set non-injecting compartments to 0.
 
     Returns: trace of recorded quantity (and final state).
     """
@@ -183,12 +186,15 @@ def integrate(static, membrane_fn, state0, Ve, pulse_mask, dt, v_rest=-80.0,
         jnp.array([1.0 if field_on_before_pulse else 0.0], dtype=jnp.float64),
         shape[:-1],
     ])
+    i_intra_j = jnp.asarray(i_intra, dtype=jnp.float64) if i_intra is not None else None
 
     def step(carry, s):
         Vi, Vp, st = carry
         ve      = Ve * shape[s]
         ve_prev = Ve * shape_prev[s]
         g_eff, i_ion, st = membrane_fn(Vi - Vp, st, dt)
+        if i_intra_j is not None:
+            i_ion = i_ion - i_intra_j[s]   # positive i_intra depolarizes (subtracts from outward)
         Vi2, Vp2 = _be_step(Vi, Vp, ve, ve_prev, g_eff, i_ion,
                             static["Cm_dt"], static["Cmy_dt"], static["gmy"],
                             static["Gi_diag"], static["Gp_diag"],
@@ -203,11 +209,12 @@ def integrate(static, membrane_fn, state0, Ve, pulse_mask, dt, v_rest=-80.0,
 
 # ============================================================ recording variant
 def integrate_recording(static, membrane_fn, state0, Ve, pulse_mask, dt,
-                        v_rest=-80.0, center_comp=None):
+                        v_rest=-80.0, center_comp=None, i_intra=None):
     """Like integrate(record='center') but also records gate state (M, H, MP, S)
     at the center node at every time step.
 
     State tuple must be (M, H, MP, S) as returned by the AxnodeMyel membrane_fn.
+    i_intra : optional [nsteps, n_comp] intracellular current (nA), positive = depolarizing.
 
     Returns:
         vm_trace  : [nsteps] Vm at center node (mV)
@@ -227,12 +234,15 @@ def integrate_recording(static, membrane_fn, state0, Ve, pulse_mask, dt,
     nsteps = pulse_mask.shape[0]
     shape      = jnp.asarray(pulse_mask, dtype=jnp.float64)
     shape_prev = jnp.concatenate([jnp.zeros(1, dtype=jnp.float64), shape[:-1]])
+    i_intra_j = jnp.asarray(i_intra, dtype=jnp.float64) if i_intra is not None else None
 
     def step(carry, s):
         Vi, Vp, st = carry
         ve      = Ve * shape[s]
         ve_prev = Ve * shape_prev[s]
         g_eff, i_ion, st2 = membrane_fn(Vi - Vp, st, dt)
+        if i_intra_j is not None:
+            i_ion = i_ion - i_intra_j[s]
         Vi2, Vp2 = _be_step(Vi, Vp, ve, ve_prev, g_eff, i_ion,
                             static["Cm_dt"], static["Cmy_dt"], static["gmy"],
                             static["Gi_diag"], static["Gp_diag"],

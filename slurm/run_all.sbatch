@@ -39,6 +39,7 @@ srun \
   bash -lc "
 set -euo pipefail
 export PROJECT_ROOT=\"${PROJECT_ROOT}\"
+export JAX_ENABLE_X64=1
 
 # ── Install once, reuse for all experiments ──────────────────────────────────
 bash \"${PROJECT_ROOT}/slurm/setup_env.sh\"
@@ -56,9 +57,12 @@ run_exp() {
 # ── Experiments v2 ───────────────────────────────────────────────────────────
 run_exp experiments_v2/scaling.py
 run_exp experiments_v2/mrg_validation.py
+run_exp experiments_v2/mrg_interp_validation.py
 run_exp experiments_v2/sundt_validation.py
 run_exp experiments_v2/rattay_validation.py
 run_exp experiments_v2/sweeney_validation.py
+run_exp experiments_v2/schild94_validation.py
+run_exp experiments_v2/schild97_validation.py
 
 echo ''
 echo '========================================================='

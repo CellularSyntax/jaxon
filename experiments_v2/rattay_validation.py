@@ -40,6 +40,8 @@ import jax.numpy as jnp
 import jaxley as jx
 from jaxley.solver_gate import solve_gate_exponential
 
+jax.config.update("jax_enable_x64", True)
+
 from jaxfibers.fibers.rattay import (
     build_rattay, node_indices, section_centers_um,
     V_REST, CM,
@@ -48,7 +50,7 @@ from jaxfibers.channels.rattay_channels import RattayHH
 from jaxfibers.stim.extracellular import point_source_potentials_mV
 from jaxfibers.stim.intracellular import rectangular_pulse, attach_intra_pulse
 from jaxfibers.nrn_baseline import run_intracellular_rattay, run_extracellular_rattay
-from jaxfibers.stim.mrg_extracellular_coupled import arrays_from_geometry, integrate
+from jaxfibers.stim.extracellular_coupled import arrays_from_geometry, integrate, _be_step
 
 from experiments_v2.utils import (
     PULSES, make_pulse_array, pf_find_threshold,
@@ -206,6 +208,41 @@ def task_traces() -> dict:
     t_extra_jax = (np.arange(N_STEPS) + 1) * DT
     jax_vm_e    = np.asarray(trace_e)
 
+    print("  [extra] recording gate states (JAX scan) ...", flush=True)
+    n_comp_e  = static["is_node"].shape[0]
+    is_node_e = static["is_node"]
+    shape_g      = jnp.asarray(pm_extra, dtype=jnp.float64)
+    shape_prev_g = jnp.concatenate([jnp.zeros(1, dtype=jnp.float64), shape_g[:-1]])
+
+    @jax.jit
+    def _extra_gates_scan(Vi0, Vp0, M0, H0, N0):
+        def _step(carry, s):
+            Vi, Vp, M, H, N = carry
+            ve      = Ve_scaled * shape_g[s]
+            ve_prev = Ve_scaled * shape_prev_g[s]
+            g_eff, i_ion, (M2, H2, N2) = mfn(Vi - Vp, (M, H, N), DT)
+            Vi2, Vp2 = _be_step(
+                Vi, Vp, ve, ve_prev, g_eff, i_ion,
+                static["Cm_dt"], static["Cmy_dt"], static["gmy"],
+                static["Gi_diag"], static["Gp_diag"],
+                static["Up"], static["Low"], is_node_e,
+            )
+            return (Vi2, Vp2, M2, H2, N2), (M2[mid], H2[mid], N2[mid])
+
+        _, (m_t, h_t, n_t) = jax.lax.scan(
+            _step,
+            (Vi0, Vp0, M0, H0, N0),
+            jnp.arange(N_STEPS),
+        )
+        return m_t, h_t, n_t
+
+    M0, H0, N0 = state0
+    Vi0_e = jnp.full(n_comp_e, V_REST, dtype=jnp.float64)
+    Vp0_e = jnp.zeros(n_comp_e, dtype=jnp.float64)
+    m_e, h_e, n_e = [np.array(x) for x in
+                     _extra_gates_scan(Vi0_e, Vp0_e, M0, H0, N0)]
+    jax_gates_e = {"m": m_e, "h": h_e, "n": n_e}
+
     print(f"  [extra] NEURON (amp={amp_extra:.3f} mA) ...", flush=True)
     nr_e     = run_extracellular_rattay(
         diameter=D, n_nodes=N_NODES, src_height_um=SRC_H,
@@ -220,7 +257,9 @@ def task_traces() -> dict:
         t_intra_nrn=nr_i.t_ms, vm_intra_nrn=nr_i.vm_mV[nr_i.probe_node_idx],
         gates_intra_nrn=nr_i.gates,
         t_extra_jax=t_extra_jax, vm_extra_jax=jax_vm_e,
+        gates_extra_jax=jax_gates_e,
         t_extra_nrn=nr_e.t_ms, vm_extra_nrn=nrn_vm_e,
+        gates_extra_nrn=nr_e.gates,
         amp_extra_mA=float(amp_extra), threshold_extra_mA=float(thr_jax),
         diameter=D,
     )
@@ -387,10 +426,19 @@ def fig_traces(data: dict) -> None:
     ax.legend(fontsize=9); ax.grid(alpha=0.3)
 
     ax = axs[1, 1]
-    ax.text(0.5, 0.5,
-            "(D) Extracellular gates\n(recorded from coupled-solver run,\nsee data_rattay_traces.json)",
-            ha="center", va="center", transform=ax.transAxes, fontsize=10)
-    ax.set_axis_off()
+    gate_colors = {"m": "C0", "h": "C2", "n": "C4"}
+    gates_e_nrn = data.get("gates_extra_nrn", {})
+    gates_e_jax = data.get("gates_extra_jax", {})
+    for g, c in gate_colors.items():
+        nrn_g = gates_e_nrn.get(g, [])
+        if len(nrn_g):
+            ax.plot(data["t_extra_nrn"], nrn_g, color=c, lw=2.0, label=f"NEURON {g}")
+        jax_g = gates_e_jax.get(g, [])
+        if len(jax_g):
+            ax.plot(data["t_extra_jax"], jax_g, color=c, lw=1.2, ls="--", label=f"JAX {g}")
+    ax.set_title("(D) Extracellular gates  (NEURON solid, JAX dashed)")
+    ax.set_xlabel("time (ms)"); ax.set_ylabel("gate value")
+    ax.legend(fontsize=8, ncol=2); ax.grid(alpha=0.3)
 
     fig.suptitle(f"Rattay D={data['diameter']} µm — PyFibers/NEURON vs JAX", fontsize=11)
     path = OUT / "fig_rattay_traces.png"

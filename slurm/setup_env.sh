@@ -22,4 +22,8 @@ pyfibers_compile
 
 echo "[setup] JAX devices after install:"
 python -c "import jax; print(jax.devices())"
+
+# Enable 64-bit floats in JAX (required for double-precision membrane dynamics)
+export JAX_ENABLE_X64=1
+echo "[setup] JAX_ENABLE_X64=${JAX_ENABLE_X64}"
 echo "[setup] Environment ready."

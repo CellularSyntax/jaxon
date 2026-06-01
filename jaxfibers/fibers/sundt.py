@@ -13,7 +13,7 @@ Compartment parameters (verified against PyFibers SUNDT at runtime):
   v_rest    = -60 mV
 
 Extracellular coupling: call `arrays_from_geometry(geom_c, dt)` from
-`jaxfibers.stim.mrg_extracellular_coupled` (same import as for MRG).  Set
+`jaxfibers.stim.extracellular_coupled` (same import as for MRG).  Set
   xraxial_Mohm_cm  = 1e6  (dummy — periaxonal axial never used for nodes)
   xc_myelin_uF_cm2 = 0.0  (no myelin capacitance)
   xg_myelin_S_cm2  = 1e10 (short-circuit; overridden to 0 by the is_node mask)

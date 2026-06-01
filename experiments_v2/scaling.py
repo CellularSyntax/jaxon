@@ -36,14 +36,24 @@ import jax
 import jax.numpy as jnp
 import jaxley as jx
 
+jax.config.update("jax_enable_x64", True)
+
 from jaxfibers.fibers.mrg     import build_mrg,     node_indices as mrg_node_indices
+from jaxfibers.fibers.mrg     import build_mrg_interp, node_indices as mrg_interp_node_indices
 from jaxfibers.fibers.sundt   import build_sundt,   node_indices as sundt_node_indices
 from jaxfibers.fibers.rattay  import build_rattay,  node_indices as rattay_node_indices
 from jaxfibers.fibers.sweeney import build_sweeney, node_indices as sweeney_node_indices
+from jaxfibers.fibers.schild  import (
+    build_schild94, node_indices as schild94_node_indices,
+    build_schild97, node_indices as schild97_node_indices,
+)
 from jaxfibers.stim.intracellular import rectangular_pulse, attach_intra_pulse
 from jaxfibers.nrn_baseline  import (
     run_intracellular, run_intracellular_sundt,
     run_intracellular_rattay, run_intracellular_sweeney,
+    run_intracellular_mrg_interp,
+    run_intracellular_schild94,
+    run_intracellular_schild97,
 )
 
 from experiments_v2.utils import ensure_dir, save_json
@@ -143,6 +153,54 @@ MODEL_REGISTRY: dict[str, ModelConfig] = {
         pf_kwargs=dict(diameter=10.0, n_nodes=21, i_amp_nA=1.0,
                        i_delay_ms=1.0, i_dur_ms=0.1, dt_ms=0.005, tstop_ms=5.0),
     ),
+    "MRG_Interp": ModelConfig(
+        key="MRG_Interp",
+        name="MRG interpolated myelinated (D=10 µm, N=11 nodes)",
+        diameter=10.0,
+        n_nodes=11,
+        dt_ms=0.01,
+        tstop_ms=3.0,
+        i_amp_nA=1.0,
+        i_delay_ms=1.0,
+        i_dur_ms=0.1,
+        build_fn=build_mrg_interp,
+        node_idx_fn=mrg_interp_node_indices,
+        pf_run_fn=run_intracellular_mrg_interp,
+        pf_kwargs=dict(diameter=10.0, n_nodes=11, i_amp_nA=1.0,
+                       i_delay_ms=1.0, i_dur_ms=0.1, dt_ms=0.01, tstop_ms=3.0),
+    ),
+    "Schild94": ModelConfig(
+        key="Schild94",
+        name="Schild 1994 C-fiber (D=0.8 µm, N=51 compartments)",
+        diameter=0.8,
+        n_nodes=51,
+        dt_ms=0.005,
+        tstop_ms=10.0,
+        i_amp_nA=0.5,
+        i_delay_ms=1.0,
+        i_dur_ms=0.5,
+        build_fn=build_schild94,
+        node_idx_fn=schild94_node_indices,
+        pf_run_fn=run_intracellular_schild94,
+        pf_kwargs=dict(diameter=0.8, n_nodes=51, i_amp_nA=0.5,
+                       i_delay_ms=1.0, i_dur_ms=0.5, dt_ms=0.005, tstop_ms=10.0),
+    ),
+    "Schild97": ModelConfig(
+        key="Schild97",
+        name="Schild 1997 C-fiber (D=0.8 µm, N=51 compartments)",
+        diameter=0.8,
+        n_nodes=51,
+        dt_ms=0.005,
+        tstop_ms=10.0,
+        i_amp_nA=0.5,
+        i_delay_ms=1.0,
+        i_dur_ms=0.5,
+        build_fn=build_schild97,
+        node_idx_fn=schild97_node_indices,
+        pf_run_fn=run_intracellular_schild97,
+        pf_kwargs=dict(diameter=0.8, n_nodes=51, i_amp_nA=0.5,
+                       i_delay_ms=1.0, i_dur_ms=0.5, dt_ms=0.005, tstop_ms=10.0),
+    ),
 }
 
 
@@ -197,12 +255,10 @@ def time_jaxley(cfg: ModelConfig, n: int, device_str: str) -> tuple[float, float
 
     with jax.default_device(target_device):
         fwd, _ = build_jaxley_forward(cfg)
-        batch_fwd = jax.vmap(fwd)
+        batch_fwd = jax.jit(jax.vmap(fwd))   # jit is required — vmap alone runs eager
 
-        amps = jnp.ones(n, dtype=jnp.float64) * cfg.i_amp_nA
-        amps = amps.at[1:].multiply(
-            jnp.linspace(0.95, 1.05, n - 1) if n > 1 else jnp.ones(0)
-        )
+        amps = jnp.linspace(0.95 * cfg.i_amp_nA, 1.05 * cfg.i_amp_nA, n,
+                            dtype=jnp.float64)
 
         t0 = time.time()
         result = jax.block_until_ready(batch_fwd(amps))

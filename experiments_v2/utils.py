@@ -167,7 +167,9 @@ def jax_bisect(
     for _ in range(max_expand):
         if fires(lo):
             break
-        lo *= 2.0
+        # Double lo in its current direction: cathodic (lo<0) becomes more negative,
+        # anodic (lo>0) becomes more positive. Both directions expand the firing search.
+        lo = lo * 2.0
     if not fires(lo):
         raise RuntimeError(f"Fiber did not fire even at {lo} mA — check bounds or model")
     if fires(hi):

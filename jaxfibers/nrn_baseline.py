@@ -309,8 +309,17 @@ def find_threshold_extracellular_waveform(
         fiber = build_rattay_pyfibers(diameter=diameter, n_nodes=n_nodes, temperature=temperature)
     elif fiber_model == "sweeney":
         fiber = build_sweeney_pyfibers(diameter=diameter, n_nodes=n_nodes, temperature=temperature)
+    elif fiber_model == "mrg_interp":
+        fiber = build_mrg_interp_pyfibers(diameter=diameter, n_nodes=n_nodes, temperature=temperature)
+    elif fiber_model == "schild94":
+        fiber = build_schild94_pyfibers(diameter=diameter, n_nodes=n_nodes, temperature=temperature)
+    elif fiber_model == "schild97":
+        fiber = build_schild97_pyfibers(diameter=diameter, n_nodes=n_nodes, temperature=temperature)
     else:
-        raise ValueError(f"Unknown fiber_model '{fiber_model}'. Use 'mrg', 'sundt', 'rattay', or 'sweeney'.")
+        raise ValueError(
+            f"Unknown fiber_model '{fiber_model}'. "
+            f"Use 'mrg', 'sundt', 'rattay', 'sweeney', 'mrg_interp', 'schild94', or 'schild97'."
+        )
 
     probe_idx = fiber.loc_index(0.5)
     fiber.potentials = fiber.point_source_potentials(
@@ -519,6 +528,177 @@ def run_extracellular_sweeney(
     )
     waveform = lambda t: np.where((t >= delay_ms) & (t < delay_ms + pw_ms), 1.0, 0.0)
     stim = ScaledStim(waveform=waveform, dt=dt_ms, tstop=tstop_ms)
+    stim.run_sim(stimamp=1.0, fiber=fiber, ap_detect_location=probe_loc,
+                 fail_on_end_excitation=False)
+    t  = np.array(fiber.time)
+    vm = np.array([np.array(v) for v in fiber.vm])
+    gates = {k: np.array(v[0]) for k, v in fiber.gating.items()}
+    n_aps = fiber.apc[probe_idx].n
+    return NrnRunResult(t_ms=t, vm_mV=vm, gates=gates, n_nodes=fiber.nodecount,
+                        probe_node_idx=probe_idx, n_aps_at_probe=int(n_aps))
+
+
+# ── MRG_INTERPOLATION wrappers ────────────────────────────────────────────────
+
+def build_mrg_interp_pyfibers(diameter: float = 10.0, n_nodes: int = 11,
+                               temperature: float = 37.0,
+                               passive_end_nodes: bool = False):
+    """Wrap PyFibers `build_fiber(MRG_INTERPOLATION, ...)`."""
+    return build_fiber(
+        fiber_model=FiberModel.MRG_INTERPOLATION,
+        diameter=diameter,
+        n_nodes=n_nodes,
+        temperature=temperature,
+        passive_end_nodes=passive_end_nodes,
+    )
+
+
+def run_intracellular_mrg_interp(
+    diameter: float = 10.0,
+    n_nodes: int = 11,
+    temperature: float = 37.0,
+    i_delay_ms: float = 1.0,
+    i_dur_ms: float = 0.1,
+    i_amp_nA: float = 1.0,
+    dt_ms: float = 0.01,
+    tstop_ms: float = 3.0,
+    probe_loc: float = 0.5,
+    passive_end_nodes: bool = False,
+) -> NrnRunResult:
+    """Intracellular pulse on MRG_INTERPOLATION fiber, record V_m and gates."""
+    fiber = build_mrg_interp_pyfibers(diameter=diameter, n_nodes=n_nodes,
+                                      temperature=temperature,
+                                      passive_end_nodes=passive_end_nodes)
+    probe_idx = fiber.loc_index(probe_loc)
+    fiber.record_vm()
+    fiber.record_gating(indices=[probe_idx])
+
+    stim = IntraStim(
+        dt=dt_ms,
+        tstop=tstop_ms,
+        istim_ind=probe_idx,
+        clamp_kws=dict(
+            delay=i_delay_ms,
+            pw=i_dur_ms,
+            dur=tstop_ms,
+            freq=1000.0 / max(tstop_ms, 1.0),
+            amp=i_amp_nA,
+        ),
+    )
+    stim.run_sim(stimamp=1.0, fiber=fiber, ap_detect_location=probe_loc,
+                 fail_on_end_excitation=False)
+    t  = np.array(fiber.time)
+    vm = np.array([np.array(v) for v in fiber.vm])
+    gates = {k: np.array(v[0]) for k, v in fiber.gating.items()}
+    n_aps = fiber.apc[probe_idx].n
+    return NrnRunResult(t_ms=t, vm_mV=vm, gates=gates, n_nodes=fiber.nodecount,
+                        probe_node_idx=probe_idx, n_aps_at_probe=int(n_aps))
+
+
+# ── Schild 1994 wrappers ──────────────────────────────────────────────────────
+
+def build_schild94_pyfibers(diameter: float = 0.8, n_nodes: int = 21,
+                             temperature: float = 37.0,
+                             passive_end_nodes: bool = False):
+    """Wrap PyFibers `build_fiber(SCHILD94, ...)`."""
+    return build_fiber(
+        fiber_model=FiberModel.SCHILD94,
+        diameter=diameter,
+        n_nodes=n_nodes,
+        temperature=temperature,
+        passive_end_nodes=passive_end_nodes,
+    )
+
+
+def run_intracellular_schild94(
+    diameter: float = 0.8,
+    n_nodes: int = 21,
+    temperature: float = 37.0,
+    i_delay_ms: float = 1.0,
+    i_dur_ms: float = 0.5,
+    i_amp_nA: float = 0.5,
+    dt_ms: float = 0.005,
+    tstop_ms: float = 10.0,
+    probe_loc: float = 0.5,
+    passive_end_nodes: bool = False,
+) -> NrnRunResult:
+    """Intracellular pulse on Schild 1994 C-fiber, record V_m and gates."""
+    fiber = build_schild94_pyfibers(diameter=diameter, n_nodes=n_nodes,
+                                    temperature=temperature,
+                                    passive_end_nodes=passive_end_nodes)
+    probe_idx = fiber.loc_index(probe_loc)
+    fiber.record_vm()
+    fiber.record_gating(indices=[probe_idx])
+
+    stim = IntraStim(
+        dt=dt_ms,
+        tstop=tstop_ms,
+        istim_ind=probe_idx,
+        clamp_kws=dict(
+            delay=i_delay_ms,
+            pw=i_dur_ms,
+            dur=tstop_ms,
+            freq=1000.0 / max(tstop_ms, 1.0),
+            amp=i_amp_nA,
+        ),
+    )
+    stim.run_sim(stimamp=1.0, fiber=fiber, ap_detect_location=probe_loc,
+                 fail_on_end_excitation=False)
+    t  = np.array(fiber.time)
+    vm = np.array([np.array(v) for v in fiber.vm])
+    gates = {k: np.array(v[0]) for k, v in fiber.gating.items()}
+    n_aps = fiber.apc[probe_idx].n
+    return NrnRunResult(t_ms=t, vm_mV=vm, gates=gates, n_nodes=fiber.nodecount,
+                        probe_node_idx=probe_idx, n_aps_at_probe=int(n_aps))
+
+
+# ── Schild 1997 wrappers ──────────────────────────────────────────────────────
+
+def build_schild97_pyfibers(diameter: float = 0.8, n_nodes: int = 21,
+                             temperature: float = 37.0,
+                             passive_end_nodes: bool = False):
+    """Wrap PyFibers `build_fiber(SCHILD97, ...)`."""
+    return build_fiber(
+        fiber_model=FiberModel.SCHILD97,
+        diameter=diameter,
+        n_nodes=n_nodes,
+        temperature=temperature,
+        passive_end_nodes=passive_end_nodes,
+    )
+
+
+def run_intracellular_schild97(
+    diameter: float = 0.8,
+    n_nodes: int = 21,
+    temperature: float = 37.0,
+    i_delay_ms: float = 1.0,
+    i_dur_ms: float = 0.5,
+    i_amp_nA: float = 0.5,
+    dt_ms: float = 0.005,
+    tstop_ms: float = 10.0,
+    probe_loc: float = 0.5,
+    passive_end_nodes: bool = False,
+) -> NrnRunResult:
+    """Intracellular pulse on Schild 1997 C-fiber, record V_m and gates."""
+    fiber = build_schild97_pyfibers(diameter=diameter, n_nodes=n_nodes,
+                                    temperature=temperature,
+                                    passive_end_nodes=passive_end_nodes)
+    probe_idx = fiber.loc_index(probe_loc)
+    fiber.record_vm()
+    fiber.record_gating(indices=[probe_idx])
+
+    stim = IntraStim(
+        dt=dt_ms,
+        tstop=tstop_ms,
+        istim_ind=probe_idx,
+        clamp_kws=dict(
+            delay=i_delay_ms,
+            pw=i_dur_ms,
+            dur=tstop_ms,
+            freq=1000.0 / max(tstop_ms, 1.0),
+            amp=i_amp_nA,
+        ),
+    )
     stim.run_sim(stimamp=1.0, fiber=fiber, ap_detect_location=probe_loc,
                  fail_on_end_excitation=False)
     t  = np.array(fiber.time)

@@ -14,9 +14,15 @@ echo "Submitting experiments_v2 jobs ..."
 
 sbatch slurm/run_scaling.sbatch
 sbatch slurm/run_mrg_validation.sbatch
+sbatch slurm/run_mrg_interp_validation.sbatch
 sbatch slurm/run_sundt_validation.sbatch
+sbatch slurm/run_rattay_validation.sbatch
+sbatch slurm/run_sweeney_validation.sbatch
+sbatch slurm/run_schild94_validation.sbatch
+sbatch slurm/run_schild97_validation.sbatch
+sbatch slurm/run_selectivity_sweep.sbatch
 
 echo ""
-echo "All jobs submitted. Monitor with:"
+echo "All 9 jobs submitted. Monitor with:"
 echo "  squeue -u \$(whoami)"
 echo "  tail -f logs/<job-name>-<jobid>.out"

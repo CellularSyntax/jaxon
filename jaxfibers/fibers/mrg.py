@@ -85,8 +85,10 @@ class MrgGeometry:
 
     @property
     def delta_z_um(self) -> float:
-        params = _MRG_DISCRETE[self.diameter]
-        return params["delta_z"]
+        if self.diameter in _MRG_DISCRETE:
+            return _MRG_DISCRETE[self.diameter]["delta_z"]
+        d = self.diameter
+        return -8.215 * d**2 + 272.4 * d - 780.2 if d >= 5.643 else 81.08 * d + 37.84
 
     @property
     def total_length_um(self) -> float:
@@ -221,6 +223,127 @@ def build_mrg(
             comp.insert(Leak())
 
     # Channel param sets (pass 2)
+    for i in range(geom.n_comp):
+        comp = cell.branch(0).comp(i)
+        if geom.is_node[i]:
+            comp.set("AxnodeMyel_celsius", temperature)
+        else:
+            comp.set("Leak_gLeak", geom.gleak_S_cm2[i])
+            comp.set("Leak_eLeak", V_REST)
+
+    return cell, geom
+
+
+def _mrg_interp_params(diameter: float) -> dict:
+    """MRG_INTERPOLATION polynomial geometry for diameter d in [2, 16] µm."""
+    if not (2.0 <= diameter <= 16.0):
+        raise ValueError(
+            f"MRG_INTERPOLATION valid range is 2–16 µm (inclusive), got {diameter}"
+        )
+    d = diameter
+    flut_l = -0.1652 * d**2 + 6.354 * d - 0.2862
+    dz     = -8.215 * d**2 + 272.4 * d - 780.2 if d >= 5.643 else 81.08 * d + 37.84
+    nl     = -0.4749 * d**2 + 16.85 * d - 0.7648
+    node_d =  0.01093 * d**2 + 0.1008 * d + 1.099
+    axon_d =  0.02361 * d**2 + 0.3673 * d + 0.7122
+    return dict(delta_z=dz, paranodal_length_2=flut_l,
+                axon_diam=axon_d, node_diam=node_d, nl=nl)
+
+
+def _mrg_interp_geometry(diameter: float, n_nodes: int) -> MrgGeometry:
+    p = _mrg_interp_params(diameter)
+    delta_z = p["delta_z"]
+    axon_d  = p["axon_diam"]
+    node_d  = p["node_diam"]
+    nl      = p["nl"]
+    flut_l  = p["paranodal_length_2"]
+
+    stin_l = (delta_z - NODE_LENGTH - 2 * MYSA_LENGTH - 2 * flut_l) / 6.0
+    if stin_l <= 0:
+        raise RuntimeError(f"Negative STIN length for diameter={diameter}: {stin_l}")
+
+    Ra_ohm_cm = RHOA / 10000.0
+    rpn = _rpax_Mohm_cm(node_d, SPACE_P1)
+    rpf = _rpax_Mohm_cm(axon_d, SPACE_P2)
+    xc_myel = MYCM / (2 * nl)
+    xg_myel = MYGM / (2 * nl)
+    cm_myel  = 1.0 / (1.0 / CM_AXON + 1.0 / xc_myel)
+    g_mysa   = 1.0 / (1.0 / G_PAS_MYSA + 1.0 / xg_myel)
+    g_flut   = 1.0 / (1.0 / G_PAS_FLUT + 1.0 / xg_myel)
+    g_stin   = 1.0 / (1.0 / G_PAS_STIN + 1.0 / xg_myel)
+
+    section_type, length_um, diam_um = [], [], []
+    Ra_arr, cm_arr, gl_arr, is_node_arr = [], [], [], []
+    xrax_arr, xc_arr, xg_arr = [], [], []
+
+    n_periods = n_nodes - 1
+    period_template = (
+        ("node",  NODE_LENGTH, node_d, Ra_ohm_cm, CM_AXON,  0.0,    True,  rpn, 0.0,     1e10),
+        ("mysa",  MYSA_LENGTH, node_d, Ra_ohm_cm, cm_myel,  g_mysa, False, rpn, xc_myel, xg_myel),
+        ("flut",  flut_l,      axon_d, Ra_ohm_cm, cm_myel,  g_flut, False, rpf, xc_myel, xg_myel),
+        ("stin",  stin_l,      axon_d, Ra_ohm_cm, cm_myel,  g_stin, False, rpf, xc_myel, xg_myel),
+        ("stin",  stin_l,      axon_d, Ra_ohm_cm, cm_myel,  g_stin, False, rpf, xc_myel, xg_myel),
+        ("stin",  stin_l,      axon_d, Ra_ohm_cm, cm_myel,  g_stin, False, rpf, xc_myel, xg_myel),
+        ("stin",  stin_l,      axon_d, Ra_ohm_cm, cm_myel,  g_stin, False, rpf, xc_myel, xg_myel),
+        ("stin",  stin_l,      axon_d, Ra_ohm_cm, cm_myel,  g_stin, False, rpf, xc_myel, xg_myel),
+        ("stin",  stin_l,      axon_d, Ra_ohm_cm, cm_myel,  g_stin, False, rpf, xc_myel, xg_myel),
+        ("flut",  flut_l,      axon_d, Ra_ohm_cm, cm_myel,  g_flut, False, rpf, xc_myel, xg_myel),
+        ("mysa",  MYSA_LENGTH, node_d, Ra_ohm_cm, cm_myel,  g_mysa, False, rpn, xc_myel, xg_myel),
+    )
+    assert len(period_template) == SECTIONS_PER_PERIOD
+
+    for _ in range(n_periods):
+        for st, L, d, Ra, cm, gl, isn, xrax, xc, xg in period_template:
+            section_type.append(st); length_um.append(L); diam_um.append(d)
+            Ra_arr.append(Ra); cm_arr.append(cm); gl_arr.append(gl)
+            is_node_arr.append(isn)
+            xrax_arr.append(xrax); xc_arr.append(xc); xg_arr.append(xg)
+
+    section_type.append("node"); length_um.append(NODE_LENGTH); diam_um.append(node_d)
+    Ra_arr.append(Ra_ohm_cm); cm_arr.append(CM_AXON); gl_arr.append(0.0)
+    is_node_arr.append(True)
+    xrax_arr.append(rpn); xc_arr.append(0.0); xg_arr.append(1e10)
+
+    return MrgGeometry(
+        diameter=diameter, n_nodes=n_nodes,
+        section_type=section_type, length_um=length_um, diam_um=diam_um,
+        Ra_ohm_cm=Ra_arr, cm_uF_cm2=cm_arr, gleak_S_cm2=gl_arr,
+        is_node=is_node_arr,
+        xraxial_Mohm_cm=xrax_arr,
+        xc_myelin_uF_cm2=xc_arr,
+        xg_myelin_S_cm2=xg_arr,
+    )
+
+
+def build_mrg_interp(
+    diameter: float = 10.0,
+    n_nodes: int = 11,
+    temperature: float = 37.0,
+) -> tuple[jx.Cell, MrgGeometry]:
+    """Build an MRG fiber using polynomial-interpolated geometry (valid 2–16 µm).
+
+    Same channels (AxnodeMyel + Leak) as the discrete variant; geometry computed
+    from the McIntyre 2002 polynomial fits instead of the lookup table.
+    """
+    geom = _mrg_interp_geometry(diameter=diameter, n_nodes=n_nodes)
+    branch = jx.Branch(jx.Compartment(), ncomp=geom.n_comp)
+    cell = jx.Cell(branch, parents=[-1])
+
+    for i in range(geom.n_comp):
+        comp = cell.branch(0).comp(i)
+        comp.set("length",            geom.length_um[i])
+        comp.set("radius",            geom.diam_um[i] / 2.0)
+        comp.set("axial_resistivity", geom.Ra_ohm_cm[i])
+        comp.set("capacitance",       geom.cm_uF_cm2[i])
+        comp.set("v", V_REST)
+
+    for i in range(geom.n_comp):
+        comp = cell.branch(0).comp(i)
+        if geom.is_node[i]:
+            comp.insert(AxnodeMyel())
+        else:
+            comp.insert(Leak())
+
     for i in range(geom.n_comp):
         comp = cell.branch(0).comp(i)
         if geom.is_node[i]:

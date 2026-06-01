@@ -36,6 +36,7 @@ srun \
   bash -lc "
 set -euo pipefail
 export PROJECT_ROOT=\"${PROJECT_ROOT}\"
+export JAX_ENABLE_X64=1
 bash \"${PROJECT_ROOT}/slurm/setup_env.sh\"
 echo '[job] Running experiments_v2/scaling.py ...'
 python experiments_v2/scaling.py

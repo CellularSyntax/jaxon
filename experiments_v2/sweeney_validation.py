@@ -42,18 +42,18 @@ from scipy import stats
 
 import jax
 import jax.numpy as jnp
-import jaxley as jx
 from jaxley.solver_gate import solve_gate_exponential
+
+jax.config.update("jax_enable_x64", True)
 
 from jaxfibers.fibers.sweeney import (
     build_sweeney, node_indices, section_centers_um,
-    V_REST, CM_NODE,
+    V_REST,
 )
 from jaxfibers.channels.sweeney_channels import SweeneyNode
 from jaxfibers.stim.extracellular import point_source_potentials_mV
-from jaxfibers.stim.intracellular import rectangular_pulse, attach_intra_pulse
 from jaxfibers.nrn_baseline import run_intracellular_sweeney, run_extracellular_sweeney
-from jaxfibers.stim.mrg_extracellular_coupled import arrays_from_geometry, integrate
+from jaxfibers.stim.extracellular_coupled import arrays_from_geometry, integrate, _be_step
 
 from experiments_v2.utils import (
     PULSES, make_pulse_array, pf_find_threshold,
@@ -179,21 +179,56 @@ def task_traces() -> dict:
     print(f"\n=== Task 1: Vm + gate traces (D={TRACE_DIAM} µm) ===")
     D = TRACE_DIAM
 
-    # ── Intracellular (Jaxley bwd_euler) ─────────────────────────────────────
-    print("  [intra] JAX ...", flush=True)
-    cell_jax, geom_jax = build_sweeney(diameter=D, n_nodes=N_NODES)
-    nodes_jax = node_indices(geom_jax)
-    mid_comp  = nodes_jax[len(nodes_jax) // 2]
-    n_steps_i = int(5.0 / DT) + 1
-    t_intra   = np.arange(n_steps_i) * DT
-    pulse_i   = rectangular_pulse(t_intra, DELAY, INTRA_PW_MS, INTRA_AMP_NA)
-    attach_intra_pulse(cell_jax, mid_comp, pulse_i)
-    cell_jax.branch(0).comp(mid_comp).record("v")
-    for g in ["SweeneyNode_m", "SweeneyNode_h"]:
-        cell_jax.branch(0).comp(mid_comp).record(g)
-    rec_i = np.asarray(jx.integrate(cell_jax, delta_t=DT, t_max=5.0, solver="bwd_euler"))
-    jax_vm_i    = rec_i[0]
-    jax_gates_i = {"m": rec_i[1], "h": rec_i[2]}
+    # ── Intracellular (coupled solver + i_intra) ─────────────────────────────
+    # Jaxley bwd_euler fails for Sweeney: near-zero myelin capacitance (1e-6 µF/cm²)
+    # creates a stiff, degenerate system that the generic solver handles incorrectly.
+    # Use the coupled solver with i_intra instead (same fix applied to MRG validation).
+    print("  [intra] JAX (coupled solver) ...", flush=True)
+    static_i, mfn_i, state0_i, _, mid_i, _, _, _ = _make_jax_setup(D)
+    n_comp_i  = static_i["is_node"].shape[0]
+    is_node_i = static_i["is_node"]
+
+    n_steps_i    = int(5.0 / DT)
+    t_intra_j    = (np.arange(n_steps_i) + 1) * DT   # DT, 2*DT, ..., 5.0 ms
+    pulse_scalar = np.where(
+        (t_intra_j >= DELAY) & (t_intra_j < DELAY + INTRA_PW_MS),
+        INTRA_AMP_NA, 0.0,
+    ).astype(np.float64)
+    i_intra_arr = np.zeros((n_steps_i, n_comp_i), dtype=np.float64)
+    i_intra_arr[:, mid_i] = pulse_scalar
+    i_intra_j   = jnp.asarray(i_intra_arr)
+    Ve_zero     = jnp.zeros(n_comp_i, dtype=jnp.float64)
+
+    @jax.jit
+    def _intra_scan(Vi0, Vp0, M0, H0):
+        def _step(carry, s):
+            Vi, Vp, M, H = carry
+            g_eff, i_ion, (M2, H2) = mfn_i(Vi - Vp, (M, H), DT)
+            i_ion2 = i_ion - i_intra_j[s]
+            Vi2, Vp2 = _be_step(
+                Vi, Vp, Ve_zero, Ve_zero, g_eff, i_ion2,
+                static_i["Cm_dt"], static_i["Cmy_dt"], static_i["gmy"],
+                static_i["Gi_diag"], static_i["Gp_diag"],
+                static_i["Up"], static_i["Low"], is_node_i,
+            )
+            return (Vi2, Vp2, M2, H2), (Vi2[mid_i] - Vp2[mid_i], M2[mid_i], H2[mid_i])
+
+        _, (vm_t, m_t, h_t) = jax.lax.scan(
+            _step, (Vi0, Vp0, M0, H0), jnp.arange(n_steps_i),
+        )
+        return vm_t, m_t, h_t
+
+    M0_i, H0_i = state0_i
+    Vi0_i = jnp.full(n_comp_i, V_REST, dtype=jnp.float64)
+    Vp0_i = jnp.zeros(n_comp_i, dtype=jnp.float64)
+    vm_i, m_i, h_i = [np.array(x) for x in _intra_scan(Vi0_i, Vp0_i, M0_i, H0_i)]
+
+    t_intra     = np.concatenate([[0.0], t_intra_j])
+    jax_vm_i    = np.concatenate([[V_REST], vm_i])
+    jax_gates_i = {
+        "m": np.concatenate([[float(M0_i[mid_i])], m_i]),
+        "h": np.concatenate([[float(H0_i[mid_i])], h_i]),
+    }
 
     print("  [intra] NEURON ...", flush=True)
     nr_i = run_intracellular_sweeney(
@@ -218,6 +253,40 @@ def task_traces() -> dict:
     t_extra_jax = (np.arange(N_STEPS) + 1) * DT
     jax_vm_e    = np.asarray(trace_e)
 
+    print("  [extra] recording gate states (JAX scan) ...", flush=True)
+    n_comp_e  = static["is_node"].shape[0]
+    is_node_e = static["is_node"]
+    shape_g      = jnp.asarray(pm_extra, dtype=jnp.float64)
+    shape_prev_g = jnp.concatenate([jnp.zeros(1, dtype=jnp.float64), shape_g[:-1]])
+
+    @jax.jit
+    def _extra_gates_scan(Vi0, Vp0, M0, H0):
+        def _step(carry, s):
+            Vi, Vp, M, H = carry
+            ve      = Ve_scaled * shape_g[s]
+            ve_prev = Ve_scaled * shape_prev_g[s]
+            g_eff, i_ion, (M2, H2) = mfn(Vi - Vp, (M, H), DT)
+            Vi2, Vp2 = _be_step(
+                Vi, Vp, ve, ve_prev, g_eff, i_ion,
+                static["Cm_dt"], static["Cmy_dt"], static["gmy"],
+                static["Gi_diag"], static["Gp_diag"],
+                static["Up"], static["Low"], is_node_e,
+            )
+            return (Vi2, Vp2, M2, H2), (M2[mid], H2[mid])
+
+        _, (m_t, h_t) = jax.lax.scan(
+            _step,
+            (Vi0, Vp0, M0, H0),
+            jnp.arange(N_STEPS),
+        )
+        return m_t, h_t
+
+    M0, H0 = state0
+    Vi0_e = jnp.full(n_comp_e, V_REST, dtype=jnp.float64)
+    Vp0_e = jnp.zeros(n_comp_e, dtype=jnp.float64)
+    m_e, h_e = [np.array(x) for x in _extra_gates_scan(Vi0_e, Vp0_e, M0, H0)]
+    jax_gates_e = {"m": m_e, "h": h_e}
+
     print(f"  [extra] NEURON (amp={amp_extra:.3f} mA) ...", flush=True)
     nr_e     = run_extracellular_sweeney(
         diameter=D, n_nodes=N_NODES, src_height_um=SRC_H,
@@ -232,7 +301,9 @@ def task_traces() -> dict:
         t_intra_nrn=nr_i.t_ms, vm_intra_nrn=nr_i.vm_mV[nr_i.probe_node_idx],
         gates_intra_nrn=nr_i.gates,
         t_extra_jax=t_extra_jax, vm_extra_jax=jax_vm_e,
+        gates_extra_jax=jax_gates_e,
         t_extra_nrn=nr_e.t_ms, vm_extra_nrn=nrn_vm_e,
+        gates_extra_nrn=nr_e.gates,
         amp_extra_mA=float(amp_extra), threshold_extra_mA=float(thr_jax),
         diameter=D,
     )
@@ -399,10 +470,19 @@ def fig_traces(data: dict) -> None:
     ax.legend(fontsize=9); ax.grid(alpha=0.3)
 
     ax = axs[1, 1]
-    ax.text(0.5, 0.5,
-            "(D) Extracellular gates\n(recorded from coupled-solver run,\nsee data_sweeney_traces.json)",
-            ha="center", va="center", transform=ax.transAxes, fontsize=10)
-    ax.set_axis_off()
+    gate_colors = {"m": "C0", "h": "C2"}
+    gates_e_nrn = data.get("gates_extra_nrn", {})
+    gates_e_jax = data.get("gates_extra_jax", {})
+    for g, c in gate_colors.items():
+        nrn_g = gates_e_nrn.get(g, [])
+        if len(nrn_g):
+            ax.plot(data["t_extra_nrn"], nrn_g, color=c, lw=2.0, label=f"NEURON {g}")
+        jax_g = gates_e_jax.get(g, [])
+        if len(jax_g):
+            ax.plot(data["t_extra_jax"], jax_g, color=c, lw=1.2, ls="--", label=f"JAX {g}")
+    ax.set_title("(D) Extracellular gates  (NEURON solid, JAX dashed)")
+    ax.set_xlabel("time (ms)"); ax.set_ylabel("gate value")
+    ax.legend(fontsize=8, ncol=2); ax.grid(alpha=0.3)
 
     fig.suptitle(f"Sweeney D={data['diameter']} µm — PyFibers/NEURON vs JAX", fontsize=11)
     path = OUT / "fig_sweeney_traces.png"

@@ -90,7 +90,7 @@ JAX bisection and PyFibers threshold search both respect this convention.
 
 ## JAX coupled solver
 
-The extracellular simulations use `mrg_extracellular_coupled.integrate`, a custom
+The extracellular simulations use `extracellular_coupled.integrate`, a custom
 backward-Euler solver for the (Vi, Vpax) double-cable system. For Sundt, the same
 solver is used with `is_node=True` everywhere, which collapses the periaxonal space
 to the trivial constraint Vp = Ve (equivalent to a single-cable equation).
@@ -127,4 +127,4 @@ Results are written to `outputs/` in the project root (mounted inside the contai
 | Intracellular peak Vm error | < 1 mV | < 1 mV |
 
 These targets are based on the 0.0% error achieved for D=10 µm MRG in the coupled
-solver unit test (`mrg_extracellular_coupled`).
+solver unit test (`extracellular_coupled`).

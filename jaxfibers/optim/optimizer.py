@@ -18,6 +18,7 @@ import numpy as np
 import optax
 
 from jaxfibers.stim.batch_solve import FiberStatics, batch_integrate_m_max
+from jaxfibers.stim.multichannel_field import compute_ve_unit_jax
 from jaxfibers.optim.losses import activation_proxy_batch, wq_loss, wbce, selectivity_index
 
 
@@ -201,3 +202,110 @@ def run_waveform_optimization(
             )
 
     return {"u": best_u, "history": history}
+
+
+# ─────────────────────────────────── joint waveform + electrode position opt ──
+
+def run_joint_optimization(
+    fiber_statics_batch: FiberStatics,
+    state0_batch: tuple,
+    fiber_xy_um: jnp.ndarray,           # [n_fibers, 2]
+    all_centers_um: jnp.ndarray,        # [n_fibers, n_comp]
+    pulse_mask: jnp.ndarray,            # [T]
+    node_indices: np.ndarray,           # [n_fibers, n_nodes]
+    target_mask: np.ndarray,            # [n_fibers] bool
+    dt: float,
+    contact_xyz_init: np.ndarray,       # [K, 3] initial contact positions (µm)
+    amps_init: np.ndarray,              # [K] initial amplitudes (mA)
+    n_steps: int = 100,
+    lr_amp: float = 5e-2,
+    lr_pos: float = 10.0,              # µm / step
+    amp_clip: tuple[float, float] = (-5.0, 0.0),
+    xyz_min: float = -3000.0,          # µm
+    xyz_max: float = 3000.0,           # µm
+    weights: np.ndarray | None = None,
+    verbose: bool = True,
+    sigma_S_m: float = 0.3,
+) -> dict:
+    """Jointly optimize per-contact amplitudes and electrode positions.
+
+    Optimization variables:
+        amps           [K]    — per-contact amplitudes (mA)
+        contact_xyz_um [K, 3] — contact positions (µm)
+
+    Uses two independent Adam optimizers (separate learning rates for
+    amplitude and position). Returns best checkpoint over all iterations.
+
+    Returns
+    -------
+    result : dict with keys
+        'amps'           : [K] best amplitudes (mA)
+        'contact_xyz_um' : [K, 3] best contact positions (µm)
+        'history'        : dict of lists {'loss', 'si', 'amps', 'xyz'}
+    """
+    K = contact_xyz_init.shape[0]
+    n_fibers = fiber_xy_um.shape[0]
+
+    fiber_xy_j    = jnp.asarray(fiber_xy_um,   dtype=jnp.float64)
+    all_centers_j = jnp.asarray(all_centers_um, dtype=jnp.float64)
+    pulse_j       = jnp.asarray(pulse_mask,     dtype=jnp.float64)
+    node_idx_j    = jnp.asarray(node_indices,   dtype=jnp.int32)
+    w = (jnp.ones(n_fibers, dtype=jnp.float64) / n_fibers
+         if weights is None else jnp.asarray(weights, dtype=jnp.float64))
+
+    amps0 = jnp.asarray(amps_init,       dtype=jnp.float64)
+    xyz0  = jnp.asarray(contact_xyz_init, dtype=jnp.float64)
+
+    def loss_fn(params):
+        amps, contact_xyz = params
+        Ve_unit   = compute_ve_unit_jax(fiber_xy_j, all_centers_j, contact_xyz, sigma_S_m)
+        Ve_comb   = jnp.einsum("k,kfn->fn", -amps, Ve_unit)
+        Ve_seq    = pulse_j[:, None, None] * Ve_comb[None, :, :]
+        Ve_seq    = jnp.transpose(Ve_seq, (1, 0, 2))       # [n_fibers, T, n_comp]
+        m_max     = batch_integrate_m_max(fiber_statics_batch, state0_batch, Ve_seq, dt)
+        acts      = activation_proxy_batch(m_max, node_idx_j)
+        loss      = wq_loss(acts, target_mask, w)
+        return loss, acts
+
+    loss_and_grad = jax.jit(jax.value_and_grad(loss_fn, has_aux=True))
+
+    opt_amp = optax.chain(optax.clip_by_global_norm(1.0),   optax.adam(lr_amp))
+    opt_pos = optax.chain(optax.clip_by_global_norm(100.0), optax.adam(lr_pos))
+    st_amp  = opt_amp.init(amps0)
+    st_pos  = opt_pos.init(xyz0)
+    amps, xyz = amps0, xyz0
+
+    history   = {"loss": [], "si": [], "amps": [], "xyz": []}
+    best_loss = float("inf")
+    best_amps = np.array(amps0)
+    best_xyz  = np.array(contact_xyz_init)
+
+    if verbose:
+        print(f"  Joint optimisation: K={K} contacts, {n_steps} iters")
+
+    for i in range(n_steps):
+        t0 = time.time()
+        (loss_val, acts_val), (g_amp, g_xyz) = loss_and_grad((amps, xyz))
+        upd_amp, st_amp = opt_amp.update(g_amp, st_amp)
+        upd_pos, st_pos = opt_pos.update(g_xyz, st_pos)
+        amps = jnp.clip(optax.apply_updates(amps, upd_amp), amp_clip[0], amp_clip[1])
+        xyz  = jnp.clip(optax.apply_updates(xyz,  upd_pos), xyz_min, xyz_max)
+
+        si = selectivity_index(np.array(acts_val), target_mask)
+        history["loss"].append(float(loss_val))
+        history["si"].append(si)
+        history["amps"].append(np.array(amps))
+        history["xyz"].append(np.array(xyz))
+        if float(loss_val) < best_loss:
+            best_loss = float(loss_val)
+            best_amps = np.array(amps)
+            best_xyz  = np.array(xyz)
+
+        if verbose and (i % max(1, n_steps // 10) == 0 or i == n_steps - 1):
+            dt_ms = (time.time() - t0) * 1000
+            print(
+                f"  [{i:3d}/{n_steps}] loss={float(loss_val):.4f}  "
+                f"SI={si:+.3f}  dt={dt_ms:.0f}ms"
+            )
+
+    return {"amps": best_amps, "contact_xyz_um": best_xyz, "history": history}

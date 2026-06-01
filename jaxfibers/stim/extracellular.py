@@ -30,6 +30,7 @@ import math
 from typing import Optional
 
 import numpy as np
+import jax
 import jax.numpy as jnp
 
 
@@ -56,6 +57,30 @@ def point_source_potentials_mV(
     r = np.sqrt(dx ** 2 + dy ** 2 + dz ** 2)
     # i0 in mA, r in m, sigma in S/m → V in mV directly.
     return i0_mA / (4.0 * math.pi * sigma_S_m * r)
+
+
+def point_source_potentials_mV_jax(
+    section_centers_um: jnp.ndarray,
+    contact_xyz_um: jnp.ndarray,
+    fiber_xy_um: jnp.ndarray,
+    i0_mA: float = -1.0,
+    sigma_S_m: float = 0.3,
+) -> jnp.ndarray:
+    """JAX-native point-source potential — differentiable w.r.t. contact_xyz_um.
+
+    Parameters
+    ----------
+    section_centers_um : [n_comp] — z-positions of compartment centers.
+    contact_xyz_um     : [3]      — (x, y, z) of the contact in µm.
+    fiber_xy_um        : [2]      — (x, y) offset of the fiber in µm.
+    """
+    cx, cy, cz = contact_xyz_um[0], contact_xyz_um[1], contact_xyz_um[2]
+    fx, fy     = fiber_xy_um[0], fiber_xy_um[1]
+    dx = (cx - fx) * 1e-6
+    dy = (cy - fy) * 1e-6
+    dz = (cz - section_centers_um) * 1e-6
+    r  = jnp.sqrt(dx ** 2 + dy ** 2 + dz ** 2 + 1e-24)   # m; regularised
+    return jnp.float64(i0_mA) / (4.0 * jnp.pi * jnp.float64(sigma_S_m) * r)
 
 
 def activating_currents_nA(

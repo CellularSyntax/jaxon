@@ -11,8 +11,10 @@ Workflow
 from __future__ import annotations
 
 import numpy as np
+import jax
+import jax.numpy as jnp
 
-from jaxfibers.stim.extracellular import point_source_potentials_mV
+from jaxfibers.stim.extracellular import point_source_potentials_mV, point_source_potentials_mV_jax
 from jaxfibers.fibers.mrg import section_centers_um, _mrg_geometry, _mrg_interp_geometry
 from jaxfibers.nerve.geometry import NerveGeometry
 
@@ -107,3 +109,52 @@ def precompute_ve_unit(
 
     node_indices = np.array(all_node_idx, dtype=np.int32)  # [n_fibers, n_nodes]
     return Ve_unit, node_indices, geoms
+
+
+def build_fiber_arrays(
+    nerve_geom: NerveGeometry,
+    geoms: list,
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    """Extract JAX arrays needed for differentiable field computation.
+
+    Returns
+    -------
+    fiber_xy_um   : [n_fibers, 2]      — fiber (x, y) positions in µm.
+    all_centers_um: [n_fibers, n_comp] — compartment z-centers in µm.
+    """
+    fiber_xy = jnp.stack([
+        jnp.asarray(nerve_geom.fiber_x_um, dtype=jnp.float64),
+        jnp.asarray(nerve_geom.fiber_y_um, dtype=jnp.float64),
+    ], axis=1)                                           # [n_fibers, 2]
+    all_centers = jnp.stack([
+        jnp.asarray(section_centers_um(g), dtype=jnp.float64) for g in geoms
+    ])                                                   # [n_fibers, n_comp]
+    return fiber_xy, all_centers
+
+
+def compute_ve_unit_jax(
+    fiber_xy_um: jnp.ndarray,
+    all_centers_um: jnp.ndarray,
+    contact_xyz_um: jnp.ndarray,
+    sigma_S_m: float = 0.3,
+) -> jnp.ndarray:
+    """JAX-native Ve_unit — differentiable w.r.t. contact_xyz_um.
+
+    Parameters
+    ----------
+    fiber_xy_um   : [n_fibers, 2]
+    all_centers_um: [n_fibers, n_comp]
+    contact_xyz_um: [K, 3]
+
+    Returns
+    -------
+    Ve_unit : [K, n_fibers, n_comp]  (mV at i0 = -1 mA)
+    """
+    def _one_contact_fiber(contact_xyz, fiber_xy, centers):
+        return point_source_potentials_mV_jax(
+            centers, contact_xyz, fiber_xy, i0_mA=-1.0, sigma_S_m=sigma_S_m
+        )
+
+    _over_fibers  = jax.vmap(_one_contact_fiber, in_axes=(None, 0, 0))
+    _over_contacts = jax.vmap(_over_fibers,      in_axes=(0, None, None))
+    return _over_contacts(contact_xyz_um, fiber_xy_um, all_centers_um)  # [K, n_fibers, n_comp]

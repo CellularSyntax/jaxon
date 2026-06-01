@@ -1,0 +1,16 @@
+# GPU requirements for the cluster (Linux + CUDA 12).
+# Identical to requirements.txt except jax[cpu] is replaced by jax[cuda12].
+# Use this file when submitting Slurm jobs.
+
+jax[cuda12]==0.6.2
+jaxley==0.13.0
+optax==0.2.8
+numpy>=2.2
+scipy
+matplotlib
+pandas
+tqdm
+neuron==9.0.1
+pyfibers==0.8.5
+pytest
+ipykernel

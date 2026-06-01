@@ -1,0 +1,53 @@
+# Conda env recipe for jaxley_fibers.
+#
+# CPU-only install (any platform, including Apple silicon):
+#     conda env create -f environment.yml
+#
+# CUDA install (Linux / Windows with NVIDIA GPU):
+#     1. EDIT this file: in the `pip:` section below, comment out
+#            "jax[cpu]==0.6.2"
+#        and uncomment
+#            "jax[cuda12]==0.6.2"
+#     2. conda env create -f environment.yml
+#     3. python -c "import jax; print(jax.devices())"
+#        -> should list at least one CudaDevice.
+#
+# Notes:
+#   * NEURON is installed via pip (the conda-forge build often lags); both
+#     Linux and Windows wheels are published on PyPI.
+#   * After install: run `pyfibers_compile` once to compile the .mod files
+#     for the local platform. On Windows this needs MSVC; the PyFibers docs
+#     have detailed setup notes if compilation fails.
+#   * Versions are pinned to what was verified to work on the dev machine
+#     (Apple M1 Max, 2026-05-31). Newer minor versions of jaxley / jax /
+#     pyfibers should also work — bump cautiously.
+#
+name: jaxley_fibers
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - pip:
+      # --- core JAX stack ---
+      # On Windows, jax[cuda12] has no PyPI wheels. Install CPU first, then
+      # manually: pip install -U "jax[cuda12]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+      - "jax[cpu]==0.6.2"
+
+      # --- Jaxley + scientific Python ---
+      - "jaxley==0.13.0"
+      - "numpy==2.2.6"
+      - "scipy==1.15.3"
+      - "matplotlib==3.10.9"
+      - "pandas==2.3.3"
+      - "optax==0.2.8"
+      - "tqdm"
+
+      # --- NEURON baseline (PyFibers wraps it) ---
+      # neuron: NOT pip-installable on Windows. Install NEURON separately (e.g. c:\nrn826)
+      # and add c:\nrn826\lib\python to PYTHONPATH (see README Windows notes).
+      - "pyfibers==0.8.5"
+
+      # --- developer tools ---
+      - "pytest"
+      - "ipykernel"

@@ -1,0 +1,50 @@
+# --- Python bytecode / caches ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Notebook crud ---
+.ipynb_checkpoints/
+
+# --- Virtual environments ---
+venv/
+.venv/
+env/
+.conda/
+
+# --- OS junk ---
+.DS_Store
+Thumbs.db
+
+# --- Editor / IDE ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- NEURON-compiled mod artefacts (these are platform-specific; regenerate
+#     with `pyfibers_compile` after installing on a new host) ---
+x86_64/
+arm64/
+*.dylib
+*.dll
+*.so
+
+# --- Local outputs from runs (keep the figures + tables we commit by hand;
+#     these patterns are for things you don't want auto-tracked) ---
+outputs/*.log
+outputs/scratch/
+*.tmp
+
+# --- Cloned upstream code lives in reference_code/ but ignore its
+#     build artefacts ---
+reference_code/**/__pycache__/
+reference_code/**/*.egg-info/
+reference_code/**/x86_64/
+reference_code/**/arm64/

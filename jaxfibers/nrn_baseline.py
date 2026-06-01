@@ -321,15 +321,18 @@ def find_threshold_extracellular_waveform(
             f"Use 'mrg', 'sundt', 'rattay', 'sweeney', 'mrg_interp', 'schild94', or 'schild97'."
         )
 
-    probe_idx = fiber.loc_index(0.5)
     fiber.potentials = fiber.point_source_potentials(
         x=0.0, y=src_height_um, z=fiber.length / 2.0, i0=1.0, sigma=sigma_S_m,
     )
     stim = ScaledStim(waveform=waveform_callable, dt=dt_ms, tstop=tstop_ms)
 
     def fires(amp: float) -> bool:
+        # Use any-node detection to match the JAX criterion (max Vm over all nodes).
+        # Center-only detection fails for anodic pulses: anodic block prevents center
+        # firing at intermediate amplitudes, causing the bisect to latch onto the
+        # high-amplitude anodal-break root instead of the true activation threshold.
         stim.run_sim(stimamp=amp, fiber=fiber, ap_detect_location=0.5, fail_on_end_excitation=False)
-        return fiber.apc[probe_idx].n > 0
+        return np.any([apc.n > 0 for apc in fiber.apc])
 
     lo, hi = bounds_mA
     for _ in range(10):

@@ -72,7 +72,7 @@ SEED_END=$((SEED_START + 10))
 
 **Why:** Schild94/97 are the most complete unmyelinated autonomic fiber models (11 NMODL mechanisms, Ca²⁺ dynamics, 3 pumps). Validation against PyFibers/NEURON across all diameters and pulse shapes is essential for credibility.
 
-### 2A — `schild94_validation.py`
+### 2A — `schild94_validation.py`  ✅ DONE
 
 File: `experiments_v2/schild94_validation.py`  
 Template: `experiments_v2/sweeney_validation.py` (same structure)
@@ -214,8 +214,8 @@ Optimization over: `(amps [K], contact_xyz_um [K × 3])` jointly.
 
 | Phase | Task | Status |
 |-------|------|--------|
-| 1 | 1A batch_solve checkpoint | TODO |
-| 1 | 1B optimizer checkpoint | TODO |
+| 1 | 1A batch_solve checkpoint | **DONE** (commit 669755d) |
+| 1 | 1B optimizer checkpoint | **DONE** (flows through 1A) |
 | 1 | 1C 100+ seeds + array job | TODO |
 | 2 | 2A Schild94 validation | TODO |
 | 2 | 2B Schild97 validation | TODO |

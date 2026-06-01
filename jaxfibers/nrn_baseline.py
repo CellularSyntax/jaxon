@@ -652,6 +652,43 @@ def run_intracellular_schild94(
                         probe_node_idx=probe_idx, n_aps_at_probe=int(n_aps))
 
 
+def run_extracellular_schild94(
+    diameter: float = 0.8,
+    n_nodes: int = 21,
+    temperature: float = 37.0,
+    src_height_um: float = 1000.0,
+    sigma_S_m: float = 0.3,
+    pw_ms: float = 0.2,
+    delay_ms: float = 1.0,
+    amp_mA: float = -1.0,
+    dt_ms: float = 0.005,
+    tstop_ms: float = 15.0,
+    probe_loc: float = 0.5,
+    passive_end_nodes: bool = False,
+) -> NrnRunResult:
+    """Extracellular point-source rectangular pulse on Schild 1994 C-fiber."""
+    fiber = build_schild94_pyfibers(diameter=diameter, n_nodes=n_nodes,
+                                    temperature=temperature,
+                                    passive_end_nodes=passive_end_nodes)
+    probe_idx = fiber.loc_index(probe_loc)
+    fiber.record_vm()
+    fiber.record_gating(indices=[probe_idx])
+
+    fiber.potentials = fiber.point_source_potentials(
+        x=0.0, y=src_height_um, z=fiber.length / 2.0, i0=amp_mA, sigma=sigma_S_m,
+    )
+    waveform = lambda t: np.where((t >= delay_ms) & (t < delay_ms + pw_ms), 1.0, 0.0)
+    stim = ScaledStim(waveform=waveform, dt=dt_ms, tstop=tstop_ms)
+    stim.run_sim(stimamp=1.0, fiber=fiber, ap_detect_location=probe_loc,
+                 fail_on_end_excitation=False)
+    t  = np.array(fiber.time)
+    vm = np.array([np.array(v) for v in fiber.vm])
+    gates = {k: np.array(v[0]) for k, v in fiber.gating.items()}
+    n_aps = fiber.apc[probe_idx].n
+    return NrnRunResult(t_ms=t, vm_mV=vm, gates=gates, n_nodes=fiber.nodecount,
+                        probe_node_idx=probe_idx, n_aps_at_probe=int(n_aps))
+
+
 # ── Schild 1997 wrappers ──────────────────────────────────────────────────────
 
 def build_schild97_pyfibers(diameter: float = 0.8, n_nodes: int = 21,

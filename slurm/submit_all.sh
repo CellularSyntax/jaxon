@@ -21,8 +21,9 @@ sbatch slurm/run_sweeney_validation.sbatch
 sbatch slurm/run_schild94_validation.sbatch
 sbatch slurm/run_schild97_validation.sbatch
 sbatch slurm/run_selectivity_sweep.sbatch
+sbatch slurm/run_selectivity_joint_opt.sbatch
 
 echo ""
-echo "All 9 jobs submitted. Monitor with:"
+echo "All 10 jobs submitted. Monitor with:"
 echo "  squeue -u \$(whoami)"
 echo "  tail -f logs/<job-name>-<jobid>.out"

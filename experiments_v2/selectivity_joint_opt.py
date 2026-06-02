@@ -50,6 +50,12 @@ OUT = ensure_dir(ROOT / "outputs" / "selectivity_joint_opt")
 # ─────────────────────────────────────────────── experiment parameters ────────
 SEED            = 0
 N_FIBERS        = 200          # FD joint pass: 25×200=5000 effective fibers per step
+FIBER_DIAMETER_UM = 5.7        # Hussain 2024 methodology: single representative
+                                # MRG diameter per fascicle.  Mixed diameters
+                                # confuse LBFGS and aren't needed for the
+                                # selectivity optimisation (Hussain assumed all
+                                # fibres of a given diameter in a fascicle share
+                                # the same threshold).
 N_NODES         = 21           # n_comp = 20×11 + 1 = 221 (~23 mm fiber for D=10 µm)
 N_CONTACTS      = 6
 NERVE_RADIUS_UM = 500.0
@@ -73,12 +79,12 @@ def main():
         n_fibers=N_FIBERS,
         nerve_radius_um=NERVE_RADIUS_UM,
         target_fraction=TARGET_FRACTION,
+        diameters=[FIBER_DIAMETER_UM],
         seed=SEED,
     )
     n_tgt = int(nerve.target_mask.sum())
-    d_min, d_max = float(nerve.fiber_diam.min()), float(nerve.fiber_diam.max())
     print(f"[joint-opt] Nerve: {N_FIBERS} fibers  targets={n_tgt}/{N_FIBERS} ({n_tgt/N_FIBERS*100:.0f}%)  "
-          f"D=[{d_min:.1f},{d_max:.1f}] µm", flush=True)
+          f"D={FIBER_DIAMETER_UM} µm", flush=True)
 
     N_STEPS = int(T_STOP / DT)
     t_grid  = (np.arange(N_STEPS) + 1) * DT

@@ -5,7 +5,10 @@ optimisation.  Saves one JSON per seed and produces aggregate figures.
 
 Setup (per seed)
 ----------------
-- N_FIBERS MRG fibers, mixed diameters, NERVE_RADIUS_UM nerve radius
+- N_FIBERS MRG fibers, **single diameter D = FIBER_DIAMETER_UM** (Hussain 2024
+  methodology: a representative 5.7 µm fiber per fascicle; we go further and
+  vmap hundreds of fibers within the synthetic nerve to showcase the JAX
+  parallel speed advantage).
 - 6-contact ring cuff, 1.5 mm radius
 - Target: eccentric fascicle ~30% area
 - 3 ms simulation window (PW=0.1 + DELAY=1.0 + AP propagation ~2 ms)
@@ -73,7 +76,15 @@ OUT = ensure_dir(ROOT / "outputs" / "selectivity_sweep")
 
 # ─────────────────────────────────────────────────── sweep parameters ─────────
 N_NERVES        = 100   # total seeds across all array tasks
-N_FIBERS        = 100          # 5× more fibers → better population statistics
+N_FIBERS        = 200          # Hussain placed 1 fiber per fascicle; we vmap
+                                # hundreds per nerve realisation to showcase
+                                # the parallel speed advantage of jaxfibers.
+FIBER_DIAMETER_UM = 5.7        # Hussain's representative MRG fiber.  Single
+                                # diameter only — mixed diameters slow LBFGS
+                                # convergence and aren't needed for the
+                                # selectivity optimisation (Hussain assumed
+                                # all fibres of a given diameter in a fascicle
+                                # share the same threshold).
 N_NODES         = 21           # n_comp = 20×11 + 1 = 221 (~23 mm fiber for D=10 µm)
 N_CONTACTS      = 6
 NERVE_RADIUS_UM = 500.0
@@ -104,13 +115,13 @@ def _build_seed_inputs(seed: int, verbose: bool = True) -> dict:
         n_fibers=N_FIBERS,
         nerve_radius_um=NERVE_RADIUS_UM,
         target_fraction=TARGET_FRACTION,
+        diameters=[FIBER_DIAMETER_UM],
         seed=seed,
     )
     n_tgt = int(nerve.target_mask.sum())
-    d_min, d_max = float(nerve.fiber_diam.min()), float(nerve.fiber_diam.max())
     if verbose:
         print(f"{label} Nerve: {N_FIBERS} fibers  targets={n_tgt}/{N_FIBERS} "
-              f"({n_tgt/N_FIBERS*100:.0f}%)  D=[{d_min:.1f},{d_max:.1f}] µm", flush=True)
+              f"({n_tgt/N_FIBERS*100:.0f}%)  D={FIBER_DIAMETER_UM} µm", flush=True)
 
     contact_xyz = make_ring_cuff_positions(
         n_contacts=N_CONTACTS, cuff_radius_um=CUFF_RADIUS_UM, cuff_z_um=0.0,

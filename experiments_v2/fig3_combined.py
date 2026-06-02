@@ -84,53 +84,38 @@ def _panel_a_dc_block(subfig):
 
 
 def _panel_b_khz_block(subfig):
-    """Panel b — kHz block, jax + pyfibers."""
+    """Panel b — kHz block Vm traces at AP-detection location, jax + pyfibers."""
     data = _load_json(ROOT / "outputs" / "khz_block" / "data_khz_block.json")
-    if data is None or "per_diameter" not in data:
+    if data is None or "results" not in data or not isinstance(data["results"], list):
         subfig.suptitle("b   kHz block (no/legacy data)",
                          fontsize=11, fontweight="bold", x=0.02, ha="left", y=1.0)
         return
-    diams = data["diameters_um"]
-    freqs = data["freqs_khz"]
-    amp_max = data["amp_max_mA"]
-    axes = subfig.subplots(len(freqs), len(diams), sharey=True)
-    for c, D in enumerate(diams):
-        dia_data = next(d for d in data["per_diameter"] if d["diameter_um"] == D)
-        for r, f_khz in enumerate(freqs):
-            ax = axes[r, c]
-            key = str(f_khz) if str(f_khz) in dia_data["results_by_freq"] else float(f_khz)
-            d = dia_data["results_by_freq"][key]
-            amps = np.array(d["amps_mA"])
-            mp = np.array(d.get("mean_pf",  d.get("mean", [])))
-            cp = np.array(d.get("ci95_half_pf",  d.get("ci95_half", [])))
-            mj = np.array(d.get("mean_jax", d.get("mean", [])))
-            cj = np.array(d.get("ci95_half_jax", d.get("ci95_half", [])))
-            if len(mp):
-                ax.plot(amps, mp, color="C0", lw=1.3,
-                         label="PyFibers" if (r == 0 and c == 0) else None)
-                if len(cp):
-                    ax.fill_between(amps, mp - cp, mp + cp, color="C0", alpha=0.2)
-            if len(mj):
-                ax.plot(amps, mj, color="C1", lw=1.0, ls="--",
-                         label="jaxfibers" if (r == 0 and c == 0) else None)
-                if len(cj):
-                    ax.fill_between(amps, mj - cj, mj + cj, color="C1", alpha=0.2)
-            if r == 0:
-                ax.set_title(f"{D} µm", fontsize=9)
-            if c == 0:
-                ax.set_ylabel(f"{int(f_khz)} kHz\n# APs", fontsize=8)
-            if r == len(freqs) - 1:
-                ax.set_xlabel("stim amp (mA)", fontsize=8)
-            ax.tick_params(labelsize=7)
-            ax.grid(alpha=0.3, lw=0.4)
-            ax.set_ylim(bottom=-1)
-            x_max = amp_max[str(D)] if isinstance(amp_max, dict) and str(D) in amp_max \
-                      else (amp_max[D] if isinstance(amp_max, dict) and D in amp_max
-                              else max(amps))
-            ax.set_xlim(0, x_max)
-            if r == 0 and c == 0:
-                ax.legend(fontsize=7, loc="upper right")
-    subfig.suptitle("b   Kilohertz frequency population response",
+    results = data["results"]
+    khz_on  = data.get("khz_freq")  # for the shading window we use 50–100 ms (tutorial)
+    on_t, off_t = 50.0, 100.0
+    dt_ms = data.get("dt_ms", 0.001)
+    axes = subfig.subplots(len(results), 1, sharex=True)
+    if len(results) == 1:
+        axes = [axes]
+    for ax, res in zip(axes, results):
+        t_pf  = np.array(res["t_pf_ms"])
+        vm_pf = np.array(res["vm_pf_90"])
+        vm_jx = np.array(res["vm_jax_90"])
+        t_jx  = (np.arange(len(vm_jx)) + 1) * dt_ms
+        ax.plot(t_pf, vm_pf, color="C0", lw=0.9,
+                 label=f"PyFibers ({res['n_aps_pf']} APs)")
+        ax.plot(t_jx, vm_jx, color="C1", lw=0.7, ls="--",
+                 label=f"jaxfibers ({res['n_aps_jax']} APs)")
+        ax.axvspan(on_t, off_t, alpha=0.15, color="red")
+        ax.set_ylabel(f"{res['amp_mA']:g} mA\nV$_m$", fontsize=8)
+        ax.set_ylim(-95, 35)
+        ax.tick_params(labelsize=7)
+        ax.grid(alpha=0.3, lw=0.4)
+        ax.legend(fontsize=7, loc="upper right")
+    axes[-1].set_xlabel("time (ms)", fontsize=8)
+    subfig.suptitle("b   Kilohertz frequency conduction block "
+                    f"(D = {data.get('diameter_um', 10)} µm,  "
+                    f"{data.get('khz_freq', 20)} kHz)",
                     fontsize=11, fontweight="bold", x=0.02, ha="left", y=1.0)
 
 

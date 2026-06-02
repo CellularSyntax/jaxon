@@ -132,26 +132,37 @@ def run_rect_optimization(
         grad      = (losses_all[1:] - loss_base) / fd_eps  # [K]
         return (loss_base, acts_base), grad
 
-    # Initialize amplitudes proportional to each contact's mean |Ve| at target
-    # fibers.  This immediately breaks ring symmetry for eccentric fascicles:
-    # the contact closest to the target fascicle gets amp_init_mA, the contact
-    # farthest away gets ~0 (the neutral "off" baseline).  Uniform-magnitude
-    # init across all contacts otherwise.
+    # Bipolar Ve-weighted initialisation (guard-pattern init).
     #
-    # The "off" anchor is 0, NOT amp_clip[1].  An earlier formula used
-    # amp_clip[1] as the anchor, which only worked for cathodic-only clips
-    # like (-5, -0.05): with a symmetric clip like (-2.5, +2.5) it would
-    # pin the farthest contact at the positive (anodic) clip — actively
-    # firing the off-target fibers from the wrong side.  Anchoring at 0
-    # is clip-invariant.
+    # ve_norm[k] ∈ [0, 1] measures how close contact k is to the target
+    # fascicle: 1 = closest, 0 = farthest.  We map
+    #
+    #     amps0[k] = (2*ve_norm[k] − 1) * |amp_init_mA|
+    #
+    # so the closest contact gets amp_init_mA (cathodic) and the farthest
+    # contact gets −amp_init_mA (anodic), with smooth interpolation in
+    # between.  This is the guard-electrode pattern that the geometry
+    # sweep at C:/tmp/dbg_geom_sweep.py showed achieves SI = +1.000 at the
+    # current 1.5 mm cuff radius on the selectivity_demo nerve.
+    #
+    # Earlier formulations were one-sided ("ve_norm * amp_init_mA" → all
+    # cathodic, or "amp_clip[1] + ve_norm*(amp_init−amp_clip[1])" → pinned
+    # at the clip).  Both put the optimiser in a single-polarity basin
+    # that Adam-FD / LBFGS cannot escape via gradient steps (flipping
+    # contact polarity requires a discrete jump that small steps don't
+    # take).  The bipolar init starts inside the mixed-polarity basin
+    # where field steering is possible.
     ve_tgt_sum  = jnp.where(tgt_j[None, :, None], jnp.abs(Ve_unit_j), 0.0).sum((1, 2))
     ve_tgt_mean = ve_tgt_sum / jnp.maximum(tgt_j.sum(), 1.0)   # [K]
     ve_range    = ve_tgt_mean.max() - ve_tgt_mean.min()
     ve_norm     = (ve_tgt_mean - ve_tgt_mean.min()) / (ve_range + 1e-10)   # [K] in [0,1]
     amps0 = jnp.clip(
-        ve_norm * amp_init_mA,
+        (2.0 * ve_norm - 1.0) * jnp.abs(amp_init_mA) * jnp.sign(amp_init_mA),
         amp_clip[0], amp_clip[1],
     ).astype(jnp.float64)
+    # `jnp.sign(amp_init_mA)` keeps backward-compat with cathodic-only callers
+    # who set amp_init_mA = -0.4 (negative).  Closest contact ends up at the
+    # given amp_init_mA (cathodic), farthest at −amp_init_mA (anodic).
 
     optimizer = optax.chain(optax.clip_by_global_norm(1.0), optax.adam(lr))
     opt_state = optimizer.init(amps0)
@@ -246,12 +257,19 @@ def _initial_amps_for_seed(
     traced array, so this function is vmap-safe over seeds.
     """
     K = Ve_unit_j.shape[0]
-    # Ve-weighted deterministic restart
+    # Bipolar Ve-weighted deterministic restart — see the lengthy comment in
+    # run_rect_optimization for the rationale.  Maps ve_norm ∈ [0,1] to amps
+    # ∈ [+|amp_init|, −|amp_init|]: closest contact cathodic, farthest anodic.
+    # This is the "guard pattern" init that breaks the single-polarity basin
+    # trap.
     ve_tgt_sum  = jnp.where(tgt_j[None, :, None], jnp.abs(Ve_unit_j), 0.0).sum((1, 2))
     ve_tgt_mean = ve_tgt_sum / jnp.maximum(tgt_j.sum(), 1.0)
     ve_range    = ve_tgt_mean.max() - ve_tgt_mean.min()
     ve_norm     = (ve_tgt_mean - ve_tgt_mean.min()) / (ve_range + 1e-10)
-    amps_ve     = jnp.clip(ve_norm * amp_init_mA, amp_clip[0], amp_clip[1]).astype(jnp.float64)
+    amps_ve     = jnp.clip(
+        (2.0 * ve_norm - 1.0) * jnp.abs(amp_init_mA) * jnp.sign(amp_init_mA),
+        amp_clip[0], amp_clip[1],
+    ).astype(jnp.float64)
 
     if n_restarts <= 1:
         return amps_ve[None, :]

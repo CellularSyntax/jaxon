@@ -191,6 +191,46 @@ def jax_bisect(
     return 0.5 * (lo + hi)
 
 
+# ── AP arrival time (rising-edge crossing, sub-step interpolated) ─────────────
+
+def ap_arrival_time(
+    vm_trace: np.ndarray,
+    t_arr: np.ndarray,
+    v_thresh_mV: float = 0.0,
+    onset_idx: int = 0,
+) -> float:
+    """Time (ms) of the first rising-edge crossing of v_thresh_mV.
+
+    Linear interpolation between adjacent samples gives sub-step precision.
+    This avoids the single-step discretisation noise that argmax-based
+    AP-arrival detection suffers from when the AP peak is broad and flat
+    (unmyelinated C-fibers, e.g. Sundt and Rattay at D >= 0.5 µm).
+
+    Returns NaN if no crossing is found after onset_idx.
+
+    Why: for slow C-fiber conduction the inter-node Δt can be only ~0.3-0.5 ms;
+    a single dt=0.005 ms argmax error then maps to 1-2 % CV error. The rising-
+    edge crossing is locked to the actual depolarisation event, which is
+    identical between JAX and NEURON traces to many decimal places, so the
+    interpolated crossing time agrees to machine precision.
+    """
+    vm = np.asarray(vm_trace[onset_idx:], dtype=np.float64)
+    t  = np.asarray(t_arr[onset_idx:],   dtype=np.float64)
+    above = vm > v_thresh_mV
+    if not above.any():
+        return float("nan")
+    crossings = np.where((vm[:-1] <= v_thresh_mV) & (vm[1:] > v_thresh_mV))[0]
+    if len(crossings) == 0:
+        return float("nan")
+    i = int(crossings[0])
+    v0, v1 = float(vm[i]), float(vm[i + 1])
+    t0, t1 = float(t[i]),  float(t[i + 1])
+    if v1 == v0:
+        return t0
+    frac = (v_thresh_mV - v0) / (v1 - v0)
+    return t0 + frac * (t1 - t0)
+
+
 # ── PyFibers threshold wrapper ────────────────────────────────────────────────
 
 def pf_find_threshold(

@@ -55,6 +55,7 @@ from jaxfibers.stim.extracellular_coupled import arrays_from_geometry, integrate
 from experiments_v2.utils import (
     PULSES, make_pulse_array, pf_find_threshold,
     jax_bisect, ensure_dir, save_json, GROUP_COLORS,
+    ap_arrival_time,
 )
 
 OUT = ensure_dir(ROOT / "outputs" / "rattay_validation")
@@ -349,8 +350,10 @@ def _jax_cv(run_all, amp_mA, nodes, centers) -> float:
     onset   = int(DELAY / DT)
     k_ctr   = len(nodes) // 2
     k_end   = 2
-    t_ctr   = t_steps[onset + int(np.argmax(Vm_all[onset:, nodes[k_ctr]]))]
-    t_end   = t_steps[onset + int(np.argmax(Vm_all[onset:, nodes[k_end]]))]
+    t_ctr   = ap_arrival_time(Vm_all[:, nodes[k_ctr]], t_steps, 0.0, onset)
+    t_end   = ap_arrival_time(Vm_all[:, nodes[k_end]], t_steps, 0.0, onset)
+    if not (np.isfinite(t_ctr) and np.isfinite(t_end)) or t_end == t_ctr:
+        return float("nan")
     dist_um = abs(float(centers[nodes[k_ctr]]) - float(centers[nodes[k_end]]))
     return dist_um / abs(t_end - t_ctr) * 1e-3   # µm/ms → m/s
 
@@ -358,9 +361,11 @@ def _jax_cv(run_all, amp_mA, nodes, centers) -> float:
 def _pf_cv(nr, n_nodes, centers, nodes) -> float:
     onset = int(np.searchsorted(nr.t_ms, DELAY))
     k_ctr, k_end = n_nodes // 2, 2
-    t_ctr = nr.t_ms[onset + int(np.argmax(nr.vm_mV[k_ctr, onset:]))]
-    t_end = nr.t_ms[onset + int(np.argmax(nr.vm_mV[k_end, onset:]))]
-    dist  = abs(float(centers[nodes[k_ctr]]) - float(centers[nodes[k_end]]))
+    t_ctr = ap_arrival_time(nr.vm_mV[k_ctr], nr.t_ms, 0.0, onset)
+    t_end = ap_arrival_time(nr.vm_mV[k_end], nr.t_ms, 0.0, onset)
+    if not (np.isfinite(t_ctr) and np.isfinite(t_end)) or t_end == t_ctr:
+        return float("nan")
+    dist = abs(float(centers[nodes[k_ctr]]) - float(centers[nodes[k_end]]))
     return dist / abs(t_end - t_ctr) * 1e-3
 
 

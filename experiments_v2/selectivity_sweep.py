@@ -78,7 +78,7 @@ from jaxfibers.optim.optimizer import (
 # memory blowup (compile drops from 25 min to ~2 min on A16).
 RECT_OPTIMIZER = os.environ.get("OPTIMIZER", "lbfgs").lower()
 from jaxfibers.fibers.mrg import section_centers_um
-from experiments_v2.utils import ensure_dir, plot_seed_summary
+from experiments_v2.utils import ensure_dir, plot_seed_summary, plot_seed_cross_section
 
 OUT = ensure_dir(ROOT / "outputs" / "selectivity_sweep")
 
@@ -400,6 +400,17 @@ def _run_seed_chunk(seeds: list[int], verbose: bool = True) -> list[dict]:
             nerve_radius_um=NERVE_RADIUS_UM,
             cuff_radius_um=CUFF_RADIUS_UM,
         )
+        plot_seed_cross_section(
+            out_path=OUT / f"fig_seed_{seed_id:04d}_rect_xsection.png",
+            nerve=s_in["nerve"],
+            contact_xyz=s_in["contact_xyz"],
+            amps_mA=np.array(rect_res["amps"]),
+            acts=np.array(rect_res["final_acts"]),
+            si=si_rect, si_baseline=s_in["si_baseline"],
+            title=rect_title,
+            nerve_radius_um=NERVE_RADIUS_UM,
+            cuff_radius_um=CUFF_RADIUS_UM,
+        )
         # Waveform figure: pick the BEST iter (by SI) rather than the last,
         # so the cross-section reflects the activation pattern at the
         # solution we're actually reporting — not whatever post-overshoot
@@ -424,6 +435,18 @@ def _run_seed_chunk(seeds: list[int], verbose: bool = True) -> list[dict]:
             title=(f"seed {seed_id} — Waveform (Adam, warm-started from rect, "
                     f"{N_OPT_WAVE} iters; cross-section shown at "
                     f"best iter {best_wave_idx})"),
+            nerve_radius_um=NERVE_RADIUS_UM,
+            cuff_radius_um=CUFF_RADIUS_UM,
+        )
+        wave_si_best = max(wave_si_hist) if wave_si_hist else float("nan")
+        plot_seed_cross_section(
+            out_path=OUT / f"fig_seed_{seed_id:04d}_wave_xsection.png",
+            nerve=s_in["nerve"],
+            contact_xyz=s_in["contact_xyz"],
+            amps_mA=np.array(rect_res["amps"]),
+            acts=wave_acts_best,
+            si=wave_si_best, si_baseline=s_in["si_baseline"],
+            title=(f"seed {seed_id} — Waveform (Adam, best iter {best_wave_idx})"),
             nerve_radius_um=NERVE_RADIUS_UM,
             cuff_radius_um=CUFF_RADIUS_UM,
         )

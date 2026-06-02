@@ -300,6 +300,185 @@ def save_json(data, path: pathlib.Path) -> None:
 
 # ─────────────────────────────────── selectivity per-seed summary figure ──────
 
+def plot_seed_cross_section(
+    out_path: pathlib.Path,
+    nerve,                    # NerveGeometry with .fiber_x_um, .fiber_y_um,
+                                # .fiber_diam, .target_mask
+    contact_xyz: np.ndarray,  # [K, 3] contact positions (mm)
+    amps_mA: np.ndarray,      # [K] final per-contact amplitudes
+    acts: np.ndarray,         # [n_fibers] activation proxy ∈ [0, 1]
+    si: float,
+    si_baseline: float,
+    title: str = "",
+    contact_xyz_init: np.ndarray | None = None,
+    nerve_radius_um: float = 500.0,
+    cuff_radius_um: float = 1500.0,
+    activation_threshold: float = 0.5,
+) -> None:
+    """Stand-alone, manuscript-quality nerve cross-section figure.
+
+    Draws:
+      - Nerve outline (black ring)
+      - **Target fascicle** as a filled blue disk (boundary inferred from
+        the target_mask: centroid + 1.1 × max distance of target fibres
+        from that centroid).
+      - **Off-target region** as the rest of the nerve, with an unfilled
+        outline so the difference reads at a glance.
+      - **Target fibres**: circles.  Fired → solid blue.  Silent → hollow
+        blue (outline only).
+      - **Off-target fibres**: squares.  Fired → solid red (alarm — leak).
+        Silent → hollow red (outline only).
+      - **Contacts**: triangles around the cuff, green if cathodic, red if
+        anodic.  Marker area scales with |amp|; label shows ±X.XX mA.
+      - For joint-opt, optional arrows from the initial to the final
+        contact positions.
+      - Big title with SI baseline, SI achieved, and target-fired /
+        off-target-fired counts.
+
+    Layout: single axis, square aspect ratio, ~7×7 inches by default.
+    Designed to drop into a manuscript figure or supplementary as-is.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import matplotlib.patches as mpatches
+    from matplotlib.lines import Line2D
+
+    target = np.asarray(nerve.target_mask, dtype=bool)
+    n_fibers = nerve.n_fibers
+    n_contacts = len(amps_mA)
+    acts = np.asarray(acts)
+    fired = acts > activation_threshold
+
+    # ── infer target fascicle boundary from the target fibres ────────────────
+    tgt_x = np.asarray(nerve.fiber_x_um)[target]
+    tgt_y = np.asarray(nerve.fiber_y_um)[target]
+    if len(tgt_x) > 0:
+        fc_cx = float(tgt_x.mean())
+        fc_cy = float(tgt_y.mean())
+        max_r = float(np.max(np.hypot(tgt_x - fc_cx, tgt_y - fc_cy)))
+        fc_r  = max(max_r * 1.15, 60.0)   # pad so the boundary clearly
+                                             # contains all target fibres
+    else:
+        fc_cx, fc_cy, fc_r = 0.0, 0.0, nerve_radius_um * 0.3
+
+    fig, ax = plt.subplots(figsize=(8.0, 8.0), constrained_layout=True)
+    ax.set_aspect("equal")
+
+    # nerve outline (a thicker, slightly grey ring so contacts pop)
+    ax.add_patch(plt.Circle((0, 0), nerve_radius_um,
+                              fill=False, edgecolor="0.25", lw=2.0, zorder=1))
+    # target fascicle: light-blue fill
+    ax.add_patch(plt.Circle((fc_cx, fc_cy), fc_r,
+                              facecolor="#cfe2f3", edgecolor="C0",
+                              lw=1.8, alpha=0.55, zorder=2,
+                              label="target fascicle"))
+
+    # ── fibres ───────────────────────────────────────────────────────────────
+    # Use *distinct markers* so target vs off-target reads even in greyscale,
+    # and *fill vs hollow* so fired vs silent reads independently.
+    tgt_idx = np.where(target)[0]
+    off_idx = np.where(~target)[0]
+
+    # target fibres = circles, blue
+    ax.scatter(
+        [nerve.fiber_x_um[i] for i in tgt_idx if fired[i]],
+        [nerve.fiber_y_um[i] for i in tgt_idx if fired[i]],
+        s=160, marker="o", facecolor="C0", edgecolor="k", linewidth=1.0,
+        zorder=5,
+    )
+    ax.scatter(
+        [nerve.fiber_x_um[i] for i in tgt_idx if not fired[i]],
+        [nerve.fiber_y_um[i] for i in tgt_idx if not fired[i]],
+        s=160, marker="o", facecolor="none", edgecolor="C0",
+        linewidth=1.8, zorder=5,
+    )
+    # off-target fibres = squares, red
+    ax.scatter(
+        [nerve.fiber_x_um[i] for i in off_idx if fired[i]],
+        [nerve.fiber_y_um[i] for i in off_idx if fired[i]],
+        s=140, marker="s", facecolor="#c0392b", edgecolor="k",
+        linewidth=1.0, zorder=5,
+    )
+    ax.scatter(
+        [nerve.fiber_x_um[i] for i in off_idx if not fired[i]],
+        [nerve.fiber_y_um[i] for i in off_idx if not fired[i]],
+        s=140, marker="s", facecolor="none", edgecolor="#c0392b",
+        linewidth=1.4, zorder=5,
+    )
+
+    # ── contacts ─────────────────────────────────────────────────────────────
+    amax = max(float(np.max(np.abs(amps_mA))), 1e-6)
+    for k in range(n_contacts):
+        cx, cy = float(contact_xyz[k, 0]), float(contact_xyz[k, 1])
+        a = float(amps_mA[k])
+        if   a < -1e-4: ccol = "#2ecc71"        # cathodic = green
+        elif a > +1e-4: ccol = "#e67e22"        # anodic   = orange (distinct from off-target red)
+        else:           ccol = "0.6"            # off
+        ms = 180 + 320 * (abs(a) / amax)
+        ax.scatter([cx], [cy], s=ms, marker="^", facecolor=ccol,
+                    edgecolor="k", linewidth=1.0, zorder=4)
+        # outward label
+        rr = (cx**2 + cy**2) ** 0.5
+        if rr > 0:
+            tx, ty = cx * 1.10, cy * 1.10
+        else:
+            tx, ty = cx + 80, cy + 80
+        ax.annotate(f"C{k}\n{a:+.2f} mA", xy=(cx, cy), xytext=(tx, ty),
+                    fontsize=9, ha="center", va="center",
+                    bbox=dict(boxstyle="round,pad=0.25", facecolor="white",
+                                edgecolor="0.7", alpha=0.85))
+        if contact_xyz_init is not None:
+            ix, iy = float(contact_xyz_init[k, 0]), float(contact_xyz_init[k, 1])
+            if abs(ix - cx) + abs(iy - cy) > 1e-3:
+                ax.annotate("", xy=(cx, cy), xytext=(ix, iy),
+                            arrowprops=dict(arrowstyle="->", color="k",
+                                             lw=0.9, alpha=0.6, mutation_scale=12),
+                            zorder=3)
+                ax.scatter([ix], [iy], s=40, marker="o", facecolor="0.5",
+                            edgecolor="k", lw=0.5, alpha=0.7, zorder=3)
+
+    lim = cuff_radius_um * 1.25
+    ax.set_xlim(-lim, lim); ax.set_ylim(-lim, lim)
+    ax.set_xlabel("x (µm)", fontsize=11)
+    ax.set_ylabel("y (µm)", fontsize=11)
+    ax.grid(alpha=0.25, lw=0.4)
+
+    # ── legend & title ──────────────────────────────────────────────────────
+    n_tgt_fired = int(fired[target].sum());  n_tgt = int(target.sum())
+    n_off_fired = int(fired[~target].sum()); n_off = int((~target).sum())
+
+    legend_handles = [
+        mpatches.Patch(facecolor="#cfe2f3", edgecolor="C0", label="target fascicle"),
+        Line2D([0], [0], marker="o", color="w", markerfacecolor="C0",
+                markeredgecolor="k", markersize=11, label="target fibre — fired"),
+        Line2D([0], [0], marker="o", color="w", markerfacecolor="none",
+                markeredgecolor="C0", markeredgewidth=1.8, markersize=11,
+                label="target fibre — silent"),
+        Line2D([0], [0], marker="s", color="w", markerfacecolor="#c0392b",
+                markeredgecolor="k", markersize=10, label="off-target fibre — fired"),
+        Line2D([0], [0], marker="s", color="w", markerfacecolor="none",
+                markeredgecolor="#c0392b", markeredgewidth=1.4, markersize=10,
+                label="off-target fibre — silent"),
+        Line2D([0], [0], marker="^", color="w", markerfacecolor="#2ecc71",
+                markeredgecolor="k", markersize=12, label="contact (cathodic)"),
+        Line2D([0], [0], marker="^", color="w", markerfacecolor="#e67e22",
+                markeredgecolor="k", markersize=12, label="contact (anodic)"),
+    ]
+    ax.legend(handles=legend_handles, loc="upper left",
+                bbox_to_anchor=(1.02, 1.0), fontsize=9, framealpha=0.95)
+
+    fig.suptitle(
+        f"{title}\nSI baseline = {si_baseline:+.3f}   →   SI = {si:+.3f}    "
+        f"target fired {n_tgt_fired}/{n_tgt}    "
+        f"off-target fired {n_off_fired}/{n_off}",
+        fontsize=12, fontweight="bold",
+    )
+    fig.savefig(out_path, dpi=160, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  -> {out_path}")
+
+
 def plot_seed_summary(
     out_path: pathlib.Path,
     nerve,                    # NerveGeometry with .fiber_x_um, .fiber_y_um,

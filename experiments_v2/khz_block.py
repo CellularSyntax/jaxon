@@ -1,26 +1,21 @@
-"""Kilohertz frequency population response (Hussain 2024 Fig 3b equivalent).
+"""Kilohertz frequency block — verbatim PyFibers tutorial reproduction.
 
-Sinusoidal extracellular signal interacts with ongoing intracellular pacing:
-at high amplitudes, sustained Na inactivation at intermediate nodes blocks
-propagation of pacing-driven APs to the far end.  The recruitment curve
-(# APs vs amplitude) is non-monotonic — the HFAC nerve-block signature.
+Mirrors `pyfibers/tutorials/5_block_threshold` exactly:
+  * MRG_INTERPOLATION, D=10 µm, N=25 nodes
+  * 20 kHz square wave, on from t=50 to t=100 ms
+  * Intrinsic activity via add_intrinsic_activity (loc=0.1, every 10 ms, 14
+    stims, starting at t=15 ms)
+  * ScaledStim.run_sim returns (n_aps, ap_time) for several amplitudes
+  * AP detection at loc=0.9
 
-Setup (matches Hussain Fig 3b structure)
-----------------------------------------
-* 3 fiber diameters (5.7, 8.7, 14 µm), N_NODES=51 nodes each (long enough
-  for sustained Na inactivation to fully fail propagation).
-* 4 sinusoidal frequencies (1, 2, 5, 10 kHz).
-* N=5 fiber locations sampled at transverse offsets above a single point
-  source (proxy for distinct fascicles in a real cuff).
-* 100 Hz intracellular pacing × 0.1 ms × 2 nA at node 0.
-* Amplitude axis bound per diameter (matches Hussain Fig 3b ranges).
-* JAX coupled solver vs PyFibers/NEURON — solid blue (PyFibers), dashed
-  orange (jaxfibers); mean ± 95% CI band across the 5 fibers.
+This is a clean PyFibers-only reproduction.  Once it works, we layer a
+jaxfibers comparison on top.
 
 Outputs (outputs/khz_block/)
 ----------------------------
-  data_khz_block.json   — per-(diameter, freq, amp) mean ± CI for both models
-  fig_khz_block.png     — 4×3 grid: rows = freq, cols = diameter
+  data_khz_block.json       — per-amplitude n_aps + traces
+  fig_khz_block_traces.png  — Vm(t) at loc=0.9 for each amplitude
+  fig_khz_block.png         — kept for fig3_combined compatibility (TBD)
 
 Run from project root:
     python experiments_v2/khz_block.py
@@ -30,8 +25,6 @@ from __future__ import annotations
 
 import sys
 import pathlib
-import dataclasses
-import time
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -40,344 +33,127 @@ import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import scipy.signal as sg
 
-import jax
-import jax.numpy as jnp
-from jaxley.solver_gate import solve_gate_exponential
-
-jax.config.update("jax_enable_x64", True)
-
-from jaxfibers.fibers.mrg import (
-    build_mrg, node_indices, section_centers_um,
-    V_REST, CM_AXON, G_PAS_MYSA, G_PAS_FLUT, G_PAS_STIN,
-)
-from jaxfibers.channels.mrg_axnode import AxnodeMyel
-from jaxfibers.stim.extracellular import point_source_potentials_mV
-from jaxfibers.stim.extracellular_coupled import arrays_from_geometry, integrate
-from jaxfibers.nrn_baseline import build_mrg_pyfibers
-
-from neuron import h
-from pyfibers import ScaledStim
-from scipy.interpolate import interp1d
+# Trigger our nrn_baseline path setup (prepends c:/nrn826/lib/python on Windows)
+from jaxfibers.nrn_baseline import build_mrg_pyfibers   # noqa: F401  (side-effect import)
+from pyfibers import build_fiber, FiberModel, ScaledStim
 
 from experiments_v2.utils import ensure_dir, save_json
 
 OUT = ensure_dir(ROOT / "outputs" / "khz_block")
 
-# ── shared constants ──────────────────────────────────────────────────────────
-CELSIUS    = 37.0
-DT         = 0.002
-TSTOP      = 30.0
-DELAY_KHZ  = 1.0
-DELAY_PACE = 0.5
-PACE_HZ    = 100.0
-PACE_PW    = 0.1
-PACE_AMP   = 2.0
-N_NODES    = 51
-N_STEPS    = int(TSTOP / DT)
-SIGMA      = 0.3
-
-# Population: 5 fiber locations (was 7; reduced to keep PyFibers compute < 1 h).
-SRC_H_FIBERS = [300., 600., 900., 1200., 1500.]
-N_FIBERS_POP = len(SRC_H_FIBERS)
-
-DIAMETERS    = [5.7, 8.7, 14.0]
-FREQS_KHZ    = [1.0, 2.0, 5.0, 10.0]
-N_AMPS       = 8
-
-# Match Hussain Fig 3b amplitude ranges.
-AMP_MAX_MA   = {5.7: 10.0, 8.7: 5.0, 14.0: 2.0}
-
-# MRG channel constants
-GNABAR = 3.0;  GNAPBAR = 0.01; GKBAR = 0.08; GL = 0.007
-ENA    = 50.0; EK      = -90.0; EL    = -90.0
+# ── tutorial parameters (verbatim) ────────────────────────────────────────────
+N_NODES   = 25
+DIAMETER  = 10.0
+DT        = 0.001       # ms
+TSTOP     = 150.0       # ms
+KHZ_FREQ  = 20.0        # kHz
+KHZ_ON    = 50.0        # ms
+KHZ_OFF   = 100.0       # ms
+# Point source coordinates from the tutorial: (0, 250, fiber.length/2, i0=1, sigma=10)
+SRC_X     = 0.0
+SRC_Y     = 250.0
+SRC_I0    = 1.0
+SIGMA     = 10.0
+# Intrinsic activity
+PACE_LOC      = 0.1
+PACE_START    = 15.0
+PACE_INTERVAL = 10.0
+PACE_N        = 14
+AP_DETECT_LOC = 0.9
+# Amplitudes shown in the tutorial
+AMPLITUDES = [-0.5, -1.5, -2.5, -3.0]
 
 
-def _build_membrane_fn(static, geom):
-    is_node   = static["is_node"]
-    A_in      = static["A_in_cm2"]
-    stype_gp  = {"node": 0.0, "mysa": G_PAS_MYSA, "flut": G_PAS_FLUT, "stin": G_PAS_STIN}
-    g_pas_arr = jnp.asarray([stype_gp[s] for s in geom.section_type])
-
-    v0 = jnp.float64(V_REST)
-    (a_m0, b_m0), (a_h0, b_h0), (a_mp0, b_mp0), (a_s0, b_s0) = AxnodeMyel._alpha_beta(v0, CELSIUS)
-    state0 = (
-        jnp.where(is_node, float(a_m0  / (a_m0  + b_m0)),  0.0),
-        jnp.where(is_node, float(a_h0  / (a_h0  + b_h0)),  0.0),
-        jnp.where(is_node, float(a_mp0 / (a_mp0 + b_mp0)), 0.0),
-        jnp.where(is_node, float(a_s0  / (a_s0  + b_s0)),  0.0),
-    )
-
-    def membrane_fn(Vm, state, dt):
-        M, H, MP, S = state
-        (a_m, b_m), (a_h, b_h), (a_mp, b_mp), (a_s, b_s) = AxnodeMyel._alpha_beta(Vm, CELSIUS)
-        M2  = solve_gate_exponential(M,  dt, a_m,  b_m)
-        H2  = solve_gate_exponential(H,  dt, a_h,  b_h)
-        MP2 = solve_gate_exponential(MP, dt, a_mp, b_mp)
-        S2  = solve_gate_exponential(S,  dt, a_s,  b_s)
-        g_na  = GNABAR  * M2**3 * H2
-        g_nap = GNAPBAR * MP2**3
-        g_k   = GKBAR   * S2
-        g_node = (g_na + g_nap + g_k + GL) * A_in * 1e6
-        i_node = ((g_na + g_nap) * (Vm - ENA) + g_k * (Vm - EK) + GL * (Vm - EL)) * A_in * 1e6
-        g_pas_us = g_pas_arr * A_in * 1e6
-        i_pas    = g_pas_us  * (Vm - V_REST)
-        g_eff = jnp.where(is_node, g_node, g_pas_us)
-        i_ion = jnp.where(is_node, i_node, i_pas)
-        return g_eff, i_ion, (M2, H2, MP2, S2)
-
-    return membrane_fn, state0
-
-
-def _make_pacing_intra(node_pace: int, n_comp: int) -> tuple[np.ndarray, int]:
-    t_step = (np.arange(N_STEPS) + 1) * DT
-    period_ms = 1000.0 / PACE_HZ
-    n_cycles = int(np.floor((TSTOP - DELAY_PACE) / period_ms))
-    pulse_starts = DELAY_PACE + np.arange(n_cycles) * period_ms
-    pace_on = np.zeros_like(t_step, dtype=bool)
-    for ps in pulse_starts:
-        pace_on |= (t_step >= ps) & (t_step < ps + PACE_PW)
-    i_intra = np.zeros((N_STEPS, n_comp), dtype=np.float64)
-    i_intra[pace_on, node_pace] = PACE_AMP
-    return i_intra, n_cycles
-
-
-def _count_aps(vm_trace: np.ndarray, v_thresh: float = -20.0) -> int:
-    rises = (vm_trace[:-1] <= v_thresh) & (vm_trace[1:] > v_thresh)
-    return int(rises.sum())
-
-
-def _make_khz_pulse_mask(freq_khz: float) -> np.ndarray:
-    """Sinusoid sin(2π f t) starting at DELAY_KHZ; zero before."""
-    t_step = (np.arange(N_STEPS) + 1) * DT
-    phase = 2 * np.pi * freq_khz * (t_step - DELAY_KHZ)
-    return np.where(t_step >= DELAY_KHZ, np.sin(phase), 0.0).astype(np.float64)
-
-
-def _run_pyfibers_one(diameter: float, n_nodes: int, src_y_um: float,
-                      freq_khz: float, amp_mA: float) -> int:
-    """Single PyFibers run with extracellular kHz sinusoid + intracellular pacing.
-
-    Uses the canonical pyfibers pattern (see tutorial 5_block_threshold):
-    `fiber.add_intrinsic_activity` for pacing, ScaledStim with a closure
-    waveform for the kHz signal, `run_sim(amp_mA, fiber)` returns AP count
-    directly.  Avoids the state-accumulation bugs from manual h.IClamp loops.
-
-    Returns the AP count at the far node (the fiber's default detection loc).
-    """
-    fiber = build_mrg_pyfibers(diameter=diameter, n_nodes=n_nodes, temperature=CELSIUS)
-    fiber.record_vm()
-
-    # Intrinsic pacing: NetStim+ExpSyn at proximal end, every PACE_HZ.
-    period_ms = 1000.0 / PACE_HZ
-    n_cycles  = int(np.floor((TSTOP - DELAY_PACE) / period_ms))
-    fiber.add_intrinsic_activity(
-        loc=0.0,                  # node at fiber start
-        start_time=DELAY_PACE,
-        avg_interval=period_ms,
-        num_stims=n_cycles,
-        noise=0.0,
-    )
-
-    if amp_mA == 0.0:
-        # Baseline: pacing-only, no extracellular field.  pyfibers requires
-        # ScaledStim's non-zero waveform/potential, so just step NEURON
-        # manually.  ap detection: count rising edges at far node V_m.
-        h.celsius = CELSIUS
-        h.dt = DT
-        h.finitialize(fiber.v_rest)
-        h.continuerun(TSTOP)
-        vm_far = np.array(fiber.vm[-1])
-        return _count_aps(vm_far)
-
-    # Suprathreshold path: ScaledStim + run_sim returns AP count directly.
-    fiber.potentials = fiber.point_source_potentials(
-        x=0.0, y=src_y_um, z=fiber.length / 2.0, i0=amp_mA, sigma=SIGMA,
-    )
-    # Closure waveform — sin(2π f t) for t in [DELAY_KHZ, TSTOP], else 0.
-    def wav(t, f=freq_khz):
-        return float(np.sin(2 * np.pi * f * (t - DELAY_KHZ))) if t > DELAY_KHZ else 0.0
-
-    stim = ScaledStim(waveform=wav, dt=DT, tstop=TSTOP)
-    # run_sim returns (n_aps, ap_time).  We use ap_detect_location=1.0 (far end).
-    n_aps, _ = stim.run_sim(stimamp=1.0, fiber=fiber, ap_detect_location=1.0,
-                              fail_on_end_excitation=False)
-    return int(n_aps)
-
-
-def _run_one_diameter(D: float) -> dict:
-    print(f"\n=== D = {D} µm ===", flush=True)
-    _, geom = build_mrg(diameter=D, n_nodes=N_NODES)
-    nodes   = node_indices(geom)
-    centers = np.array(section_centers_um(geom))
-    n_comp  = geom.n_comp
-    node_pace = nodes[0]
-    node_far  = nodes[-1]
-    mid_node  = nodes[len(nodes) // 2]
-
-    geom_c = dataclasses.replace(geom, cm_uF_cm2=[CM_AXON] * n_comp)
-    static = arrays_from_geometry(geom_c, DT)
-    membrane_fn, state0 = _build_membrane_fn(static, geom)
-
-    i_intra, n_pacing_cycles = _make_pacing_intra(node_pace, n_comp)
-    print(f"  Fiber length: {centers[-1] / 1000:.1f} mm  n_comp={n_comp}  "
-          f"n_pacing_cycles={n_pacing_cycles}", flush=True)
-
-    Ve_units = np.stack([
-        np.asarray(point_source_potentials_mV(
-            list(centers), src_x_um=0., src_y_um=h_um,
-            src_z_um=float(centers[mid_node]), i0_mA=1.0,
-        ))
-        for h_um in SRC_H_FIBERS
-    ])
-
-    Ve_units_j = jnp.asarray(Ve_units, dtype=jnp.float64)
-    i_intra_j  = jnp.asarray(i_intra)
-
-    @jax.jit
-    def _one_fiber(amp_mA, pulse_mask, Ve_unit_one):
-        Ve = Ve_unit_one * amp_mA
-        (Vi_all, Vp_all), _ = integrate(
-            static, membrane_fn, state0,
-            Ve, pulse_mask, DT, v_rest=V_REST, record="all",
-            i_intra=i_intra_j,
-        )
-        Vm_all = Vi_all - Vp_all
-        return Vm_all[:, node_far]
-
-    batched = jax.vmap(_one_fiber, in_axes=(None, None, 0))
-
-    # Baseline (no kHz) — both models
-    print("  Baseline (no kHz) ...", flush=True)
-    pulse_zero = jnp.zeros(N_STEPS, dtype=jnp.float64)
-    vm_baseline = np.asarray(batched(jnp.float64(0.0), pulse_zero, Ve_units_j))
-    n_aps_baseline_jax = np.array([_count_aps(vm_baseline[i]) for i in range(N_FIBERS_POP)])
-    n_aps_baseline_pf  = np.array([
-        _run_pyfibers_one(D, N_NODES, h_um, 1.0, 0.0)
-        for h_um in SRC_H_FIBERS
-    ])
-    print(f"    JAX baseline APs: {n_aps_baseline_jax.tolist()}  "
-          f"PF: {n_aps_baseline_pf.tolist()}", flush=True)
-
-    # freq × amp scan, vmapped (JAX) and looped (PyFibers).
-    results = {}
-    for f_khz in FREQS_KHZ:
-        amps = np.linspace(0.0, AMP_MAX_MA[D], N_AMPS)
-        pulse_mask = _make_khz_pulse_mask(f_khz)
-        pulse_j    = jnp.asarray(pulse_mask)
-        n_aps_jax = np.zeros((N_AMPS, N_FIBERS_POP), dtype=np.int32)
-        n_aps_pf  = np.zeros((N_AMPS, N_FIBERS_POP), dtype=np.int32)
-        print(f"\n  f = {f_khz} kHz, amps 0..{AMP_MAX_MA[D]:.1f} mA ...", flush=True)
-        for ai, amp in enumerate(amps):
-            # JAX (vmapped)
-            t0 = time.time()
-            vm_far_jax = np.asarray(batched(jnp.float64(amp), pulse_j, Ve_units_j))
-            n_aps_jax[ai] = np.array([_count_aps(vm_far_jax[i]) for i in range(N_FIBERS_POP)])
-            t_jax = time.time() - t0
-
-            # PyFibers (one fiber at a time)
-            t0 = time.time()
-            for fi, h_um in enumerate(SRC_H_FIBERS):
-                n_aps_pf[ai, fi] = _run_pyfibers_one(D, N_NODES, h_um, amp, f_khz)
-            t_pf = time.time() - t0
-
-            print(f"    amp = {amp:5.2f} mA: JAX {n_aps_jax[ai].mean():.1f}±{n_aps_jax[ai].std():.1f}  "
-                  f"PF {n_aps_pf[ai].mean():.1f}±{n_aps_pf[ai].std():.1f}  "
-                  f"(t_jax={t_jax:.1f}s, t_pf={t_pf:.1f}s)", flush=True)
-
-        # 95% CI: half-width = t_{0.975, n-1} * s / sqrt(n).  For n=5, t=2.776.
-        t_crit = 2.776 if N_FIBERS_POP == 5 else 2.447   # 2.447 at n=7
-        results[float(f_khz)] = {
-            "amps_mA":            amps.tolist(),
-            "n_aps_jax_per_fib":  n_aps_jax.tolist(),
-            "n_aps_pf_per_fib":   n_aps_pf.tolist(),
-            "mean_jax":           n_aps_jax.mean(axis=1).tolist(),
-            "ci95_half_jax":      (t_crit * n_aps_jax.std(axis=1, ddof=1)
-                                     / np.sqrt(N_FIBERS_POP)).tolist(),
-            "mean_pf":            n_aps_pf.mean(axis=1).tolist(),
-            "ci95_half_pf":       (t_crit * n_aps_pf.std(axis=1, ddof=1)
-                                     / np.sqrt(N_FIBERS_POP)).tolist(),
-        }
-    return {
-        "diameter_um":          D,
-        "n_aps_baseline_jax":   n_aps_baseline_jax.tolist(),
-        "n_aps_baseline_pf":    n_aps_baseline_pf.tolist(),
-        "n_pacing_cycles":      n_pacing_cycles,
-        "results_by_freq":      results,
-    }
-
-
-def make_figure(per_diam: list[dict], out_path: pathlib.Path) -> None:
-    n_rows = len(FREQS_KHZ)
-    n_cols = len(DIAMETERS)
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(3.4 * n_cols, 2.6 * n_rows),
-                              sharey=True, constrained_layout=True)
-
-    for c, dia_data in enumerate(per_diam):
-        D = dia_data["diameter_um"]
-        baseline_jax = float(np.mean(dia_data["n_aps_baseline_jax"]))
-        baseline_pf  = float(np.mean(dia_data["n_aps_baseline_pf"]))
-        for r, f_khz in enumerate(FREQS_KHZ):
-            ax = axes[r, c]
-            d = dia_data["results_by_freq"][float(f_khz)]
-            amps = np.array(d["amps_mA"])
-            mean_jax = np.array(d["mean_jax"]);  ci_jax = np.array(d["ci95_half_jax"])
-            mean_pf  = np.array(d["mean_pf"]);   ci_pf  = np.array(d["ci95_half_pf"])
-
-            ax.plot(amps, mean_pf,  color="C0", lw=1.6,
-                    label="PyFibers" if (r == 0 and c == 0) else None)
-            ax.fill_between(amps, mean_pf - ci_pf, mean_pf + ci_pf,
-                              color="C0", alpha=0.25)
-            ax.plot(amps, mean_jax, color="C1", lw=1.2, ls="--",
-                    label="jaxfibers" if (r == 0 and c == 0) else None)
-            ax.fill_between(amps, mean_jax - ci_jax, mean_jax + ci_jax,
-                              color="C1", alpha=0.25)
-
-            if r == 0:
-                ax.set_title(f"{D} µm", fontsize=10)
-            if c == 0:
-                ax.set_ylabel(f"{int(f_khz)} kHz\n# APs", fontsize=9)
-            if r == n_rows - 1:
-                ax.set_xlabel("stimulus amplitude (mA)", fontsize=9)
-            ax.tick_params(labelsize=8)
-            ax.grid(alpha=0.3, lw=0.4)
-            ax.set_ylim(bottom=-1)
-            ax.set_xlim(0, AMP_MAX_MA[D])
-            if r == 0 and c == 0:
-                ax.legend(fontsize=8, loc="upper right")
-
-    fig.suptitle(
-        f"Kilohertz frequency population response  "
-        f"(N = {N_FIBERS_POP} fiber locations, mean ± 95% CI; "
-        f"N_NODES = {N_NODES}, TSTOP = {TSTOP} ms)",
-        fontsize=11,
-    )
-    fig.savefig(out_path, dpi=150, bbox_inches="tight")
-    print(f"\n  -> {out_path}", flush=True)
+def waveform(t: float) -> float:
+    """20 kHz square wave, on for t in [KHZ_ON, KHZ_OFF], zero elsewhere."""
+    if KHZ_ON < t < KHZ_OFF:
+        return float(sg.square(2 * np.pi * KHZ_FREQ * t))
+    return 0.0
 
 
 def main():
-    print(f"=== kHz block (Hussain 2024 Fig 3b equivalent) — jaxfibers vs PyFibers ===")
-    print(f"N = {N_FIBERS_POP} fiber locations  diameters {DIAMETERS}  "
-          f"freqs {FREQS_KHZ} kHz")
-    print(f"N_NODES = {N_NODES}  TSTOP = {TSTOP} ms  PACE_HZ = {PACE_HZ}  dt = {DT} ms")
-    per_diam = [_run_one_diameter(D) for D in DIAMETERS]
+    print("=== kHz block (verbatim PyFibers tutorial reproduction) ===")
+    print(f"Fiber: MRG_INTERPOLATION  D={DIAMETER} µm  N={N_NODES} nodes")
+    print(f"Sim: dt={DT} ms  tstop={TSTOP} ms")
+    print(f"kHz: {KHZ_FREQ} kHz square wave, on {KHZ_ON}-{KHZ_OFF} ms")
+    print(f"Pacing: loc={PACE_LOC}  start={PACE_START} ms  interval={PACE_INTERVAL} ms  "
+          f"n={PACE_N}\n")
+
+    results = []
+    for amp in AMPLITUDES:
+        print(f"--- amp = {amp} mA ---", flush=True)
+        # Fresh fiber per amplitude (cleanest — avoids accumulated state).
+        fiber = build_fiber(FiberModel.MRG_INTERPOLATION,
+                             diameter=DIAMETER, n_nodes=N_NODES)
+        fiber.potentials = fiber.point_source_potentials(
+            SRC_X, SRC_Y, fiber.length / 2.0, SRC_I0, SIGMA,
+        )
+        fiber.record_vm()
+        fiber.add_intrinsic_activity(
+            loc=PACE_LOC,
+            start_time=PACE_START,
+            avg_interval=PACE_INTERVAL,
+            num_stims=PACE_N,
+        )
+        blockstim = ScaledStim(waveform=waveform, dt=DT, tstop=TSTOP)
+        n_aps, ap_time = blockstim.run_sim(amp, fiber)
+        print(f"  -> {n_aps} APs, last AP time = {ap_time}", flush=True)
+
+        # Save Vm at detection node + a few representative nodes
+        vm_idx = fiber.loc_index(AP_DETECT_LOC)
+        results.append({
+            "amp_mA":     amp,
+            "n_aps":      int(n_aps),
+            "ap_time_ms": float(ap_time) if ap_time is not None else None,
+            "t_ms":       np.array(blockstim.time).tolist(),
+            "vm_90_mV":   np.array(fiber.vm[vm_idx]).tolist(),
+        })
+
+    # ── plot Vm at loc=0.9 for every amplitude ───────────────────────────────
+    fig, axes = plt.subplots(len(AMPLITUDES), 1,
+                              figsize=(10, 2.5 * len(AMPLITUDES)),
+                              sharex=True, constrained_layout=True)
+    for ax, res in zip(axes, results):
+        t = np.array(res["t_ms"])
+        vm = np.array(res["vm_90_mV"])
+        ax.plot(t, vm, color="C0", lw=1.0, label=r"$V_m(t)$ at 90% length")
+        ax.axvspan(KHZ_ON, KHZ_OFF, alpha=0.25, color="red", label="kHz on")
+        for s in PACE_START + np.arange(PACE_N) * PACE_INTERVAL:
+            ax.axvline(s, color="k", ls="--", lw=0.5, alpha=0.5)
+        ax.set_ylabel(f"{res['amp_mA']} mA\nVm (mV)")
+        ax.set_ylim(-90, 30)
+        ax.set_title(f"amp = {res['amp_mA']} mA, {res['n_aps']} APs",
+                     fontsize=10, loc="left")
+        ax.grid(alpha=0.3, lw=0.4)
+        if ax is axes[0]:
+            ax.legend(loc="upper right", fontsize=9)
+    axes[-1].set_xlabel("Time (ms)")
+    fig.suptitle(f"PyFibers kHz block tutorial reproduction — "
+                  f"MRG_INTERPOLATION D={DIAMETER} µm, {int(KHZ_FREQ)} kHz",
+                  fontsize=11)
+    path = OUT / "fig_khz_block_traces.png"
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    print(f"\n  -> {path}")
+
     save_json({
-        "diameters_um":    DIAMETERS,
-        "freqs_khz":       FREQS_KHZ,
-        "fiber_y_um":      SRC_H_FIBERS,
-        "n_fibers_pop":    N_FIBERS_POP,
-        "n_amps":          N_AMPS,
-        "amp_max_mA":      AMP_MAX_MA,
-        "tstop_ms":        TSTOP,
-        "dt_ms":           DT,
-        "n_nodes":         N_NODES,
-        "pace_hz":         PACE_HZ,
-        "pace_pw_ms":      PACE_PW,
-        "pace_amp_nA":     PACE_AMP,
-        "per_diameter":    per_diam,
+        "fiber_model":   "MRG_INTERPOLATION",
+        "diameter_um":   DIAMETER,
+        "n_nodes":       N_NODES,
+        "dt_ms":         DT,
+        "tstop_ms":      TSTOP,
+        "khz_freq":      KHZ_FREQ,
+        "khz_on_ms":     KHZ_ON,
+        "khz_off_ms":    KHZ_OFF,
+        "src_y_um":      SRC_Y,
+        "sigma_S_m":     SIGMA,
+        "pace":          {"loc": PACE_LOC, "start_ms": PACE_START,
+                            "interval_ms": PACE_INTERVAL, "n_pulses": PACE_N},
+        "ap_detect_loc": AP_DETECT_LOC,
+        "results":       results,
     }, OUT / "data_khz_block.json")
-    make_figure(per_diam, OUT / "fig_khz_block.png")
+
     print("\n=== Done ===")
 
 

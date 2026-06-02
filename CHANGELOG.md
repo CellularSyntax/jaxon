@@ -75,6 +75,14 @@ prior validated state.
   paper-relevant runs.
 
 ### Changed
+- **`outputs/` is now gitignored** (reversing the earlier decision in this
+  changelog entry to track it). Reasons: PNGs are binary and don't diff;
+  large sweeps would balloon the repo; cluster re-runs would require
+  GitLab write authentication for every job. The provenance is preserved
+  by commit hash + pinned `environment.yml`; headline numbers live in
+  `AUDIT.md` / this changelog as plain text. The previously-tracked
+  validation snapshots remain in the git history at commit `c74fcfb`
+  and can be recovered from there if needed.
 - `README.md` rewritten. The old README described the v1 single-cable
   approximation (with 20-35 % threshold errors), defunct `experiments/`
   paths, the M1 Mac dev host, and `_smoke_channel.py` references to files

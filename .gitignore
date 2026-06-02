@@ -36,10 +36,12 @@ arm64/
 *.dll
 *.so
 
-# --- Local outputs from runs (keep the figures + tables we commit by hand;
-#     these patterns are for things you don't want auto-tracked) ---
-outputs/*.log
-outputs/scratch/
+# --- Run outputs (validation JSONs, figures, scaling data, selectivity
+#     sweeps).  These are regenerable from code + pinned env; PNGs do not
+#     diff well in git and large sweeps would balloon the repo.  Provenance
+#     is preserved by commit hash; headline numbers live in AUDIT.md /
+#     CHANGELOG.md as plain text. ---
+outputs/
 *.tmp
 
 # --- SLURM job logs (slurm/submit_all.sh writes to logs/) ---

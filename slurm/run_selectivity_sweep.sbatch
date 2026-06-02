@@ -19,13 +19,16 @@
 # (still uses Adam autodiff).
 #
 # Default sizing (a16 on s0-n12, 16 GB VRAM):
-#   --array=0-9%4         10 tasks × 10 seeds = 100 (= N_NERVES); %4 limits
-#                         concurrent tasks to 4 (leaves headroom on the
-#                         8-GPU node for other users; bump to %8 if you want
-#                         to monopolise all a16s)
+#   --array=0-9%4         10 tasks × 10 seeds = 100 (= N_NERVES); %4 is the
+#                         MaxJobsPerUser limit for the a16 QOS (raising to
+#                         %8 has no effect — SLURM still throttles to 4)
 #   SEEDS_PER_TASK=10     ~600 MB working set per task — comfortable on a16
 #   per-task wall ~30-90 min (LBFGS + waveform-Adam combined)
-#   total sweep wall: ~3-4 h in ~3 array waves
+#   total sweep wall: ~3 h in ~3 array waves
+#
+# Cluster QOS limits (MaxJobsPerUser per QOS):
+#   a16   : 4    a30 : unlimited    a100 : 4 (12/account)
+#   h100  : 2    b200: 2            a100-sxm4-80gb : 4
 #
 # Outputs: outputs/selectivity_sweep/data_seed_<id>.json (one per seed,
 # saved by selectivity_sweep.py as it finishes each).
@@ -34,19 +37,24 @@
 #   cd /path/to/jaxley_fibers
 #   sbatch slurm/run_selectivity_sweep.sbatch
 #
-# Override examples
-# -----------------
-# Run on h100 instead (s0-n15, 4 GPUs available; per-task ~3× faster):
-#   sbatch --qos=h100 --gres=gpu:h100:1 -t 1:00:00 \
+# Override examples (with correct %concurrent for each QOS)
+# ---------------------------------------------------------
+# a100 is usually the throughput sweet spot (4 concurrent like a16 but
+# ~3× faster per task; total wall ~1 h):
+#   sbatch --qos=a100 --gres=gpu:a100:1 -t 1:00:00 \
 #          slurm/run_selectivity_sweep.sbatch
 #
-# Push h100 harder (25 seeds × 4 restarts ≈ 43 GB):
-#   sbatch --qos=h100 --gres=gpu:h100:1 -t 1:00:00 \
-#          --array=0-3%4 --export=ALL,SEEDS_PER_TASK=25 \
+# h100 / b200 are faster per task but capped at 2 concurrent — still
+# beats a16 on total wall.  Per-user MaxJobsPerUser=2, so %2:
+#   sbatch --qos=h100 --gres=gpu:h100:1 -t 1:00:00 --array=0-9%2 \
+#          slurm/run_selectivity_sweep.sbatch
+#   sbatch --qos=b200 --gres=gpu:b200:1 -t 1:00:00 --array=0-9%2 \
 #          slurm/run_selectivity_sweep.sbatch
 #
-# Use all 8 a16s instead of throttling to 4:
-#   sbatch --array=0-9%8 slurm/run_selectivity_sweep.sbatch
+# Push h100 / b200 harder (25 seeds × 4 restarts ≈ 43 GB, fits 80 GB):
+#   sbatch --qos=h100 --gres=gpu:h100:1 -t 1:00:00 \
+#          --array=0-3%2 --export=ALL,SEEDS_PER_TASK=25 \
+#          slurm/run_selectivity_sweep.sbatch
 #
 # Re-run a single seed:
 #   sbatch --array=42 --export=ALL,SEEDS_PER_TASK=1 \

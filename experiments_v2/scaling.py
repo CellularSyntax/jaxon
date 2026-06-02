@@ -70,7 +70,12 @@ OUT = ensure_dir(ROOT / "outputs" / "scaling")
 # local smoke run with extrapolation past N=100.
 PYFIBERS_BUDGET_S = float(os.environ.get("JAXLEY_FIBERS_PF_BUDGET_S", 7200.0))
 
-N_FIBERS = [1, 10, 100, 1000, 10000]
+N_FIBERS = [1, 10, 100, 1000, 10000, 100000]
+
+# Cap N for the JAX runs if a particular (model, N) combination OOMs the
+# available GPU (a16 has 16 GB; heavier models with large state at N=10^5
+# may not fit). Failures are caught and reported as 'oom' in the JSON.
+JAX_OOM_FALLBACK = True
 
 
 # ── Model registry ────────────────────────────────────────────────────────────
@@ -318,7 +323,16 @@ def run_model(model_key: str) -> dict:
     # ── Jaxley CPU ────────────────────────────────────────────────────────────
     print("\n--- Jaxley (CPU, vmap) ---")
     for n in N_FIBERS:
-        compile_s, run_s = time_jaxley(cfg, n, "cpu")
+        try:
+            compile_s, run_s = time_jaxley(cfg, n, "cpu")
+        except Exception as e:
+            msg = str(e).splitlines()[0] if str(e) else type(e).__name__
+            print(f"  n = {n:6d} ... FAILED: {msg}")
+            results["jaxley_cpu"]["compile"][n] = None
+            results["jaxley_cpu"]["run"][n]     = None
+            if JAX_OOM_FALLBACK:
+                continue
+            raise
         results["jaxley_cpu"]["compile"][n] = compile_s
         results["jaxley_cpu"]["run"][n]     = run_s
         print(f"  n = {n:6d} ... compile={compile_s:.2f} s | run={run_s:.3f} s")
@@ -327,7 +341,16 @@ def run_model(model_key: str) -> dict:
     if has_gpu:
         print("\n--- Jaxley (GPU, vmap) ---")
         for n in N_FIBERS:
-            compile_s, run_s = time_jaxley(cfg, n, "gpu")
+            try:
+                compile_s, run_s = time_jaxley(cfg, n, "gpu")
+            except Exception as e:
+                msg = str(e).splitlines()[0] if str(e) else type(e).__name__
+                print(f"  n = {n:6d} ... FAILED: {msg}")
+                results["jaxley_gpu"]["compile"][n] = None
+                results["jaxley_gpu"]["run"][n]     = None
+                if JAX_OOM_FALLBACK:
+                    continue
+                raise
             results["jaxley_gpu"]["compile"][n] = compile_s
             results["jaxley_gpu"]["run"][n]     = run_s
             print(f"  n = {n:6d} ... compile={compile_s:.2f} s | run={run_s:.3f} s")
@@ -346,24 +369,34 @@ def make_figure(all_results: list[dict]) -> None:
     if n_models == 1:
         axes = [axes]
 
+    def _drop_none(ns, ts):
+        """Strip (N, t) pairs where t is None (OOM/budget-skip)."""
+        return zip(*[(n, t) for n, t in zip(ns, ts) if t is not None]) if any(t is not None for t in ts) else ([], [])
+
     for ax, res in zip(axes, all_results):
         has_gpu = res["jaxley_gpu"] is not None
 
         # PyFibers
-        pf_ns = sorted(res["pyfibers"].keys())
-        pf_ts = [res["pyfibers"][n] for n in pf_ns]
-        ax.loglog(pf_ns, pf_ts, "o-", color="C3", lw=2.0, ms=6, label="PyFibers (CPU serial)")
+        pf_ns_all = sorted(res["pyfibers"].keys())
+        pf_ts_all = [res["pyfibers"][n] for n in pf_ns_all]
+        pf_ns, pf_ts = _drop_none(pf_ns_all, pf_ts_all)
+        if pf_ns:
+            ax.loglog(pf_ns, pf_ts, "o-", color="C3", lw=2.0, ms=6, label="PyFibers (CPU serial)")
 
         # Jaxley CPU run
-        cpu_ns = sorted(res["jaxley_cpu"]["run"].keys())
-        cpu_ts = [res["jaxley_cpu"]["run"][n] for n in cpu_ns]
-        ax.loglog(cpu_ns, cpu_ts, "s--", color="C0", lw=1.5, ms=5, label="Jaxley CPU (vmap)")
+        cpu_ns_all = sorted(res["jaxley_cpu"]["run"].keys())
+        cpu_ts_all = [res["jaxley_cpu"]["run"][n] for n in cpu_ns_all]
+        cpu_ns, cpu_ts = _drop_none(cpu_ns_all, cpu_ts_all)
+        if cpu_ns:
+            ax.loglog(cpu_ns, cpu_ts, "s--", color="C0", lw=1.5, ms=5, label="Jaxley CPU (vmap)")
 
         # Jaxley GPU run
         if has_gpu:
-            gpu_ns = sorted(res["jaxley_gpu"]["run"].keys())
-            gpu_ts = [res["jaxley_gpu"]["run"][n] for n in gpu_ns]
-            ax.loglog(gpu_ns, gpu_ts, "^--", color="C2", lw=1.5, ms=5, label="Jaxley GPU (vmap)")
+            gpu_ns_all = sorted(res["jaxley_gpu"]["run"].keys())
+            gpu_ts_all = [res["jaxley_gpu"]["run"][n] for n in gpu_ns_all]
+            gpu_ns, gpu_ts = _drop_none(gpu_ns_all, gpu_ts_all)
+            if gpu_ns:
+                ax.loglog(gpu_ns, gpu_ts, "^--", color="C2", lw=1.5, ms=5, label="Jaxley GPU (vmap)")
 
         ax.set_xlabel("N fibers")
         ax.set_ylabel("Wall-clock time (s)")

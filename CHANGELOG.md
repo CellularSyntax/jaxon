@@ -148,6 +148,18 @@ prior validated state.
   covers a cold pull while leaving warm-cache behaviour unchanged.
   Only matters when the container is not already cached on the assigned
   node; otherwise idempotent.
+- **`scaling.py` extended to N = 10⁵ fibers.** `N_FIBERS` now ends at
+  `100_000`. With the existing 7200 s per-model PyFibers budget:
+  myelinated models (MRG, Sweeney, MRG_Interp) reach N = 10⁵ for the
+  PyFibers comparison; the heavier C-fiber / Schild models truncate
+  inside the budget and rely on the (existing) extrapolation in the
+  figure for those cells. JAX runs all N values until something OOMs.
+- **OOM-tolerant JAX timing in `scaling.py`.** Each `(model, N, device)`
+  cell is now wrapped in try/except — if the GPU runs out of memory
+  (likely for the heavier models at N = 10⁵ on an a16's 16 GB) the
+  cell is logged as `null` in the JSON, printed as `FAILED:` in the
+  log, and the next cell continues. Figure code strips `None` cells
+  cleanly. Controlled by the `JAX_OOM_FALLBACK = True` module constant.
 - **`PYFIBERS_BUDGET_S` in `experiments_v2/scaling.py` raised from 120 s
   to 7200 s** (2 hours), and made overridable via the
   `JAXLEY_FIBERS_PF_BUDGET_S` environment variable. The 2 min cap was

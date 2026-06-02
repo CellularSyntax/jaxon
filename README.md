@@ -80,8 +80,13 @@ job starts in seconds, regardless of which node SLURM assigns:
 mkdir -p $HOME/containers
 
 # One-time pull — adjust QOS / GRES to whatever you have access to.
+# Note: --mem=128G is intentional. The fetch is small, but mksquashfs
+# (which builds the .sqsh file from extracted layers) can peak at
+# 60-100 GB of RAM with default parallel compression. Requesting 16 G
+# causes OOM-kill at the "Creating squashfs filesystem..." step.
+# Throttle with ENROOT_MAX_PROCESSORS=2 if you want to use less memory.
 srun --partition=gpu --qos=a16 --gres=gpu:a16:1 \
-     --cpus-per-task=4 --mem=16G -t 0:30:00 \
+     --cpus-per-task=4 --mem=128G -t 0:30:00 \
      --container-image=nvcr.io#nvidia/pytorch:25.03-py3 \
      --container-save=$HOME/containers/pytorch_25.03.sqsh \
      true

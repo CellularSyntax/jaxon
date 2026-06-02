@@ -57,6 +57,32 @@ prior validated state.
     they already match to machine precision because their AP peaks are
     sharp and unambiguous; touching them risks regression for no gain.
 
+### Removed
+- `jaxfibers/stim/mrg_extracellular_solver.py` (375 lines). Old
+  quasi-static V_pax solver, superseded by
+  `jaxfibers/stim/extracellular_coupled.py` (the full coupled (V_i, V_pax)
+  backward-Euler with block-Thomas sweep). Verified to have zero
+  references in the codebase before deletion.
+- `jaxfibers/stim/extracellular_utils.py` (228 lines). Old
+  activating-function-via-`.stimulate()` helper, superseded by direct
+  coupled-solver integration. Zero references before deletion.
+
+### Moved
+- `experiments_v2/{investigate_rattay_bica,smoke_test_mrg,smoke_test_sd_anomalies,verify_fix_all_pulses,verify_fix_mono_a}.py`
+  → `experiments_v2/debug/`. These are development-time investigation and
+  verification scripts kept in the repo for provenance but moved off the
+  top-level so the `experiments_v2/` listing reads as a manifest of
+  paper-relevant runs.
+
+### Changed
+- `README.md` rewritten. The old README described the v1 single-cable
+  approximation (with 20-35 % threshold errors), defunct `experiments/`
+  paths, the M1 Mac dev host, and `_smoke_channel.py` references to files
+  that were removed in the earlier `misc/legacy/` cleanup. The new README
+  reflects the v2 double-cable coupled solver, the current outputs/
+  layout, the validated headline numbers from `AUDIT.md`, and the
+  MedUni Vienna A16 cluster as the validation host.
+
 ### Notes
 - Began Phase A of the audit roadmap: known-bug fixes and deprecated-code
   removal. See `AUDIT.md` §3 and §6 for the full list.

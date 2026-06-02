@@ -1,190 +1,172 @@
 # jaxley_fibers
 
-Migration of the **MRG** myelinated peripheral-nerve-fiber model from **PyFibers**
-(NEURON / NMODL) into **Jaxley** (JAX / Python), with three experiments
-demonstrating biophysical equivalence, scaling, and gradient-based
-stimulation-waveform optimization.
+Differentiable, GPU-batched JAX/[Jaxley](https://github.com/jaxleyverse/jaxley)
+reimplementation of six published peripheral-nerve fiber models, paired with a
+custom backward-Euler coupled (V_i, V_pax) solver that reproduces NEURON's
+`extracellular` mechanism to <0.5 % threshold error and machine-precision
+conduction velocity. The framework enables gradient-based optimisation of
+extracellular stimulation parameters — selectivity, waveform shape, and
+electrode position — directly through the cable equation.
 
-See [migration_plan.md](migration_plan.md) for the full state tracker, design
-decisions, and accuracy caveats.
+> **State of the project:** see [AUDIT.md](AUDIT.md) for the full status report,
+> known gaps, and roadmap toward a Nature Communications follow-up to
+> Hussain et al. *Nat. Commun.* 15:7597 (2024).
+> See [CHANGELOG.md](CHANGELOG.md) for chronological changes.
+
+## Models
+
+| Model      | Type                        | Compartments        | Validation status     |
+|------------|-----------------------------|---------------------|-----------------------|
+| MRG        | Myelinated A-fiber (2002)   | 21 nodes (double-cable) | ✓ <0.5 % thresholds, 1e-12 CV |
+| MRG_Interp | MRG, polynomial geometry    | same                | scaling-only          |
+| Sweeney    | Myelinated A-fiber (1987)   | 21 nodes            | ✓ <0.1 % thresholds, 1e-12 CV |
+| Sundt      | Unmyelinated C-fiber (2015) | 51 uniform          | ✓ <0.5 % thresholds, CV fixed |
+| Rattay     | Unmyelinated HH C-fiber     | 51 uniform          | ✓ <0.5 % thresholds, CV fixed |
+| Schild94   | Unmyelinated C-fiber (full Ca dynamics) | 51 uniform | code complete; validation pending |
+| Schild97   | Unmyelinated C-fiber (mean) | 51 uniform          | code complete; validation pending |
 
 ## Quick start
 
-### First-time install (any OS)
+### Install
 
 ```bash
-# 1. clone / copy this directory
+# 1. enter the project directory
 cd jaxley_fibers
 
-# 2. create the env (CPU-only by default; see environment.yml comments for CUDA)
+# 2. create the env (CPU by default; uncomment jax[cuda12] in environment.yml for GPU)
 conda env create -f environment.yml
 
-# 3. activate and compile the NEURON .mod files for this host
+# 3. activate and compile NEURON .mod files
 conda activate jaxley_fibers
 pyfibers_compile
 ```
 
-For CUDA (Linux / Windows with NVIDIA GPU), edit `environment.yml` per its
-header comments **before** step 2 — uncomment the `jax[cuda12]` line and
-comment out the `jax[cpu]` line. Then:
+For CUDA hosts, edit `environment.yml` per its header comments before step 2,
+then verify:
 
 ```bash
-python -c "import jax; print(jax.devices())"
-# expect to see at least one CudaDevice
+python -c "import jax; print(jax.devices())"   # should list CudaDevice
 ```
 
-### Run the experiments
+### Run the validation suite
 
 ```bash
 conda activate jaxley_fibers
-cd jaxley_fibers
 
-python experiments/exp_1_validation.py     # fig1 + table1
-python experiments/exp_2_scaling.py        # fig2 (GPU line auto-included if CUDA visible)
-python experiments/exp_3_optimization.py   # fig3
+python experiments_v2/mrg_validation.py        # thresholds, CV, traces (MRG)
+python experiments_v2/sundt_validation.py      # ditto, Sundt
+python experiments_v2/rattay_validation.py     # ditto, Rattay
+python experiments_v2/sweeney_validation.py    # ditto, Sweeney
+python experiments_v2/scaling.py               # scaling benchmark, all models
+python experiments_v2/selectivity_demo.py      # local selectivity demo
+python experiments_v2/selectivity_sweep.py     # full population sweep
+python experiments_v2/selectivity_joint_opt.py # joint amps + electrode positions
 ```
 
-All outputs land in `outputs/`.
-
-### Moving the project to another host
-
-The repo is git-clean (`.gitignore` excludes compiled `.dylib` / `.so` / `.dll`
-NEURON mechanisms and Python caches). To transfer:
-
-```bash
-# option A: git
-git init && git add . && git commit -m "snapshot"
-git push <your remote>
-
-# option B: zip
-cd ..; zip -r jaxley_fibers.zip jaxley_fibers/ -x '*/__pycache__/*' '*/arm64/*' '*/x86_64/*'
-```
-
-On the new host, after `conda env create -f environment.yml`, you **must**
-re-run `pyfibers_compile` — the compiled `.mod` artefacts are
-platform-specific and intentionally not transferred.
+Outputs land in `outputs/<experiment>/`. Heavier sweeps are wired for SLURM
+under `slurm/` — see `slurm/submit_all.sh`.
 
 ## Package layout
 
 ```
 jaxley_fibers/
-├── README.md                 (this file)
-├── migration_plan.md         (state tracker + design notes + caveats)
-├── jaxfibers/                (the new pure-Python/JAX package)
-│   ├── channels/
-│   │   └── mrg_axnode.py     (AXNODE_myel.mod → differentiable Jaxley Channel)
-│   ├── fibers/
-│   │   └── mrg.py            (MRG morphology builder, returns a jaxley.Cell)
+├── AUDIT.md                       state-of-the-project + Nat Comms roadmap
+├── CHANGELOG.md                   chronological changes
+├── README.md                      this file
+├── environment.yml                pinned conda env
+├── jaxfibers/                     core package
+│   ├── channels/                  Jaxley Channel translations (MRG, Sundt,
+│   │                              Rattay, Sweeney, Schild94, Schild97)
+│   ├── fibers/                    morphology builders, one per model
 │   ├── stim/
-│   │   ├── intracellular.py  (rectangular intracellular pulse helper)
-│   │   └── extracellular.py  (point-source Ve + activating-function injection)
-│   └── nrn_baseline.py       (thin PyFibers wrapper for side-by-side runs)
-├── experiments/
-│   ├── exp_1_validation.py   → outputs/fig1_validation.png + table1_thresholds.csv
-│   ├── exp_2_scaling.py      → outputs/fig2_scaling.png
-│   ├── exp_3_optimization.py → outputs/fig3_optimization.png
-│   ├── _smoke_channel.py     (verify Jaxley rate functions vs NEURON to 1e-7)
-│   ├── _smoke_bisection.py   (sanity-check the JIT-cached threshold bisection)
-│   ├── _smoke_data_stim.py   (sanity-check data_stimulate inside JIT)
-│   └── _smoke_node_only_act.py (a failed hypothesis kept for the record)
-└── reference_code/pyfibers/  (upstream PyFibers, cloned for reference; not modified)
+│   │   ├── intracellular.py       rectangular intracellular pulse helper
+│   │   ├── extracellular.py       point-source Ve profile (V/mA at each node)
+│   │   ├── extracellular_coupled.py
+│   │   │                          coupled (V_i, V_pax) backward-Euler solver
+│   │   │                          with 2×2 block-Thomas sweep
+│   │   ├── batch_solve.py         vmapped multi-fiber forward pass
+│   │   └── multichannel_field.py  multi-contact ring-cuff field
+│   ├── optim/
+│   │   ├── losses.py              activation proxy, WQ loss, WBCE, SI
+│   │   └── optimizer.py           rect / waveform / joint Adam loops
+│   ├── nerve/geometry.py          synthetic nerve cross-section
+│   ├── objectives.py              differentiable objective helpers
+│   └── nrn_baseline.py            thin PyFibers / NEURON wrappers
+├── experiments_v2/                paper-relevant runs (manifest)
+│   ├── utils.py                   pulse registry, JAX bisection, AP detection
+│   ├── <model>_validation.py      thresholds + CV + traces, one per fiber model
+│   ├── scaling.py                 PyFibers vs Jaxley CPU vs Jaxley GPU
+│   ├── selectivity_*.py           selectivity optimisation experiments
+│   └── debug/                     dev-time investigation and verification scripts
+├── outputs/                       validation JSONs + figures + scaling data
+├── slurm/                         SLURM sbatch drivers for the cluster
+└── reference_code/pyfibers/       upstream PyFibers, cloned for reference
 ```
 
-## What lives where
+## Core design
 
-* **Channel translation** (`jaxfibers/channels/mrg_axnode.py`) translates the
-  NMODL mechanism `AXNODE_myel.mod` — Fast Na (m³h), Persistent Na (mp³),
-  Slow K (s), and a leak — into one Jaxley `Channel` class with pure
-  `jax.numpy` rate functions. The five `vtrap*` helpers preserve the
-  small-denominator and ±150 mV asymptote guards via `jnp.where`.
-  Cross-validated against NEURON to ~1 × 10⁻⁷ relative error
-  (see `_smoke_channel.py`).
+* **Channels.** Each NMODL mechanism is hand-translated into a pure-JAX
+  `Channel` class with `solve_gate_exponential` updates. Rate constants are
+  validated against the published `.mod` formulas to machine precision.
+* **Fibers.** Each builder returns a `jaxley.Cell` and an `MrgGeometry`-style
+  dataclass that fully describes the per-compartment static parameters.
+* **Coupled solver (`extracellular_coupled.integrate`).** Custom
+  backward-Euler integrator for the 2-state (V_i, V_pax) cable equation —
+  the principled equivalent of NEURON's `extracellular` mechanism, not the
+  single-cable activating-function approximation. Uses a 2×2 block-Thomas
+  sweep verified to 5e-11 mV against dense LU; back-substitution is via
+  `jax.lax.associative_scan` for O(log n) backward depth.
+* **Batching.** `stack_fiber_statics` packs N fibers into vmapped arrays;
+  `batch_integrate_m_max` runs them in parallel on the GPU for the optimisation
+  loops.
+* **Optimisation.** Three modes in `optim/optimizer.py`:
+  * rectangular per-contact amplitudes via packed finite-difference gradient
+    (K+1 configs in one forward pass);
+  * arbitrary K×T waveforms via autodiff through the ODE scan (with gradient
+    checkpointing);
+  * joint amplitudes + electrode positions via FD over both, with the field
+    recomputed differentiably each step.
 
-* **Fiber morphology** (`jaxfibers/fibers/mrg.py`) reconstructs the
-  MRG_DISCRETE geometry: a repeating period of
-  `node — MYSA — FLUT — STIN×6 — FLUT — MYSA` (11 sections per period).
-  The myelin shell is **lumped** into the compartment-level capacitance and
-  conductance via the series formulas
-    `1/C_eff = 1/C_axon + 1/C_myelin`,
-    `1/g_eff = 1/g_axon + 1/g_myelin`,
-  with `C_myelin = mycm/(2·nl)` and `g_myelin = mygm/(2·nl)`.
-  This is the standard single-cable approximation of NEURON's
-  two-layer `extracellular` mechanism and is the dominant source of
-  morphology-level error in the threshold table (see caveats).
+## Headline numbers (post-audit, 2026-06-02)
 
-* **Stimulation** (`jaxfibers/stim/`):
-  * Intracellular pulses go directly through `cell.branch(0).comp(i).stimulate(...)`.
-  * Extracellular stimulation is implemented as the classical Rattay
-    *activating function*: compute the static spatial profile of V_ext at
-    each compartment center (point-source formula) and inject the
-    Kirchhoff sum of axial currents driven by V_ext as a time-varying
-    intracellular current at each compartment.
-
-* **PyFibers baseline** (`jaxfibers/nrn_baseline.py`) is a thin wrapper
-  around `pyfibers.build_fiber` + `IntraStim` / `ScaledStim` for the
-  side-by-side comparisons.
-
-## Headline results
-
-* **Channel rates match NEURON to ~1 × 10⁻⁷** across v ∈ [-120, +60] mV.
-  See `experiments/_smoke_channel.py`.
-
-* **Vm and gate traces** at the mid node overlay reasonably for both intra-
-  and extracellular stimuli ([outputs/fig1_validation.png](outputs/fig1_validation.png)).
-  Jaxley peaks are slightly higher than NEURON's due to single-cable lumping.
-
-* **Extracellular threshold** ([outputs/table1_thresholds.csv](outputs/table1_thresholds.csv)):
-
-  | d (µm) | PyFibers (mA) | Jaxley (mA) | |err| |
-  | ------ | ------------- | ----------- | ---- |
-  | 5.7    | -0.312        | -0.201      | 35.5 % |
-  | 10.0   | -0.183        | -0.138      | 24.7 % |
-  | 14.0   | -0.159        | -0.127      | 20.3 % |
-
-  This 20-35 % gap is the *expected* cost of the single-cable myelin
-  approximation. The brief asked for < 0.01 % which is not achievable across
-  two different cable formulations; achieving it would require implementing
-  NEURON's full two-layer `extracellular` mechanism in Jaxley.
-
-* **Scaling** ([outputs/fig2_scaling.png](outputs/fig2_scaling.png)):
-  Jaxley `vmap` on CPU is ~65× faster than PyFibers' serial loop at N = 100
-  identical fibers, with the gap widening as N grows (Jaxley = 0.31 s at
-  N = 1000 vs PyFibers extrapolated ~32 s).
-  No CUDA GPU on this host (M1 Max); jax-metal is not installed, so the
-  "GPU" line in the figure is annotated N/A.
-
-* **Gradient-based waveform optimization** ([outputs/fig3_optimization.png](outputs/fig3_optimization.png)):
-  Adam through a `jax.jit`-compiled `jx.integrate` call backpropagates
-  through every NMODL rate function and every cable-solve step. The
-  optimizer reduces injected energy until the AP-threshold constraint binds,
-  then rides the energy/AP-margin Pareto front.
+* **MRG threshold error vs NEURON:** median +0.04 %, max 0.39 %, across
+  432 cases (9 diameters × 8 pulse shapes × 6 pulse widths). 100-1000× better
+  than Hussain et al.'s S-MF surrogate (2.5 % MAPE, range −11 % to +7.3 %).
+* **Sweeney threshold error:** max 0.09 % across 240 cases.
+* **MRG / Sweeney conduction velocity:** 1e-12 % (machine precision) across
+  all diameters.
+* **Scaling (vs single-core NEURON):** 30-40× CPU vmap, 60-120× GPU vmap at
+  N = 1000 fibers. Headline speedup is smaller than the AxonML surrogate
+  (~10⁴×); this project's value is *accuracy* and *differentiability*, not
+  raw forward speed (see [AUDIT.md](AUDIT.md) §4.1).
 
 ## Caveats
 
-1. **Single-cable myelin lumping.** Jaxley does not have NEURON's two-layer
-   `extracellular` mechanism, so the myelin sheath and periaxonal space are
-   folded into the compartment-level Cm and g_pas via series formulas. This
-   reduces extracellular threshold accuracy by ~20-35 % (see table above).
-   The channel-level translation is exact.
-
-2. **CPU only on this host (M1 Max).** No CUDA GPU is available, and
-   `jax-metal` is not installed in the env — `fig2_scaling.png` annotates
-   that line as N/A. On a CUDA host the Jaxley line is expected to drop
-   another ~1-2 orders of magnitude at N = 10⁴.
-
-3. **Tigerholm (unmyelinated C-fiber)** translation is *not* included.
-   Tigerholm uses 11 NMODL mechanisms with shared Na/K ion-concentration
-   pools — roughly 10× the MRG translation work — and was scoped out for
-   this session. Future work.
+1. **Extracellular field is point-source.** All current experiments use a
+   point-source potential in a homogeneous medium (σ = 0.3 S/m). Real
+   FEM-derived fields (e.g. from ASCENT, as used by Hussain et al.) are
+   on the Phase B roadmap.
+2. **Synthetic nerve geometry.** Fibers are randomly placed in a circular
+   cross-section with an eccentric target fascicle. Histology-derived
+   morphology (Pelot 2020 pig / 2021 human SPARC datasets) is on the
+   roadmap.
+3. **Schild94 / Schild97 are not yet validated.** Channel and fiber code
+   exist and are wired into the scaling benchmark but the dedicated
+   validation runs have not been executed on the cluster.
+4. **Sundt at D = 1.2 µm gives a non-physiological CV (~19 m/s)** in the
+   current validation script because the bisection lands on a
+   suprathreshold pulse that fires multi-site. Reported by both JAX and
+   PyFibers identically — a measurement artefact, not a model error.
+   Lower the `amp = thr * 1.3` factor or use a centred intracellular
+   pulse for CV measurement if this matters.
 
 ## Reproducibility
 
-The verified stack is pinned in [`environment.yml`](environment.yml) and
-[`requirements.txt`](requirements.txt):
+Versions pinned in `environment.yml` / `requirements.txt`:
 
 ```
-python       3.10
-jax          0.6.2  (jax[cpu] on Apple silicon; jax[cuda12] on CUDA hosts)
+python       3.11
+jax          0.6.2  (jax[cpu] on local, jax[cuda12] on CUDA hosts)
 jaxley       0.13.0
 neuron       9.0.1
 pyfibers     0.8.5
@@ -194,6 +176,8 @@ matplotlib   3.10.9
 pandas       2.3.3
 ```
 
-Dev host where the v1 figures in `outputs/` were produced: Apple M1 Max,
-32 GB RAM, macOS 24.6. From v2 onward (see [`migration_plan.md`](migration_plan.md))
-the project moves to a CUDA host for the headline experiments.
+Cluster validation hardware: MedUni Vienna HPC, NVIDIA A16 (16 GB VRAM),
+SLURM. Cluster has no git — copy via scp from the dev host and re-run
+`pyfibers_compile` after the conda env is created on the new host
+(NEURON `.mod` artefacts are platform-specific and intentionally
+gitignored).

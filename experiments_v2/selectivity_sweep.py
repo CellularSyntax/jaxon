@@ -98,9 +98,18 @@ N_OPT_RECT      = 30           # LBFGS converges much faster than Adam:
                                 # ~20-30 iters of LBFGS ≈ ~100 iters of Adam-FD,
                                 # because each LBFGS step uses curvature info
                                 # via the Strong-Wolfe zoom line search.
-N_RESTARTS_RECT = 4            # M parallel restarts (vmapped). Restart 0 is
-                                # the Ve-weighted deterministic init; 1..M-1
-                                # are random.  Best of M wins.
+N_RESTARTS_RECT = int(os.environ.get("N_RESTARTS_RECT", 2))
+# M parallel restarts (vmapped over restart axis on the GPU).  Restart 0 is
+# the bipolar Ve-weighted deterministic init; 1..M-1 are random in
+# (-clip/4, +clip/4).  Best of M wins.
+#
+# Memory note: LBFGS autodiff backward through the T=600 scan with M
+# restarts vmapped consumes ~3 GB per restart on the cluster (200 fibers ×
+# 221 comp, with @jax.checkpoint).  M=4 needs ~12 GB and OOMs on A16's
+# ~12 GB usable VRAM.  M=2 (the default below) is the verification-run
+# sweet spot: still gets the multi-restart escape benefit but fits on A16.
+# For a100/h100 with more VRAM, override with `N_RESTARTS_RECT=4` (or
+# higher) in the sbatch.
 N_OPT_WAVE      = 100          # Waveform still uses Adam; 100 iters is plenty.
 EXAMPLE_SEED    = 0            # seed for the example activation-map figure
 

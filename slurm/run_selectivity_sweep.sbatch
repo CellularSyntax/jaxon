@@ -38,16 +38,27 @@
 #   cd /path/to/jaxley_fibers
 #   sbatch slurm/run_selectivity_sweep.sbatch
 #
+# LBFGS rect restarts
+# -------------------
+# The verification run defaults to N_RESTARTS_RECT=2 (set inside
+# selectivity_sweep.py) so the autodiff-backward graph fits in A16's
+# ~12 GB usable VRAM with N_FIBERS=200.  Override via env var on
+# bigger GPUs:
+#   sbatch --qos=a100 --gres=gpu:a100:1 -t 1:00:00 \
+#          --export=ALL,N_RESTARTS_RECT=4 \
+#          slurm/run_selectivity_sweep.sbatch
+#
 # Scaling examples (after verification succeeds)
 # ----------------------------------------------
 # Full 100-seed sweep on a16, 10 seeds vmapped per task, 4 concurrent
-# (a16 MaxJobsPerUser=4):
+# (a16 MaxJobsPerUser=4); also override N_RESTARTS_RECT for h100/a100:
 #   sbatch --array=0-9%4 --export=ALL,SEEDS_PER_TASK=10 -t 4:00:00 \
 #          slurm/run_selectivity_sweep.sbatch
 #
-# Same on a100 (~3× faster per task):
+# Same on a100 (~3× faster per task, fits N_RESTARTS_RECT=4):
 #   sbatch --qos=a100 --gres=gpu:a100:1 -t 1:00:00 \
-#          --array=0-9%4 --export=ALL,SEEDS_PER_TASK=10 \
+#          --array=0-9%4 \
+#          --export=ALL,SEEDS_PER_TASK=10,N_RESTARTS_RECT=4 \
 #          slurm/run_selectivity_sweep.sbatch
 #
 # Re-run a single seed:
@@ -94,10 +105,15 @@ export SEED_START="${SEED_START:-$(( TASK_ID * SEEDS_PER_TASK ))}"
 export SEED_END="${SEED_END:-$(( SEED_START + SEEDS_PER_TASK ))}"
 export SEEDS_PER_TASK
 
+# LBFGS rect-restart count.  Default 2 fits A16's ~12 GB usable VRAM with
+# N_FIBERS=200; bump to 4 on a100/h100 (see header).
+export N_RESTARTS_RECT="${N_RESTARTS_RECT:-2}"
+
 echo "Project root    : ${PROJECT_ROOT}"
 echo "Container       : ${CONTAINER_IMAGE}"
 echo "Array task ID   : ${TASK_ID}"
 echo "Seeds this task : ${SEED_START}..$((SEED_END - 1)) (${SEEDS_PER_TASK} seeds vmapped)"
+echo "LBFGS restarts  : ${N_RESTARTS_RECT}"
 
 # Pyxis container pulls can exceed SLURM's 32-second default step-launch
 # timeout on a cold node cache (the nvcr.io PyTorch image is ~10 GB).
@@ -115,6 +131,7 @@ export JAX_ENABLE_X64=1
 export SEED_START=\"${SEED_START}\"
 export SEED_END=\"${SEED_END}\"
 export SEEDS_PER_TASK=\"${SEEDS_PER_TASK}\"
+export N_RESTARTS_RECT=\"${N_RESTARTS_RECT}\"
 bash \"${PROJECT_ROOT}/slurm/setup_env.sh\"
 echo \"[job] Running selectivity_sweep.py seeds \${SEED_START}..\$((SEED_END-1)) (\${SEEDS_PER_TASK} per vmap chunk) ...\"
 python -u experiments_v2/selectivity_sweep.py

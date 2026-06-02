@@ -68,17 +68,26 @@ class RattayHH(Channel):
         q10 = 2.24659524757 ** ((celsius - 6.3) / 10.0)
         vsh = v + 70.0   # shift so v_rest=-70 maps to 0 (standard HH origin)
 
+        # Symmetric ±50 clip on the exponent: prevents overflow at extreme V
+        # while preserving the correct LARGE rate constants at hyperpolarised
+        # voltages (v < V_rest).  An earlier (-50, 0) cap silently truncated
+        # exp(+x) → 1 for v < -70 mV, underestimating β_m, α_h, β_n by up to
+        # ~16× at v ≈ -120 mV (end nodes during the cathodic phase of bi_ca).
+        # This produced the +6-8 % bi_ca threshold over-estimate diagnosed
+        # 2026-06-02 — h failed to recover during prolonged hyperpolarisation,
+        # so virtual-cathode anodal break required more current.
+
         # m gate (Na activation, m³)
         am = q10 * _vtrap(2.5 - 0.1 * vsh, 1.0)
-        bm = q10 * 4.0 * jnp.exp(jnp.clip(-vsh / 18.0, -50.0, 0.0))
+        bm = q10 * 4.0 * jnp.exp(jnp.clip(-vsh / 18.0, -50.0, 50.0))
 
         # h gate (Na inactivation)
-        ah = q10 * 0.07 * jnp.exp(jnp.clip(-vsh / 20.0, -50.0, 0.0))
+        ah = q10 * 0.07 * jnp.exp(jnp.clip(-vsh / 20.0, -50.0, 50.0))
         bh = q10 / (jnp.exp(jnp.clip(3.0 - 0.1 * vsh, -50.0, 50.0)) + 1.0)
 
         # n gate (K activation, n⁴)
         an = q10 * 0.1 * _vtrap(1.0 - 0.1 * vsh, 1.0)
-        bn = q10 * 0.125 * jnp.exp(jnp.clip(-vsh / 80.0, -50.0, 0.0))
+        bn = q10 * 0.125 * jnp.exp(jnp.clip(-vsh / 80.0, -50.0, 50.0))
 
         return (am, bm), (ah, bh), (an, bn)
 

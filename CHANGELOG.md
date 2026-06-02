@@ -18,6 +18,25 @@ prior validated state.
   C-fiber Δt ≈ 0.3–0.5 ms).
 
 ### Fixed
+- **Rattay bi_ca threshold over-estimate (+6 to +8.2 %)** at PW ≥ 0.1 ms,
+  across all 5 diameters. Root cause: asymmetric exponential clip
+  `jnp.exp(jnp.clip(-vsh / k, -50.0, 0.0))` in
+  `jaxfibers/channels/rattay_channels.py::_alpha_beta` truncated β_m, α_h,
+  β_n at v < V_rest = -70 mV (clipping exp argument > 0 to 1). At V = -100 mV
+  (end nodes during the cathodic phase of bi_ca), β_m was 5.3× too small
+  and α_h was 4.5× too small. The h gate failed to recover from prolonged
+  hyperpolarisation, so the subsequent virtual-cathode anodal break in
+  the anodic phase needed extra current to overcome residual Na
+  inactivation — direction and magnitude consistent with the +6-8 % bug.
+  Fix: clip changed to symmetric ±50; verified against unclipped NEURON
+  formulas to 2.5e-16 (machine epsilon) across V ∈ [-120, +30] mV.
+  Other pulse shapes (mono_c, mono_a, bi_ac) were unaffected because they
+  do not depend on h-gate recovery from chronic hyperpolarisation at
+  end nodes.
+  - **Re-run required**: `sbatch slurm/run_rattay_validation.sbatch`.
+  - Expected post-fix: bi_ca |err| ≤ 0.5 % matching the other pulse shapes.
+  - Stale: `outputs/rattay_validation/data_rattay_sd.json` (pre-fix).
+
 - **Sundt CV spike at D = 1.0 µm (1.6 %)** and **Rattay CV systematic
   −1.7 % to −2.6 %** across D ≥ 0.5 µm: replaced argmax-peak AP detection in
   `_jax_cv` / `_pf_cv` of `sundt_validation.py` and `rattay_validation.py`

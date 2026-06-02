@@ -249,6 +249,15 @@ def _run_seed_chunk(seeds: list[int], verbose: bool = True) -> list[dict]:
     # ── Rect (LBFGS + multi-restart, batched over seeds when len > 1) ─────────
     pulse_mask = seed_inputs[0]["pulse_mask"]    # same across seeds
     rect_t0 = time.time()
+    # amp_init_mA=-1.5, amp_clip=(-3, 3): default (-0.4, ±2.5) was tuned for
+    # the mixed-diameter regime where 14-16 µm fibers fire at ~-0.2 mA.
+    # With single D=5.7 µm, that init is well below threshold (≈ -1.5 mA
+    # at this cuff distance), so the activation proxy is flat and SI stays
+    # pinned at 0.000.  Initialising at the expected threshold magnitude
+    # gives the gradient useful signal from iter 0.
+    AMP_INIT_MA = -1.5
+    AMP_CLIP    = (-3.0, 3.0)
+
     if len(seeds) == 1:
         s_in = seed_inputs[0]
         print(f"{s_in['label']} Rect LBFGS ({N_RESTARTS_RECT} restarts × "
@@ -261,6 +270,7 @@ def _run_seed_chunk(seeds: list[int], verbose: bool = True) -> list[dict]:
             node_indices=s_in["node_indices"],
             target_mask=s_in["nerve"].target_mask,
             dt=DT, n_restarts=N_RESTARTS_RECT, n_steps=N_OPT_RECT,
+            amp_init_mA=AMP_INIT_MA, amp_clip=AMP_CLIP,
             rng_seed=seeds[0], verbose=verbose,
         )
         rect_lbfgs_results = [rect_lbfgs_res]
@@ -275,6 +285,7 @@ def _run_seed_chunk(seeds: list[int], verbose: bool = True) -> list[dict]:
             node_indices_batches=np.stack([s_in["node_indices"] for s_in in seed_inputs]),
             target_masks=np.stack([s_in["nerve"].target_mask for s_in in seed_inputs]),
             dt=DT, n_restarts=N_RESTARTS_RECT, n_steps=N_OPT_RECT,
+            amp_init_mA=AMP_INIT_MA, amp_clip=AMP_CLIP,
             rng_seeds=seeds, verbose=verbose,
         )
     rect_t_total = time.time() - rect_t0

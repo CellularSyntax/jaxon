@@ -141,6 +141,16 @@ def main():
         target_mask=nerve.target_mask,
         dt=DT,
         n_steps=N_OPT_RECT,
+        # Default amp_init_mA=-0.4 was tuned for the mixed-diameter regime
+        # (5.7..16 µm) where large fibers fire at low amps and the gradient
+        # is non-zero at init.  With single D=5.7 µm, -0.4 mA is well below
+        # threshold (~-1.5 mA at this cuff distance) and the activation
+        # proxy is flat → SI stays pinned at 0.000.  Init at -1.5 mA puts
+        # the closest contact near threshold so gradients are informative
+        # from iter 0.  Widen the clip to (-3, 3) for headroom in case
+        # LBFGS / Adam want to push further during steering.
+        amp_init_mA=-1.5,
+        amp_clip=(-3.0, 3.0),
         verbose=True,
     )
     t_rect = time.time() - t0
@@ -170,6 +180,9 @@ def main():
         # lr_amp default (8e-2) matches selectivity_demo's working regime;
         # lr_pos kept explicit because position scale (µm) is unrelated to lr_amp scale (mA).
         lr_pos=10.0,
+        # Match the rect step's widened clip — otherwise the joint loop pulls
+        # supra-threshold amps back to (-2.5, 2.5) and undoes the rect warm-start.
+        amp_clip=(-3.0, 3.0),
         verbose=True,
         sigma_S_m=SIGMA_S_M,
     )

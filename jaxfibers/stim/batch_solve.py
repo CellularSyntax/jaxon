@@ -249,6 +249,14 @@ def _integrate_one_fiber_m_max_fd(
     n = fs.is_node.shape[0]
     T = pulse_seq.shape[0]
 
+    # `@jax.checkpoint` is a no-op for pure forward (Adam-FD path), but
+    # essential when this scan is run under autodiff (LBFGS rect path):
+    # without it, value_and_grad materialises the full T-step trajectory
+    # of every state variable for every fiber, blowing up GPU memory
+    # (~250 GB at N_FIBERS=200, n_restarts=4 on a 16 GB A16).  With
+    # checkpointing, each step's state is recomputed during backward,
+    # bringing peak memory in line with the forward-only footprint.
+    @jax.checkpoint
     def step(carry, s):
         Vi, Vp, st, m_max = carry
         M, H, MP, S = st

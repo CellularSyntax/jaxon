@@ -301,7 +301,7 @@ def run_rect_optimization_lbfgs(
     weights: np.ndarray | None = None,
     rng_seed: int = 0,
     lbfgs_memory: int = 10,
-    linesearch_max_steps: int = 20,
+    linesearch_max_steps: int = 5,
     verbose: bool = True,
 ) -> dict:
     """LBFGS with M parallel random restarts (single seed).
@@ -445,7 +445,7 @@ def run_rect_optimization_lbfgs_batched(
     weights_per_seed: np.ndarray | None = None,  # [S, n_fibers] or None
     rng_seeds: list[int] | None = None,
     lbfgs_memory: int = 10,
-    linesearch_max_steps: int = 20,
+    linesearch_max_steps: int = 5,
     verbose: bool = True,
 ) -> list[dict]:
     """LBFGS multi-restart over a batch of S seeds via outer vmap.

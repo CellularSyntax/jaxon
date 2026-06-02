@@ -42,6 +42,20 @@ outputs/*.log
 outputs/scratch/
 *.tmp
 
+# --- SLURM job logs (slurm/submit_all.sh writes to logs/) ---
+logs/
+*.log
+
+# --- Profiling / coverage artefacts ---
+*.prof
+.coverage
+htmlcov/
+
+# --- Editor backups / merge debris ---
+*.bak
+*.orig
+*~
+
 # --- Cloned upstream code lives in reference_code/ but ignore its
 #     build artefacts ---
 reference_code/**/__pycache__/

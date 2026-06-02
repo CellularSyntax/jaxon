@@ -75,26 +75,36 @@ from experiments_v2.utils import ensure_dir, plot_seed_summary
 OUT = ensure_dir(ROOT / "outputs" / "selectivity_sweep")
 
 # ─────────────────────────────────────────────────── sweep parameters ─────────
-N_NERVES        = 100   # total seeds across all array tasks
-N_FIBERS        = 200          # Hussain placed 1 fiber per fascicle; we vmap
+# Every parameter below is env-overridable so a smoketest sbatch can shrink
+# N_FIBERS / N_OPT_* / T_STOP to slash compile + run time without touching
+# the code.  See slurm/run_selectivity_sweep_smoketest.sbatch.
+def _env_int(name, default):  return int(os.environ.get(name, default))
+def _env_flt(name, default):  return float(os.environ.get(name, default))
+
+N_NERVES        = _env_int("N_NERVES", 100)
+N_FIBERS        = _env_int("N_FIBERS", 200)
+                                # Hussain placed 1 fiber per fascicle; we vmap
                                 # hundreds per nerve realisation to showcase
                                 # the parallel speed advantage of jaxfibers.
-FIBER_DIAMETER_UM = 5.7        # Hussain's representative MRG fiber.  Single
+FIBER_DIAMETER_UM = _env_flt("FIBER_DIAMETER_UM", 5.7)
+                                # Hussain's representative MRG fiber.  Single
                                 # diameter only — mixed diameters slow LBFGS
                                 # convergence and aren't needed for the
                                 # selectivity optimisation (Hussain assumed
                                 # all fibres of a given diameter in a fascicle
                                 # share the same threshold).
-N_NODES         = 21           # n_comp = 20×11 + 1 = 221 (~23 mm fiber for D=10 µm)
+N_NODES         = _env_int("N_NODES", 21)
+                                # n_comp = 20×11 + 1 = 221 (~23 mm fiber for D=10 µm)
 N_CONTACTS      = 6
 NERVE_RADIUS_UM = 500.0
 CUFF_RADIUS_UM  = 1500.0
 TARGET_FRACTION = 0.30
-DT              = 0.005        # ms
-T_STOP          = 3.0          # ms; PW + DELAY + slowest-MRG propagation ≈ 2.1 ms.
+DT              = _env_flt("DT", 0.005)        # ms
+T_STOP          = _env_flt("T_STOP", 3.0)      # ms; PW + DELAY + slowest-MRG propagation ≈ 2.1 ms.
 DELAY_MS        = 1.0
 PW_MS           = 0.1
-N_OPT_RECT      = 30           # LBFGS converges much faster than Adam:
+N_OPT_RECT      = _env_int("N_OPT_RECT", 30)
+                                # LBFGS converges much faster than Adam:
                                 # ~20-30 iters of LBFGS ≈ ~100 iters of Adam-FD,
                                 # because each LBFGS step uses curvature info
                                 # via the Strong-Wolfe zoom line search.
@@ -110,7 +120,8 @@ N_RESTARTS_RECT = int(os.environ.get("N_RESTARTS_RECT", 2))
 # sweet spot: still gets the multi-restart escape benefit but fits on A16.
 # For a100/h100 with more VRAM, override with `N_RESTARTS_RECT=4` (or
 # higher) in the sbatch.
-N_OPT_WAVE      = 100          # Waveform still uses Adam; 100 iters is plenty.
+N_OPT_WAVE      = _env_int("N_OPT_WAVE", 100)
+                                # Waveform still uses Adam; 100 iters is plenty.
 EXAMPLE_SEED    = 0            # seed for the example activation-map figure
 
 

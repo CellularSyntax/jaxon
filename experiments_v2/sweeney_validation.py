@@ -1,7 +1,8 @@
 """Sweeney myelinated-fiber validation suite — v2.
 
 Validates the JAX coupled (Vi, Vpax) solver for the Sweeney (1987) model
-against PyFibers/NEURON across all fibre diameters, pulse widths, and pulse shapes.
+against PyFibers/NEURON at D=10 µm (matches Sweeney 1987 + Marshall 2025) across all
+8 pulse shapes and 6 pulse widths.
 
 Design note: ALL sections in the Sweeney geometry have is_node=True (Vp=Ve pinned),
 so the coupled solver collapses to a single-cable with the extracellular field directly
@@ -11,8 +12,8 @@ are applied only at nodes via a has_channel mask.
 Tasks
 -----
 1. Vm + gate traces (intracellular & extracellular) at D=10 µm
-2. Strength-duration curves — all 6 diameters × 8 pulse shapes × 6 PWs
-3. Conduction velocity — all 6 diameters (self-contained)
+2. Strength-duration curves at D=10 µm — 8 pulse shapes × 6 PWs
+3. Conduction velocity at D=10 µm (self-contained)
 4. Figures: traces, SD curves, error analysis
 
 Outputs (outputs/sweeney_validation/)
@@ -78,12 +79,21 @@ GL     = 0.128    # S/cm²
 EL     = -80.01   # mV
 ENA    = 35.64    # mV
 
-DIAMETERS   = [2.0, 4.0, 6.0, 8.0, 10.0, 12.0]       # µm
+# Sweeney (1987) derived and validated parameters at D=10 µm only.  Marshall
+# et al. 2025 (PyFibers) also restrict their Sweeney validation to D=10 µm.
+# We follow suit — validating at off-design diameters with anodic-leading
+# stimulation triggers NEURON's `extracellular` mechanism into a singular
+# linear solve ("Zero Diagonal" / NaN), which is a PyFibers/NEURON
+# off-design failure, not a jaxfibers issue.
+DIAMETERS   = [10.0]                                  # µm
 SD_PWS      = [0.02, 0.05, 0.1, 0.2, 0.5, 1.0]        # ms
 PULSE_KEYS  = list(PULSES.keys())
 
 TRACE_DIAM   = 10.0  # µm
-INTRA_AMP_NA = 1.0
+# Suprathreshold intracellular IClamp for the Vm-trace panel (Task 1).
+# 1 nA × 0.1 ms is sub-threshold for Sweeney D=10 µm (passive depolarization
+# only).  3 nA × 0.1 ms reliably elicits an action potential.
+INTRA_AMP_NA = 3.0
 INTRA_PW_MS  = 0.1
 EXTRA_PW_MS  = 0.1
 
@@ -495,7 +505,7 @@ def fig_traces(data: dict) -> None:
     fig.suptitle(f"Sweeney D={data['diameter']} µm — PyFibers/NEURON vs JAX", fontsize=11)
     path = OUT / "fig_sweeney_traces.png"
     fig.savefig(path, dpi=150, bbox_inches="tight")
-    print(f"  → {path}")
+    print(f"  -> {path}")
 
 
 # ── Figure 2: SD curves ───────────────────────────────────────────────────────
@@ -534,10 +544,11 @@ def fig_sd_curves(sd: dict) -> None:
     for ax in axes[len(PULSE_KEYS):]:
         ax.set_axis_off()
 
-    fig.suptitle("Sweeney SD curves — PyFibers solid, JAX dashed (all 6 diameters)", fontsize=11)
+    fig.suptitle("Sweeney SD curves — PyFibers solid, JAX dashed (D=10 µm, Sweeney 1987 / Marshall 2025 scope)",
+                  fontsize=11)
     path = OUT / "fig_sweeney_sd_curves.png"
     fig.savefig(path, dpi=150, bbox_inches="tight")
-    print(f"  → {path}")
+    print(f"  -> {path}")
 
 
 # ── Figure 3: Analysis ────────────────────────────────────────────────────────
@@ -648,7 +659,7 @@ def fig_analysis(sd: dict, cv: dict) -> None:
     )
     path = OUT / "fig_sweeney_analysis.png"
     fig.savefig(path, dpi=150, bbox_inches="tight")
-    print(f"  → {path}")
+    print(f"  -> {path}")
 
 
 # ── main ─────────────────────────────────────────────────────────────────────

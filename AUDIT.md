@@ -243,25 +243,25 @@ specific cuffs:
 | (b) kHz block | Pig vagus, Suppl. Note 1 **P2** | ImThera (6-contact extraneural) | **7 sampled fascicles**, 100 Hz intrinsic pacing | rows × cols × 7 fascicles × N amps |
 | (d) Spike desync | Human vagus, Suppl. Note 1 **H2** | Helical (Cyberonics-like) | **N=35**: 7 fiber positions × 5 intrinsic firing patterns | rows × cols × 3 stim_freqs × N amps × 35 |
 
-Missing infrastructure to land these panels:
+Plan locked (2026-06-02 — confirmed with MH):
+1. **Hussain P2 + H2 fascicle traces** — already available (MH knows
+   location, presumably their Zenodo/figshare or ASCENT repo). Use
+   their digitised outlines directly; do not retrace from screenshots.
+2. **ImThera + helical cuff CAD** — both already exist in MH's in-house
+   FEM pipeline. We do not need to build cuff geometry.
+3. **FEM output is voxel grid (.npz / .vtk) per contact**. jaxfibers
+   side needs a new `load_ve_voxel_template(npz_path) -> callable that
+   interpolates Ve at arbitrary (x,y,z)`. Per-fiber Ve_unit is then
+   stacked just like the existing selectivity_sweep code expects.
+4. **Per-fascicle fiber populations** — need to confirm the diameter
+   histogram per fascicle (Hussain text/supplementary should list this);
+   then sample fibers from those distributions with controlled RNG.
 
-1. **Anatomy** — `jaxfibers/nerve/geometry.py` only has a synthetic
-   "random uniform fibers + one eccentric target fascicle". We need:
-   - Pig vagus P2 cross-section (fascicle outlines + per-fascicle fiber
-     populations / diameter histograms).
-   - Human vagus H2 cross-section, same content.
-   - Source: Hussain ASCENT pipeline outputs, SPARC repo, or our own
-     Musselman/Blanz-style data. **Open question for MH.**
-
-2. **Cuff geometry** — `jaxfibers/stim/extracellular.py` only does
-   single point sources. We need:
-   - ImThera 6-contact extraneural cuff: contact positions, sizes,
-     dielectric layers (or just FEM Ve fields pre-computed once and
-     interpolated per fiber position).
-   - Helical cuff: same.
-   - Cleanest path: load pre-computed Ve(x, y, z) potential templates
-     per contact (matches AxonML/PyFibers convention) and let
-     selectivity_sweep-style code combine them.
+Remaining unknowns (deferred until FEM templates are in hand):
+- Per-fascicle fiber-diameter distributions (Hussain text / supplementary).
+- 5 intrinsic firing patterns spec for panel (d) — Poisson seeds vs
+  prescribed patterns; only matters once the JAX-side population
+  rewrite is being written.
 
 3. **Intrinsic firing patterns** — currently jaxfibers does deterministic
    periodic pacing. Hussain panel (d) uses **5 distinct firing patterns**
@@ -282,16 +282,22 @@ Missing infrastructure to land these panels:
 5. **JAX-side rewrite** — current `khz_block.py` and `spike_desync.py`
    are single-fiber. Need to:
    - vmap over fascicles / fiber positions for the population mean + CI
-   - Load Ve templates from a precomputed FEM (or fall back to a
-     per-contact point-source approximation if FEM is too heavy)
+   - Load voxel-grid Ve templates per contact (new
+     `load_ve_voxel_template` utility) and interpolate at fiber loci
    - Output JSON in the (rows × cols × freqs × amps × stats) shape that
      `fig3_combined.py` expects
 
-**Sequencing.** Anatomy + cuff Ve templates are the gating items —
-without them we can't run either panel at manuscript fidelity. The
-SLURM array structure already exists from selectivity_sweep, so once
-the data inputs are in `data/anatomy/` the cluster pipeline is a
-~1-day port.
+**Sequencing.** Background work — not gating. While MH runs P2 + H2 FEM
+solves through the in-house pipeline (ImThera + helical, all contacts),
+jaxfibers side can scaffold:
+- `jaxfibers/nerve/anatomy.py` — load Hussain traces, sample fiber
+  positions per fascicle from diameter histograms
+- `jaxfibers/stim/ve_templates.py` — load .npz/.vtk voxel grid +
+  interpolate at scattered (x,y,z); cache per contact
+- New `experiments_v2/khz_block_p2.py` / `spike_desync_h2.py` that
+  consume those + reuse the SLURM array structure from selectivity_sweep
+The cluster pipeline is ~1 day's port once FEM templates are in
+`data/anatomy/`.
 
 ### 4.3 No C-fiber selectivity demonstrations
 

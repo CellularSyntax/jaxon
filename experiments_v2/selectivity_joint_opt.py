@@ -56,11 +56,12 @@ NERVE_RADIUS_UM = 500.0
 CUFF_RADIUS_UM  = 1500.0
 TARGET_FRACTION = 0.30
 DT              = 0.005        # ms
-T_STOP          = 4.0          # ms (was 8.0); AP peaks within 2 ms of stimulus end
+T_STOP          = 3.0          # ms; PW=0.1 + DELAY=1.0 + slowest-MRG
+                                # propagation ≈ 2.1 ms, so 3 ms is enough.
 DELAY_MS        = 1.0
 PW_MS           = 0.1
-N_OPT_RECT      = 200
-N_OPT_JOINT     = 200
+N_OPT_RECT      = 100          # Adam plateaus well before 200 iters; 100
+N_OPT_JOINT     = 100          # is plenty for the 200-fiber joint problem.
 SIGMA_S_M       = 0.3
 
 

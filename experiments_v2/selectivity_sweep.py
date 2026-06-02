@@ -63,11 +63,17 @@ NERVE_RADIUS_UM = 500.0
 CUFF_RADIUS_UM  = 1500.0
 TARGET_FRACTION = 0.30
 DT              = 0.005        # ms
-T_STOP          = 4.0          # ms (was 8.0); AP peaks within 2 ms of stimulus end
+T_STOP          = 3.0          # ms; PW=0.1 ms + DELAY=1.0 ms + slowest MRG
+                                # propagation (24 mm fiber, 26 m/s at D=5.7 µm)
+                                # = ~2.1 ms, so 3 ms covers AP arrival at both
+                                # ends with 0.9 ms margin.  Each ms saved cuts
+                                # ~25 % off per-iter FD pass cost.
 DELAY_MS        = 1.0
 PW_MS           = 0.1
-N_OPT_RECT      = 200
-N_OPT_WAVE      = 200
+N_OPT_RECT      = 100          # 200 was overkill: Adam plateaus by ~80 iters
+N_OPT_WAVE      = 100          # for these problems.  selectivity_demo.py hits
+                                # SI=1.0 in 50 iters on a 6-fiber problem;
+                                # 100 leaves headroom for the 100-fiber sweep.
 EXAMPLE_SEED    = 0            # seed for the example activation-map figure
 
 

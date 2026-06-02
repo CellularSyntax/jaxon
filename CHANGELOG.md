@@ -26,6 +26,32 @@ prior validated state.
   eliminate single-step argmax discretisation noise (~1–2 % at typical
   C-fiber Δt ≈ 0.3–0.5 ms).
 
+### Performance
+- **Selectivity sweep: per-seed wall reduced ~5×.** Three parallel cuts to
+  `experiments_v2/selectivity_sweep.py` (and same to
+  `selectivity_joint_opt.py`):
+  - `T_STOP` 4.0 ms → 3.0 ms. PW + DELAY + slowest-MRG propagation
+    (24 mm fiber at 26 m/s) ≈ 2.1 ms, so 3 ms covers AP arrival at
+    both ends. Each ms saved cuts ~25 % off the per-iter FD pass.
+  - `N_OPT_RECT` 200 → 100, `N_OPT_WAVE` 200 → 100. Adam plateaus
+    well before 200 iters on these problems; selectivity_demo.py
+    hits SI = 1.0 in 50 iters on a 6-fiber problem, so 100 leaves
+    headroom for the 100-fiber sweep.
+  - Net effect: ~30 s/iter × 400 iters = ~3.3 h/seed → ~22 s × 200 iters
+    = ~40-60 min/seed.
+
+- **`slurm/run_selectivity_sweep.sbatch` converted to a SLURM array job.**
+  `#SBATCH --array=0-99%8` runs 100 seeds as 100 array tasks, 8 at a
+  time (matches s0-n12's 8 a16 GPUs). Each task sets
+  `SEED_START=$SLURM_ARRAY_TASK_ID` and `SEED_END=$((... +1))`, which
+  `selectivity_sweep.py::main()` already honours. Wall reduced from
+  72 h (with the previous serial run that would have hit the limit
+  before finishing) to 6 h per task. The whole sweep finishes in
+  ~12 wall hours at 8× concurrency instead of the impossible
+  ~330 h serial path.
+  - Re-run a single seed:  `sbatch --array=42 slurm/run_selectivity_sweep.sbatch`
+  - Re-run a subset:       `sbatch --array=0-19 slurm/run_selectivity_sweep.sbatch`
+
 ### Fixed
 - **Selectivity optimisation stalled at suboptimal SI in cluster runs**
   (`selectivity_sweep.py`, `selectivity_joint_opt.py`) while

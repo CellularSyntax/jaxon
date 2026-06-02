@@ -341,8 +341,9 @@ def _run_seed_chunk(seeds: list[int], verbose: bool = True) -> list[dict]:
         # 25+ min.  Adapt run_rect_optimization's history into the same
         # dict shape that the rest of the script expects from LBFGS.
         s_in = seed_inputs[0]
-        print(f"{s_in['label']} Rect Adam-FD ({N_OPT_RECT} iters) "
-              f"[OPTIMIZER=adam_fd smoketest path]", flush=True)
+        print(f"{s_in['label']} Rect Adam-FD ({N_OPT_RECT} iters input → "
+              f"{max(N_OPT_RECT * 3, 30)} Adam iters) [OPTIMIZER=adam_fd]",
+              flush=True)
         adam_res = run_rect_optimization(
             fiber_statics_batch=s_in["fs_batch"],
             state0_batch=s_in["s0_batch"],

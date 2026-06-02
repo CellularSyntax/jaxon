@@ -64,13 +64,12 @@ prior validated state.
   - Net effect: ~30 s/iter × 400 iters = ~3.3 h/seed → ~22 s × 200 iters
     = ~40-60 min/seed.
 
-- **`run_selectivity_sweep.sbatch` defaults switched to h100 + 10-seed vmap.**
-  QOS `h100`, GRES `gpu:h100:1`, `--array=0-9%4`, `SEEDS_PER_TASK=10`,
-  walltime 2 h. With h100's 80 GB VRAM, 10 seeds × 4 restarts × 100 fibers
-  (~17 GB working set) is comfortable, and the 4 array waves × ~5-10 min
-  finish the full 100-seed sweep in ~20-30 min wall.
-  Fall-back to a16 documented in-file as a one-liner override:
-    `sbatch --qos=a16 --gres=gpu:a16:1 --array=0-24%8 --export=ALL,SEEDS_PER_TASK=4 ...`
+- **`run_selectivity_sweep.sbatch` defaults: a16, 10 seeds/task, `--array=0-9%4`.**
+  QOS `a16`, GRES `gpu:a16:1`, `--array=0-9%4` (10 tasks × 10 seeds = 100
+  seeds, max 4 concurrent), `SEEDS_PER_TASK=10`, walltime 4 h.
+  Per-task wall ~30-90 min on a16; total sweep ~3-4 h in ~3 array waves.
+  h100 fall-up documented in-file as a one-liner override:
+    `sbatch --qos=h100 --gres=gpu:h100:1 -t 1:00:00 slurm/run_selectivity_sweep.sbatch`
 
 - **Selectivity sweep now uses LBFGS + 4 restarts + 4-seed vmap by default.**
   - Optimiser: LBFGS (was Adam-FD). ~3-4× fewer iterations to convergence

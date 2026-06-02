@@ -3,11 +3,11 @@
 #SBATCH -N 1
 #SBATCH -n 1
 #SBATCH -p gpu
-#SBATCH -q h100
-#SBATCH --gres=gpu:h100:1
+#SBATCH -q a16
+#SBATCH --gres=gpu:a16:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
-#SBATCH -t 2:00:00
+#SBATCH -t 4:00:00
 #SBATCH -o logs/%x-%A_%a.out
 #SBATCH -e logs/%x-%A_%a.err
 #SBATCH --array=0-9%4
@@ -18,12 +18,14 @@
 # trajectories run in parallel on the GPU.  Waveform step is per-seed
 # (still uses Adam autodiff).
 #
-# Default sizing (h100 on s0-n15, 80 GB VRAM):
-#   --array=0-9%4         10 tasks × 10 seeds = 100 (= N_NERVES); %4 matches
-#                         s0-n15's 4 h100 GPUs
-#   SEEDS_PER_TASK=10     ~17 GB working set per task — comfortable on h100
-#   per-task wall ~5-10 min; 2 h is more than ample
-#   total sweep wall: ~20-30 min in 3 array waves
+# Default sizing (a16 on s0-n12, 16 GB VRAM):
+#   --array=0-9%4         10 tasks × 10 seeds = 100 (= N_NERVES); %4 limits
+#                         concurrent tasks to 4 (leaves headroom on the
+#                         8-GPU node for other users; bump to %8 if you want
+#                         to monopolise all a16s)
+#   SEEDS_PER_TASK=10     ~600 MB working set per task — comfortable on a16
+#   per-task wall ~30-90 min (LBFGS + waveform-Adam combined)
+#   total sweep wall: ~3-4 h in ~3 array waves
 #
 # Outputs: outputs/selectivity_sweep/data_seed_<id>.json (one per seed,
 # saved by selectivity_sweep.py as it finishes each).
@@ -34,14 +36,17 @@
 #
 # Override examples
 # -----------------
-# Fall back to a16 (when h100 QOS is unavailable):
-#   sbatch --qos=a16 --gres=gpu:a16:1 --array=0-24%8 \
-#          --export=ALL,SEEDS_PER_TASK=4 \
+# Run on h100 instead (s0-n15, 4 GPUs available; per-task ~3× faster):
+#   sbatch --qos=h100 --gres=gpu:h100:1 -t 1:00:00 \
 #          slurm/run_selectivity_sweep.sbatch
 #
 # Push h100 harder (25 seeds × 4 restarts ≈ 43 GB):
-#   sbatch --array=0-3%4 --export=ALL,SEEDS_PER_TASK=25 \
+#   sbatch --qos=h100 --gres=gpu:h100:1 -t 1:00:00 \
+#          --array=0-3%4 --export=ALL,SEEDS_PER_TASK=25 \
 #          slurm/run_selectivity_sweep.sbatch
+#
+# Use all 8 a16s instead of throttling to 4:
+#   sbatch --array=0-9%8 slurm/run_selectivity_sweep.sbatch
 #
 # Re-run a single seed:
 #   sbatch --array=42 --export=ALL,SEEDS_PER_TASK=1 \

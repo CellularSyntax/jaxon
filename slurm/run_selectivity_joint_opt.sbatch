@@ -7,17 +7,50 @@
 #SBATCH --gres=gpu:a16:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
-#SBATCH -t 6:00:00
+#SBATCH -t 3:00:00
 #SBATCH -o logs/%x-%j.out
 #SBATCH -e logs/%x-%j.err
 
-# Joint waveform amplitude + electrode position optimisation.
-# Warm-starts from rect solution, then jointly optimises amps + contact_xyz.
+# Joint waveform amplitude + electrode position optimisation — VERIFICATION RUN.
+#
+# Single job, single seed (SEED=0 is hardcoded in selectivity_joint_opt.py).
+# Used alongside run_selectivity_sweep.sbatch to verify the full optimisation
+# pipeline before scaling to multiple geometries.
+#
+# Setup (matches Hussain 2024 methodology, scaled for jaxfibers parallel
+# demonstration):
+#   * N_FIBERS = 200, all at single diameter D = 5.7 µm
+#     (Hussain placed 1 fiber per fascicle at 5.7 µm; we vmap 200 fibers
+#     in a single synthetic nerve to showcase the parallel speed advantage)
+#   * 6-contact ring cuff, 1.5 mm radius
+#   * Warm-starts from rect (Adam) solution, then jointly optimises amps +
+#     contact_xyz via Adam through the cable equation
+#
+# Walltime 3 h (was 6 h) — single-diameter LBFGS+Adam converges much faster
+# than the mixed-diameter case the original 6 h budget was sized for.
+#
+# Cluster QOS limits (MaxJobsPerUser per QOS):
+#   a16   : 4    a30 : unlimited    a100 : 4 (12/account)
+#   h100  : 2    b200: 2            a100-sxm4-80gb : 4
+#
 # Outputs: outputs/selectivity_joint_opt/
 #
 # Submit from the project root:
 #   cd /path/to/jaxley_fibers
 #   sbatch slurm/run_selectivity_joint_opt.sbatch
+#
+# Scaling examples (after verification succeeds)
+# ----------------------------------------------
+# On a100 (~3× faster per task; comfortable for 200 fibers):
+#   sbatch --qos=a100 --gres=gpu:a100:1 -t 1:00:00 \
+#          slurm/run_selectivity_joint_opt.sbatch
+#
+# Multiple seed geometries (once verification passes — bumps SEED via env):
+#   for s in 0 1 2 3 4; do
+#     sbatch --export=ALL,JOINT_OPT_SEED=$s slurm/run_selectivity_joint_opt.sbatch
+#   done
+# (note: selectivity_joint_opt.py currently hardcodes SEED=0; add an env
+# override there before running multi-seed.)
 
 set -euo pipefail
 

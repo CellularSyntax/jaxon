@@ -7,7 +7,7 @@
 #SBATCH --gres=gpu:a16:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
-#SBATCH -t 0:45:00
+#SBATCH -t 1:00:00
 #SBATCH -o logs/%x-%j.out
 #SBATCH -e logs/%x-%j.err
 
@@ -51,15 +51,22 @@ export SEED_START=0
 export SEED_END=1
 export SEEDS_PER_TASK=1
 
-# Smoketest dimensions — keep graph small.
-# Compile cost scales with (N_FIBERS × T × N_OPT_RECT × N_RESTARTS_RECT) — shrink
-# each by ~3-7×.
-export N_FIBERS=60                # 200 → 60 (15/fascicle × 4 fascicles)
-export N_FASCICLES=4              #  8  → 4 (still has 2 target / 2 off-target)
-export N_OPT_RECT=10              # 30  → 10 LBFGS outer iters
-export N_OPT_WAVE=20              # 100 → 20 waveform Adam iters
+# Smoketest dimensions — match the manuscript-scale geometry exactly so
+# we're verifying the same problem we'll later run for the paper.  Only
+# the *number of optimiser iterations* is shrunk, since both Adam-FD and
+# LBFGS converge well before 30 iters on this problem and a smoketest
+# doesn't need to demonstrate full convergence.
+#
+# Manuscript-scale geometry kept verbatim:
+#   N_FIBERS = 200   (8 fascicles × 25 fibres = Hussain's per-fascicle
+#                    representative-fibre count)
+#   N_FASCICLES = 8  (4 target + 4 off-target after the divider split)
+#   T_STOP = 2.0 ms  (PW + delay + AP propagation; same value will work
+#                    for the manuscript run too)
+export N_OPT_RECT=10              # 30  → 10  (rect converges by ~6 iters)
+export N_OPT_WAVE=20              # 100 → 20  (waveform plateaus quickly)
 export N_RESTARTS_RECT=2          # keep, restart 0 is bipolar Ve-weighted init
-export T_STOP=2.0                 # 3.0 → 2.0 ms (still covers PW + delay + AP)
+export T_STOP=2.0
 
 # Pure JAX job — skip the ~10 s NMODL compile.
 export SKIP_PYFIBERS_COMPILE=1
@@ -79,8 +86,10 @@ export OPTIMIZER=adam_fd
 
 echo "Project root    : ${PROJECT_ROOT}"
 echo "Container       : ${CONTAINER_IMAGE}"
-echo "Smoketest dims  : N_FIBERS=${N_FIBERS} N_OPT_RECT=${N_OPT_RECT} "\
-"N_OPT_WAVE=${N_OPT_WAVE} N_RESTARTS_RECT=${N_RESTARTS_RECT} T_STOP=${T_STOP}"
+echo "Smoketest dims  : (using manuscript-scale geometry defaults from "\
+"selectivity_sweep.py: N_FIBERS=200, N_FASCICLES=8) "\
+"N_OPT_RECT=${N_OPT_RECT} N_OPT_WAVE=${N_OPT_WAVE} "\
+"N_RESTARTS_RECT=${N_RESTARTS_RECT} T_STOP=${T_STOP}"
 
 export SLURM_STEP_LAUNCH_TIMEOUT=600
 
@@ -95,8 +104,6 @@ export JAX_ENABLE_X64=1
 export SEED_START=\"${SEED_START}\"
 export SEED_END=\"${SEED_END}\"
 export SEEDS_PER_TASK=\"${SEEDS_PER_TASK}\"
-export N_FIBERS=\"${N_FIBERS}\"
-export N_FASCICLES=\"${N_FASCICLES}\"
 export N_OPT_RECT=\"${N_OPT_RECT}\"
 export N_OPT_WAVE=\"${N_OPT_WAVE}\"
 export N_RESTARTS_RECT=\"${N_RESTARTS_RECT}\"

@@ -231,6 +231,68 @@ legacy single-diameter placeholder until the full sweep is run.
 Hussain-style colour convention enforced throughout: PyFibers/NEURON blue
 solid, jaxfibers orange dashed.
 
+#### 4.2.1 What's needed to upgrade panels (b) and (d) to manuscript fidelity
+
+The current standalone scripts use a single MRG fiber in a uniform
+volume conductor — they verify the **model**, not the **experimental
+preparation**. Hussain Fig 3b/d are realised on real anatomy with
+specific cuffs:
+
+| Panel | Anatomy | Cuff | Population structure | Seeds × cells |
+|-------|---------|------|----------------------|---------------|
+| (b) kHz block | Pig vagus, Suppl. Note 1 **P2** | ImThera (6-contact extraneural) | **7 sampled fascicles**, 100 Hz intrinsic pacing | rows × cols × 7 fascicles × N amps |
+| (d) Spike desync | Human vagus, Suppl. Note 1 **H2** | Helical (Cyberonics-like) | **N=35**: 7 fiber positions × 5 intrinsic firing patterns | rows × cols × 3 stim_freqs × N amps × 35 |
+
+Missing infrastructure to land these panels:
+
+1. **Anatomy** — `jaxfibers/nerve/geometry.py` only has a synthetic
+   "random uniform fibers + one eccentric target fascicle". We need:
+   - Pig vagus P2 cross-section (fascicle outlines + per-fascicle fiber
+     populations / diameter histograms).
+   - Human vagus H2 cross-section, same content.
+   - Source: Hussain ASCENT pipeline outputs, SPARC repo, or our own
+     Musselman/Blanz-style data. **Open question for MH.**
+
+2. **Cuff geometry** — `jaxfibers/stim/extracellular.py` only does
+   single point sources. We need:
+   - ImThera 6-contact extraneural cuff: contact positions, sizes,
+     dielectric layers (or just FEM Ve fields pre-computed once and
+     interpolated per fiber position).
+   - Helical cuff: same.
+   - Cleanest path: load pre-computed Ve(x, y, z) potential templates
+     per contact (matches AxonML/PyFibers convention) and let
+     selectivity_sweep-style code combine them.
+
+3. **Intrinsic firing patterns** — currently jaxfibers does deterministic
+   periodic pacing. Hussain panel (d) uses **5 distinct firing patterns**
+   per cell (Poisson trains with the row's mean rate? or specific
+   replayed patterns?). **Open question for MH.** Driven via
+   `add_intrinsic_activity(..., noise=1.0)` on PyFibers side; jaxfibers
+   needs equivalent pre-generated spike-train injection.
+
+4. **Compute budget** — panel (d) grid is
+   3 D × 3 IFR × 3 stim_freq × N_amps × 35 fibers × 2 solvers.
+   At N_amps=10: 18,900 sims × ~60 s PyFibers ≈ 315 h serial. JAX vmap
+   collapses the 35-fiber inner dim to a single GPU pass (~2-3 s per
+   row), so the JAX side is ~30 min wall on a16. **PyFibers side is the
+   bottleneck** — it has to be the cluster (a16 array, 4 concurrent;
+   walltime ~5-6 h per array task at 6 sims/task; ~16-20 h total).
+   See [[project-meduni-vienna-cluster]] for QOS limits.
+
+5. **JAX-side rewrite** — current `khz_block.py` and `spike_desync.py`
+   are single-fiber. Need to:
+   - vmap over fascicles / fiber positions for the population mean + CI
+   - Load Ve templates from a precomputed FEM (or fall back to a
+     per-contact point-source approximation if FEM is too heavy)
+   - Output JSON in the (rows × cols × freqs × amps × stats) shape that
+     `fig3_combined.py` expects
+
+**Sequencing.** Anatomy + cuff Ve templates are the gating items —
+without them we can't run either panel at manuscript fidelity. The
+SLURM array structure already exists from selectivity_sweep, so once
+the data inputs are in `data/anatomy/` the cluster pipeline is a
+~1-day port.
+
 ### 4.3 No C-fiber selectivity demonstrations
 
 We have Sundt + Rattay + Schild94/97 channel models, but the selectivity

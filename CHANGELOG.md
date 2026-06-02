@@ -24,6 +24,14 @@ prior validated state.
     that annihilate mid-fiber.
   Panel (d) `spike_desync.py` is deferred to a future cluster run; the
   full SPIKE-sync sweep is ~30 h of PyFibers at the prescribed grid.
+
+  **Note (2026-06-02):** the current standalone (b) and (d) scripts use
+  a single MRG fiber in a uniform volume conductor — they verify the
+  *model*, not the *Hussain experimental preparation*. Manuscript-grade
+  panels need pig P2 + ImThera (panel b) and human H2 + helical cuff
+  (panel d), neither of which exist in the repo yet. See AUDIT §4.2.1
+  for the full TODO list (anatomy data, Ve templates, intrinsic firing
+  patterns, cluster wallclock estimate).
 - **`jaxfibers/nrn_baseline.py` PYTHONPATH fix for Windows** — prepends
   `c:/nrn826/lib/python` so `import neuron` picks the cp311 hoc binary
   before the legacy `c:/nrn` (which only has py27/35/36/37). Required

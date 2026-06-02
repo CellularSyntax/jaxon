@@ -212,26 +212,24 @@ Three options, listed in order of effort:
    * remove the JAX 64-bit requirement for inference (keep it only for
      training-style validation); 32-bit + tighter atol gives 2-3 ×.
 
-### 4.2 No emergent-nonlinearity demonstrations (HGP24 Figure 3)
+### 4.2 Emergent-nonlinearity demonstrations (HGP24 Figure 3)
 
-HGP24 reproduces *kilohertz-frequency block, AP collision, unidirectional
-propagation under DC block, state-dependent spike desynchronization*.
-These are the **most cited validation panels** because they show the
-surrogate is faithful for protocols it was *not* trained on.
+**Status (2026-06-02):** panels (a)–(c) complete with PyFibers + jaxfibers
+overlaid; panel (d) deferred.
 
-This project has none of these — yet the underlying solver is by design
-exact, so they should "just work" if a test harness is added. Should be
-a few days of work, big credibility payoff. Test scripts to add:
+| Panel | Script | Status |
+|-------|--------|--------|
+| (a) DC block | `experiments_v2/dc_block.py` | ✅ waterfall, peak V_m matches PyFibers to 0.0 mV at 4 amps |
+| (b) kHz block | `experiments_v2/khz_block.py` | ✅ verbatim pyfibers tutorial 5 repro, AP counts match exactly at all 4 amps (14/36/14/10) |
+| (c) AP collision | `experiments_v2/ap_collision.py` | ✅ peak V_m matches PyFibers to 0.0 mV at 4 diameters |
+| (d) Spike desync | `experiments_v2/spike_desync.py` | ⏸ deferred — full SPIKE-sync sweep is ~30 h of PyFibers; cluster run pending |
 
-* `experiments_v2/khz_block.py` — 1-2-5-10 kHz sinusoidal extracellular,
-  intracellular pacing at 100 Hz, count downstream APs (HGP24 Fig 3b).
-* `experiments_v2/ap_collision.py` — two intracellular pulses at fiber
-  ends, plot Vm snapshots (HGP24 Fig 3c).
-* `experiments_v2/dc_block.py` — increasing cathodic amplitude →
-  excitation → unidirectional → bidirectional block → re-excitation
-  (HGP24 Fig 3a).
-* `experiments_v2/spike_desync.py` — biphasic stim 30/50/100 Hz at sub /
-  supra threshold, SPIKE-synchrony metric (HGP24 Fig 3d).
+Composite figure: `experiments_v2/fig3_combined.py` →
+`outputs/fig3_combined/fig3_combined.png`. Panel (d) currently shows the
+legacy single-diameter placeholder until the full sweep is run.
+
+Hussain-style colour convention enforced throughout: PyFibers/NEURON blue
+solid, jaxfibers orange dashed.
 
 ### 4.3 No C-fiber selectivity demonstrations
 

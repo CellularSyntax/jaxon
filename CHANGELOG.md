@@ -8,6 +8,27 @@ prior validated state.
 ## [Unreleased]
 
 ### Added
+- **Fig 3 panels (a), (b), (c) now overlay PyFibers + jaxfibers** with the
+  Hussain colour convention (NEURON blue solid, jaxfibers orange dashed):
+  - Panel (a) `dc_block.py` — waterfall of V_m(t) per node across 4
+    amplitudes; peak V_m matches PyFibers to 0.0 mV at all amps.
+  - Panel (b) `khz_block.py` — verbatim reproduction of pyfibers tutorial
+    5 (`MRG_INTERPOLATION`, D=10 µm, N=25 nodes, 20 kHz, [50,100] ms on,
+    14 intrinsic pacing pulses at loc=0.1). At the four tutorial
+    amplitudes (-0.5, -1.5, -2.5, -3.0 mA) **AP counts match exactly**
+    between solvers: 14 / 36 / 14 / 10. JAX run uses `record="center"`
+    + `center_comp=far_node` so peak memory stays ~1.2 MB (vs ~660 MB
+    for full-fiber recording).
+  - Panel (c) `ap_collision.py` — peak V_m matches PyFibers to 0.0 mV at
+    all 4 diameters; both endpoint IClamps drive symmetric inward APs
+    that annihilate mid-fiber.
+  Panel (d) `spike_desync.py` is deferred to a future cluster run; the
+  full SPIKE-sync sweep is ~30 h of PyFibers at the prescribed grid.
+- **`jaxfibers/nrn_baseline.py` PYTHONPATH fix for Windows** — prepends
+  `c:/nrn826/lib/python` so `import neuron` picks the cp311 hoc binary
+  before the legacy `c:/nrn` (which only has py27/35/36/37). Required
+  for PyFibers comparisons to run on the dev host.
+
 - **Phase B2 emergent-phenomena demos** (Hussain *Nat. Commun.* 15:7597
   Fig 3 equivalent) — four new scripts in `experiments_v2/`, each
   producing a manuscript-grade figure that reproduces a non-trivial

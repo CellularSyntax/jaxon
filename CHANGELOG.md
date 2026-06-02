@@ -114,6 +114,14 @@ prior validated state.
   paper-relevant runs.
 
 ### Changed
+- **All 11 SLURM sbatch files set `SLURM_STEP_LAUNCH_TIMEOUT=600`**.
+  Several cluster runs failed with `srun: error: timeout waiting for task
+  launch, started 0 of 1 tasks` after the 32-second default step-launch
+  timeout — the Pyxis pull of the ~10 GB `nvcr.io#nvidia/pytorch:25.03-py3`
+  container exceeds 32 s on nodes with a cold cache. The 10-minute timeout
+  covers a cold pull while leaving warm-cache behaviour unchanged.
+  Only matters when the container is not already cached on the assigned
+  node; otherwise idempotent.
 - **`PYFIBERS_BUDGET_S` in `experiments_v2/scaling.py` raised from 120 s
   to 7200 s** (2 hours), and made overridable via the
   `JAXLEY_FIBERS_PF_BUDGET_S` environment variable. The 2 min cap was

@@ -29,6 +29,11 @@ mkdir -p "${PROJECT_ROOT}/logs" "${PROJECT_ROOT}/outputs"
 echo "Project root : ${PROJECT_ROOT}"
 echo "Container    : ${CONTAINER_IMAGE}"
 
+# Pyxis container pulls can exceed SLURM's 32-second default step-launch
+# timeout on a cold node cache (the nvcr.io PyTorch image is ~10 GB).
+# Allow up to 10 minutes for srun to bring the container up.
+export SLURM_STEP_LAUNCH_TIMEOUT=600
+
 srun \
   --container-image="${CONTAINER_IMAGE}" \
   --container-mounts="${PROJECT_ROOT}:${PROJECT_ROOT}" \

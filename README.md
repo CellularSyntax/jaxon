@@ -66,6 +66,33 @@ python experiments_v2/selectivity_joint_opt.py # joint amps + electrode position
 Outputs land in `outputs/<experiment>/`. Heavier sweeps are wired for SLURM
 under `slurm/` — see `slurm/submit_all.sh`.
 
+### One-time cluster setup: cache the container as SquashFS
+
+The sbatch jobs run inside `nvcr.io#nvidia/pytorch:25.03-py3` via Pyxis.
+A fresh pull of this ~10 GB image on a cold node cache takes 5–10 min and
+counts against `SLURM_STEP_LAUNCH_TIMEOUT` (we already bump that to 600 s,
+but pulls can still slow down every job).
+
+Pull it once to a SquashFS in your home directory and every subsequent
+job starts in seconds, regardless of which node SLURM assigns:
+
+```bash
+mkdir -p $HOME/containers
+
+# One-time pull — adjust QOS / GRES to whatever you have access to.
+srun --partition=gpu --qos=a16 --gres=gpu:a16:1 \
+     --cpus-per-task=4 --mem=16G -t 0:30:00 \
+     --container-image=nvcr.io#nvidia/pytorch:25.03-py3 \
+     --container-save=$HOME/containers/pytorch_25.03.sqsh \
+     true
+```
+
+After the file exists at `$HOME/containers/pytorch_25.03.sqsh` all sbatch
+files in `slurm/` auto-detect and use it (the resolution logic at the top
+of each script: explicit `CONTAINER_IMAGE` env-var override > local
+SquashFS > nvcr.io fallback). No code change needed; nothing breaks if
+you skip this step.
+
 ## Package layout
 
 ```

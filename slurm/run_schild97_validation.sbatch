@@ -21,7 +21,22 @@
 set -euo pipefail
 
 PROJECT_ROOT="${PROJECT_ROOT:-$SLURM_SUBMIT_DIR}"
-CONTAINER_IMAGE="${CONTAINER_IMAGE:-nvcr.io#nvidia/pytorch:25.03-py3}"
+# Resolve the container image once at submit time:
+#   1. Honour an explicit CONTAINER_IMAGE env-var override.
+#   2. Else prefer a user-local SquashFS cache at
+#      $HOME/containers/pytorch_25.03.sqsh if present (gives sub-second
+#      Pyxis startup vs ~5-10 min for a fresh nvcr.io pull).
+#   3. Else fall back to the nvcr.io reference (Pyxis pulls + caches
+#      it on the assigned node; this still works on a fresh clone).
+DEFAULT_SQSH="${HOME}/containers/pytorch_25.03.sqsh"
+DEFAULT_IMAGE="nvcr.io#nvidia/pytorch:25.03-py3"
+if [ -z "${CONTAINER_IMAGE:-}" ]; then
+  if [ -f "${DEFAULT_SQSH}" ]; then
+    CONTAINER_IMAGE="${DEFAULT_SQSH}"
+  else
+    CONTAINER_IMAGE="${DEFAULT_IMAGE}"
+  fi
+fi
 
 mkdir -p "${PROJECT_ROOT}/logs" "${PROJECT_ROOT}/outputs"
 

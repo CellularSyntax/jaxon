@@ -114,6 +114,17 @@ prior validated state.
   paper-relevant runs.
 
 ### Changed
+- **All 11 SLURM sbatch files now auto-detect a local SquashFS container**
+  at `$HOME/containers/pytorch_25.03.sqsh` and fall back to the nvcr.io
+  reference if it doesn't exist. Resolution order:
+  1. Explicit `CONTAINER_IMAGE` env-var override (unchanged behaviour).
+  2. `$HOME/containers/pytorch_25.03.sqsh` if present.
+  3. `nvcr.io#nvidia/pytorch:25.03-py3` (the previous default).
+  A one-time `srun … --container-save=$HOME/containers/pytorch_25.03.sqsh`
+  pull then makes every subsequent job start in seconds instead of paying
+  the 5-10 min Pyxis pull cost on cold node caches. Documented in README
+  under "One-time cluster setup".
+
 - **All 11 SLURM sbatch files set `SLURM_STEP_LAUNCH_TIMEOUT=600`**.
   Several cluster runs failed with `srun: error: timeout waiting for task
   launch, started 0 of 1 tasks` after the 32-second default step-launch

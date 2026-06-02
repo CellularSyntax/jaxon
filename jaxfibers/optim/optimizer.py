@@ -70,10 +70,10 @@ def run_rect_optimization(
     dt: float,
     n_steps: int = 100,
     lr: float = 5e-2,
-    amp_init_mA: float = -0.3,
-    amp_clip: tuple[float, float] = (-5.0, 0.0),
+    amp_init_mA: float = -1.5,
+    amp_clip: tuple[float, float] = (-5.0, -0.05),
     weights: np.ndarray | None = None,
-    fd_eps: float = 1e-3,
+    fd_eps: float = 5e-2,
     verbose: bool = True,
 ) -> dict:
     """Optimize per-contact rectangular pulse amplitudes via FD gradient.
@@ -132,7 +132,19 @@ def run_rect_optimization(
         grad      = (losses_all[1:] - loss_base) / fd_eps  # [K]
         return (loss_base, acts_base), grad
 
-    amps0     = jnp.full(K, amp_init_mA, dtype=jnp.float64)
+    # Initialize amplitudes proportional to each contact's mean |Ve| at target
+    # fibers.  This immediately breaks ring symmetry for eccentric fascicles:
+    # the contact closest to the target fascicle gets amp_init_mA, the contact
+    # farthest away gets the floor (amp_clip[1]).  Uniform init otherwise.
+    ve_tgt_sum  = jnp.where(tgt_j[None, :, None], jnp.abs(Ve_unit_j), 0.0).sum((1, 2))
+    ve_tgt_mean = ve_tgt_sum / jnp.maximum(tgt_j.sum(), 1.0)   # [K]
+    ve_range    = ve_tgt_mean.max() - ve_tgt_mean.min()
+    ve_norm     = (ve_tgt_mean - ve_tgt_mean.min()) / (ve_range + 1e-10)   # [K] in [0,1]
+    amps0 = jnp.clip(
+        amp_clip[1] + ve_norm * (amp_init_mA - amp_clip[1]),
+        amp_clip[0], amp_clip[1],
+    ).astype(jnp.float64)
+
     optimizer = optax.chain(optax.clip_by_global_norm(1.0), optax.adam(lr))
     opt_state = optimizer.init(amps0)
     amps      = amps0
@@ -141,6 +153,7 @@ def run_rect_optimization(
     best_amps = np.array(amps0)
 
     if verbose:
+        amp_init_str = "  ".join(f"{a:+.2f}" for a in np.array(amps0))
         print(
             f"  Rect opt (FD): K={K} contacts, "
             f"{n_configs} configs × {n_fibers} fibers = "
@@ -148,6 +161,7 @@ def run_rect_optimization(
             f"{n_steps} iters",
             flush=True,
         )
+        print(f"  init amps=[{amp_init_str}] mA", flush=True)
         print("  [iter 0] XLA compile — first call only ...", flush=True)
 
     for i in range(n_steps):
@@ -289,12 +303,12 @@ def run_joint_optimization(
     n_steps: int = 100,
     lr_amp: float = 5e-2,
     lr_pos: float = 10.0,
-    amp_clip: tuple[float, float] = (-5.0, 0.0),
+    amp_clip: tuple[float, float] = (-5.0, -0.05),
     xyz_min: float = -3000.0,
     xyz_max: float = 3000.0,
     weights: np.ndarray | None = None,
-    fd_eps_amp: float = 1e-3,
-    fd_eps_pos: float = 1.0,
+    fd_eps_amp: float = 5e-2,
+    fd_eps_pos: float = 20.0,
     verbose: bool = True,
     sigma_S_m: float = 0.3,
 ) -> dict:

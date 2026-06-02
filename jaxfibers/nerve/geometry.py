@@ -23,12 +23,15 @@ def make_synthetic_nerve(
     target_fraction: float = 0.3,
     diameters: list[float] | None = None,
     seed: int = 42,
+    fascicle_offset_fraction: float = 0.35,
 ) -> NerveGeometry:
     """Create a synthetic nerve cross-section with randomly placed MRG fibers.
 
     Fibers are placed uniformly at random within the nerve cross-section.
-    Fibers closer to the center (inner circle of area = target_fraction × total)
-    are designated as the target fascicle.
+    The target fascicle is an eccentric disk offset from the nerve centre —
+    mimicking a distinct sub-fascicle, which is the anatomically realistic
+    scenario.  Different seeds give different fascicle orientations, so the
+    population sweep spans many spatial configurations.
 
     Parameters
     ----------
@@ -37,11 +40,14 @@ def make_synthetic_nerve(
     nerve_radius_um : float
         Outer radius of the nerve (µm).
     target_fraction : float
-        Fraction of nerve area designated as target fascicle (by inner-circle area).
+        Approximate fraction of nerve area designated as target fascicle.
     diameters : list[float] | None
         Pool of MRG fiber diameters to sample from. Defaults to AVAILABLE_DIAMETERS.
     seed : int
         RNG seed for reproducibility.
+    fascicle_offset_fraction : float
+        Distance of fascicle centre from nerve centre as a fraction of nerve
+        radius.  Default 0.35 gives ~30% Ve asymmetry across ring contacts.
     """
     rng = np.random.default_rng(seed)
     if diameters is None:
@@ -59,16 +65,25 @@ def make_synthetic_nerve(
 
     fiber_diam = rng.choice(diameters, size=n_fibers).astype(float)
 
-    # Target: fibers in the inner circle whose area = target_fraction × nerve area
-    inner_r = nerve_radius_um * np.sqrt(target_fraction)
-    r2 = positions[:, 0] ** 2 + positions[:, 1] ** 2
-    target_mask = r2 < inner_r ** 2
+    # Eccentric target fascicle: disk of radius r_f offset from nerve centre.
+    # r_f chosen so fascicle area ≈ target_fraction × usable nerve area.
+    # Random orientation per seed → population sweep covers all angles.
+    fascicle_r_um  = usable_r * np.sqrt(target_fraction)
+    offset_um      = nerve_radius_um * fascicle_offset_fraction
+    fascicle_angle = rng.uniform(0.0, 2.0 * np.pi)
+    fascicle_cx    = offset_um * np.cos(fascicle_angle)
+    fascicle_cy    = offset_um * np.sin(fascicle_angle)
+
+    dx = positions[:, 0] - fascicle_cx
+    dy = positions[:, 1] - fascicle_cy
+    target_mask = dx ** 2 + dy ** 2 < fascicle_r_um ** 2
 
     # Guarantee at least one fiber on each side
+    dist2_to_fascicle = dx ** 2 + dy ** 2
     if not target_mask.any():
-        target_mask[np.argmin(r2)] = True
+        target_mask[np.argmin(dist2_to_fascicle)] = True
     if target_mask.all():
-        target_mask[np.argmax(r2)] = False
+        target_mask[np.argmax(dist2_to_fascicle)] = False
 
     return NerveGeometry(
         n_fibers=n_fibers,

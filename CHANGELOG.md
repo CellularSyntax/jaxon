@@ -151,15 +151,21 @@ prior validated state.
 - **`scaling.py` extended to N = 10⁵ fibers.** `N_FIBERS` now ends at
   `100_000`. With the existing 7200 s per-model PyFibers budget:
   myelinated models (MRG, Sweeney, MRG_Interp) reach N = 10⁵ for the
-  PyFibers comparison; the heavier C-fiber / Schild models truncate
-  inside the budget and rely on the (existing) extrapolation in the
-  figure for those cells. JAX runs all N values until something OOMs.
+  PyFibers comparison; the unmyelinated C-fiber models (Sundt, Rattay)
+  truncate inside the budget and rely on the existing extrapolation in
+  the figure. JAX runs all N values until something OOMs.
+- **`scaling.py` no longer benchmarks Schild94 / Schild97.** Removed
+  from the `MODEL_REGISTRY`. Rationale: at N = 10⁵ PyFibers serial they
+  extrapolate to ~9-10 h each (well past any per-model budget that
+  fits in the sbatch wall) and the Ca²⁺-pool + Na/K-pump state would
+  make JAX OOM-prone on a 16 GB a16. The Schild channels remain in
+  the project for validation runs (`schild9{4,7}_validation.py`); just
+  not in the scaling figure.
 - **OOM-tolerant JAX timing in `scaling.py`.** Each `(model, N, device)`
-  cell is now wrapped in try/except — if the GPU runs out of memory
-  (likely for the heavier models at N = 10⁵ on an a16's 16 GB) the
-  cell is logged as `null` in the JSON, printed as `FAILED:` in the
-  log, and the next cell continues. Figure code strips `None` cells
-  cleanly. Controlled by the `JAX_OOM_FALLBACK = True` module constant.
+  cell is now wrapped in try/except — if the GPU runs out of memory at
+  N = 10⁵, the cell is logged as `null` in the JSON, printed as
+  `FAILED:` in the log, and the next cell continues. Figure code strips
+  `None` cells cleanly. Controlled by `JAX_OOM_FALLBACK = True`.
 - **`PYFIBERS_BUDGET_S` in `experiments_v2/scaling.py` raised from 120 s
   to 7200 s** (2 hours), and made overridable via the
   `JAXLEY_FIBERS_PF_BUDGET_S` environment variable. The 2 min cap was

@@ -44,17 +44,11 @@ from jaxfibers.fibers.mrg     import build_mrg_interp, node_indices as mrg_inter
 from jaxfibers.fibers.sundt   import build_sundt,   node_indices as sundt_node_indices
 from jaxfibers.fibers.rattay  import build_rattay,  node_indices as rattay_node_indices
 from jaxfibers.fibers.sweeney import build_sweeney, node_indices as sweeney_node_indices
-from jaxfibers.fibers.schild  import (
-    build_schild94, node_indices as schild94_node_indices,
-    build_schild97, node_indices as schild97_node_indices,
-)
 from jaxfibers.stim.intracellular import rectangular_pulse, attach_intra_pulse
 from jaxfibers.nrn_baseline  import (
     run_intracellular, run_intracellular_sundt,
     run_intracellular_rattay, run_intracellular_sweeney,
     run_intracellular_mrg_interp,
-    run_intracellular_schild94,
-    run_intracellular_schild97,
 )
 
 from experiments_v2.utils import ensure_dir, save_json
@@ -63,9 +57,10 @@ OUT = ensure_dir(ROOT / "outputs" / "scaling")
 
 # ── timing budget for PyFibers serial ────────────────────────────────────────
 # Stop adding N-values once cumulative time exceeds this; extrapolate instead.
-# 2 hours covers full N=10000 PyFibers serial for every model in the registry
-# on the MedUni Vienna cluster (Sundt/Rattay ~30 min, Schild94/97 ~1 hour
-# each). Set via JAXLEY_FIBERS_PF_BUDGET_S env var to override per-run, e.g.
+# 2 hours per model covers PyFibers serial up to N=10^5 for the myelinated
+# models (MRG, Sweeney, MRG_Interp) and up to N=10^4 for the unmyelinated
+# C-fibers (Sundt, Rattay), with the figure extrapolating above the cap.
+# Set via JAXLEY_FIBERS_PF_BUDGET_S env var to override per-run, e.g.
 # `JAXLEY_FIBERS_PF_BUDGET_S=300 python experiments_v2/scaling.py` for a fast
 # local smoke run with extrapolation past N=100.
 PYFIBERS_BUDGET_S = float(os.environ.get("JAXLEY_FIBERS_PF_BUDGET_S", 7200.0))
@@ -179,38 +174,6 @@ MODEL_REGISTRY: dict[str, ModelConfig] = {
         pf_run_fn=run_intracellular_mrg_interp,
         pf_kwargs=dict(diameter=10.0, n_nodes=11, i_amp_nA=1.0,
                        i_delay_ms=1.0, i_dur_ms=0.1, dt_ms=0.01, tstop_ms=3.0),
-    ),
-    "Schild94": ModelConfig(
-        key="Schild94",
-        name="Schild 1994 C-fiber (D=0.8 µm, N=51 compartments)",
-        diameter=0.8,
-        n_nodes=51,
-        dt_ms=0.005,
-        tstop_ms=10.0,
-        i_amp_nA=0.5,
-        i_delay_ms=1.0,
-        i_dur_ms=0.5,
-        build_fn=build_schild94,
-        node_idx_fn=schild94_node_indices,
-        pf_run_fn=run_intracellular_schild94,
-        pf_kwargs=dict(diameter=0.8, n_nodes=51, i_amp_nA=0.5,
-                       i_delay_ms=1.0, i_dur_ms=0.5, dt_ms=0.005, tstop_ms=10.0),
-    ),
-    "Schild97": ModelConfig(
-        key="Schild97",
-        name="Schild 1997 C-fiber (D=0.8 µm, N=51 compartments)",
-        diameter=0.8,
-        n_nodes=51,
-        dt_ms=0.005,
-        tstop_ms=10.0,
-        i_amp_nA=0.5,
-        i_delay_ms=1.0,
-        i_dur_ms=0.5,
-        build_fn=build_schild97,
-        node_idx_fn=schild97_node_indices,
-        pf_run_fn=run_intracellular_schild97,
-        pf_kwargs=dict(diameter=0.8, n_nodes=51, i_amp_nA=0.5,
-                       i_delay_ms=1.0, i_dur_ms=0.5, dt_ms=0.005, tstop_ms=10.0),
     ),
 }
 

@@ -156,47 +156,53 @@ def _make_khz_pulse_mask(freq_khz: float) -> np.ndarray:
 
 def _run_pyfibers_one(diameter: float, n_nodes: int, src_y_um: float,
                       freq_khz: float, amp_mA: float) -> int:
-    """Single PyFibers run with extracellular sinusoid + intracellular pacing.
-    Returns the AP count at the far node.
+    """Single PyFibers run with extracellular kHz sinusoid + intracellular pacing.
 
-    If amp_mA == 0 we run NEURON manually (no ScaledStim, no extracellular
-    potentials), since pyfibers rejects all-zero potential fields.
+    Uses the canonical pyfibers pattern (see tutorial 5_block_threshold):
+    `fiber.add_intrinsic_activity` for pacing, ScaledStim with a closure
+    waveform for the kHz signal, `run_sim(amp_mA, fiber)` returns AP count
+    directly.  Avoids the state-accumulation bugs from manual h.IClamp loops.
+
+    Returns the AP count at the far node (the fiber's default detection loc).
     """
     fiber = build_mrg_pyfibers(diameter=diameter, n_nodes=n_nodes, temperature=CELSIUS)
     fiber.record_vm()
 
-    # IClamp at node 0 with 100 Hz pacing pulses.
+    # Intrinsic pacing: NetStim+ExpSyn at proximal end, every PACE_HZ.
     period_ms = 1000.0 / PACE_HZ
     n_cycles  = int(np.floor((TSTOP - DELAY_PACE) / period_ms))
-    iclamps = []
-    for i in range(n_cycles):
-        ic = h.IClamp(fiber[0](0.5))
-        ic.delay = DELAY_PACE + i * period_ms
-        ic.dur   = PACE_PW
-        ic.amp   = PACE_AMP
-        iclamps.append(ic)
+    fiber.add_intrinsic_activity(
+        loc=0.0,                  # node at fiber start
+        start_time=DELAY_PACE,
+        avg_interval=period_ms,
+        num_stims=n_cycles,
+        noise=0.0,
+    )
 
     if amp_mA == 0.0:
-        # Baseline: pacing-only, no extracellular field.
+        # Baseline: pacing-only, no extracellular field.  pyfibers requires
+        # ScaledStim's non-zero waveform/potential, so just step NEURON
+        # manually.  ap detection: count rising edges at far node V_m.
         h.celsius = CELSIUS
         h.dt = DT
         h.finitialize(fiber.v_rest)
         h.continuerun(TSTOP)
-    else:
-        fiber.potentials = fiber.point_source_potentials(
-            x=0.0, y=src_y_um, z=fiber.length / 2.0, i0=amp_mA, sigma=SIGMA,
-        )
-        pulse_arr = _make_khz_pulse_mask(freq_khz)
-        t_pts = np.concatenate([[0.0], (np.arange(len(pulse_arr)) + 1) * DT])
-        v_pts = np.concatenate([[0.0], pulse_arr])
-        f_wav = interp1d(t_pts, v_pts, bounds_error=False, fill_value=0.0)
-        wav = lambda t: float(f_wav(t))
-        stim = ScaledStim(waveform=wav, dt=DT, tstop=TSTOP)
-        stim.run_sim(stimamp=1.0, fiber=fiber, ap_detect_location=0.5,
-                      fail_on_end_excitation=False)
+        vm_far = np.array(fiber.vm[-1])
+        return _count_aps(vm_far)
 
-    vm_far = np.array(fiber.vm[-1])
-    return _count_aps(vm_far)
+    # Suprathreshold path: ScaledStim + run_sim returns AP count directly.
+    fiber.potentials = fiber.point_source_potentials(
+        x=0.0, y=src_y_um, z=fiber.length / 2.0, i0=amp_mA, sigma=SIGMA,
+    )
+    # Closure waveform — sin(2π f t) for t in [DELAY_KHZ, TSTOP], else 0.
+    def wav(t, f=freq_khz):
+        return float(np.sin(2 * np.pi * f * (t - DELAY_KHZ))) if t > DELAY_KHZ else 0.0
+
+    stim = ScaledStim(waveform=wav, dt=DT, tstop=TSTOP)
+    # run_sim returns (n_aps, ap_time).  We use ap_detect_location=1.0 (far end).
+    n_aps, _ = stim.run_sim(stimamp=1.0, fiber=fiber, ap_detect_location=1.0,
+                              fail_on_end_excitation=False)
+    return int(n_aps)
 
 
 def _run_one_diameter(D: float) -> dict:

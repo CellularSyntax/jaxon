@@ -70,7 +70,7 @@ from jaxfibers.optim.optimizer import (
     run_waveform_optimization,
 )
 from jaxfibers.fibers.mrg import section_centers_um
-from experiments_v2.utils import ensure_dir
+from experiments_v2.utils import ensure_dir, plot_seed_summary
 
 OUT = ensure_dir(ROOT / "outputs" / "selectivity_sweep")
 
@@ -161,6 +161,7 @@ def _build_seed_inputs(seed: int, verbose: bool = True) -> dict:
     return dict(
         seed=seed, label=label,
         nerve=nerve, geoms=geoms,
+        contact_xyz=contact_xyz,
         Ve_unit=Ve_unit, node_indices=node_indices,
         fs_batch=fs_batch, s0_batch=s0_batch,
         pulse_mask=pulse_mask, N_STEPS=N_STEPS,
@@ -306,6 +307,49 @@ def _run_seed_chunk(seeds: list[int], verbose: bool = True) -> list[dict]:
               f"({wave_t:.0f}s)", flush=True)
 
         results.append(_package_result(s_in, rect_res, rect_t_per_seed, wave_res, wave_t))
+
+        # ── Per-seed summary figures ─────────────────────────────────────────
+        # Both panels reuse the same cross-section + activation-bar template,
+        # but show the rect (LBFGS) and waveform (Adam) endpoints separately
+        # so the user can compare what the two stages achieved on the same
+        # nerve realisation.
+        seed_id = s_in["seed"]
+        # Rect figure: LBFGS only stores per-restart loss traces, not per-iter
+        # SI, so we pass the winning restart's loss curve and a flat SI line
+        # at the achieved value for visual reference.
+        rect_loss = rect_res["all_loss_traces"][rect_res["best_restart"]]
+        rect_loss_list = np.array(rect_loss).tolist()
+        plot_seed_summary(
+            out_path=OUT / f"fig_seed_{seed_id:04d}_rect.png",
+            nerve=s_in["nerve"],
+            contact_xyz_final=s_in["contact_xyz"],
+            amps_mA=np.array(rect_res["amps"]),
+            acts=np.array(rect_res["final_acts"]),
+            loss_hist=rect_loss_list,
+            si_hist=[si_rect] * len(rect_loss_list),
+            si_baseline=s_in["si_baseline"],
+            title=f"seed {seed_id} — Rect (LBFGS, "
+                   f"best of {N_RESTARTS_RECT} restarts × {N_OPT_RECT} steps)",
+            nerve_radius_um=NERVE_RADIUS_UM,
+            cuff_radius_um=CUFF_RADIUS_UM,
+        )
+        plot_seed_summary(
+            out_path=OUT / f"fig_seed_{seed_id:04d}_wave.png",
+            nerve=s_in["nerve"],
+            contact_xyz_final=s_in["contact_xyz"],
+            amps_mA=np.array(rect_res["amps"]),    # waveform doesn't change
+                                                     # per-contact amplitudes
+                                                     # directly; show rect amps
+                                                     # as the steering pattern
+            acts=np.array(wave_res["history"]["acts"][-1]),
+            loss_hist=list(wave_res["history"]["loss"]),
+            si_hist=list(wave_res["history"]["si"]),
+            si_baseline=s_in["si_baseline"],
+            title=f"seed {seed_id} — Waveform (Adam, "
+                   f"warm-started from rect, {N_OPT_WAVE} iters)",
+            nerve_radius_um=NERVE_RADIUS_UM,
+            cuff_radius_um=CUFF_RADIUS_UM,
+        )
     return results
 
 

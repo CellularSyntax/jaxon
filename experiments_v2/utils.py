@@ -296,3 +296,184 @@ def save_json(data, path: pathlib.Path) -> None:
     with open(path, "w") as f:
         json.dump(data, f, indent=2, cls=_NumpyEncoder)
     print(f"  -> {path}")
+
+
+# ─────────────────────────────────── selectivity per-seed summary figure ──────
+
+def plot_seed_summary(
+    out_path: pathlib.Path,
+    nerve,                    # NerveGeometry with .fiber_x_um, .fiber_y_um,
+                                # .fiber_diam, .target_mask
+    contact_xyz_final,        # [K, 3] mm-position of contacts at end of opt
+    amps_mA,                  # [K] final rect amplitudes (mA)
+    acts,                     # [n_fibers] activation proxy ∈ [0, 1]
+    loss_hist,                # list of per-iter loss values
+    si_hist,                  # list of per-iter SI values
+    si_baseline: float,
+    title: str = "",
+    contact_xyz_init=None,    # optional [K, 3] for joint-opt position arrows
+    nerve_radius_um: float = 500.0,
+    cuff_radius_um: float = 1500.0,
+    activation_threshold: float = 0.5,
+) -> None:
+    """One per-seed summary figure for selectivity optimisation runs.
+
+    Panels (2 × 2 grid):
+      A — nerve cross-section: fibers coloured by (target / off-target) AND
+          filled-vs-hollow by activation status (fired / silent).  Contacts
+          drawn as triangles, colour-coded cathodic (green) / anodic (red),
+          marker size proportional to |amp|.
+      B — per-fiber activation proxy bars (coloured by target / off-target,
+          threshold line at 0.5).
+      C — loss curve (left axis) and SI curve (right axis) over iterations.
+      D — final per-contact amplitudes (bars coloured cathodic / anodic).
+
+    For joint-opt, pass `contact_xyz_init` to overlay arrows from the
+    initial to the final contact positions on panel A.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import matplotlib.patches as mpatches
+
+    target = np.asarray(nerve.target_mask, dtype=bool)
+    n_fibers = nerve.n_fibers
+    n_contacts = len(amps_mA)
+    acts = np.asarray(acts)
+    fired = acts > activation_threshold
+    si_best = max(si_hist) if len(si_hist) else float("nan")
+    si_last = si_hist[-1] if len(si_hist) else float("nan")
+
+    fig, axes = plt.subplots(2, 2, figsize=(13, 11), constrained_layout=True)
+
+    # ── A: cross-section ────────────────────────────────────────────────────
+    ax = axes[0, 0]
+    ax.set_aspect("equal")
+    ax.add_patch(plt.Circle((0, 0), nerve_radius_um, fill=False,
+                              edgecolor="k", lw=1.5))
+    fiber_r = max(nerve_radius_um * 0.025, 12.0)   # uniform display radius
+    for f in range(n_fibers):
+        is_tgt = bool(target[f])
+        col = "C0" if is_tgt else "C1"            # blue=target, orange=off
+        if fired[f]:
+            face, edge, lw, alpha = col, "k",      1.6, 1.0
+        else:
+            face, edge, lw, alpha = "white", col, 1.2, 0.9
+        ax.add_patch(plt.Circle(
+            (nerve.fiber_x_um[f], nerve.fiber_y_um[f]), fiber_r,
+            facecolor=face, edgecolor=edge, lw=lw, alpha=alpha, zorder=3,
+        ))
+        ax.text(nerve.fiber_x_um[f], nerve.fiber_y_um[f], f"F{f}",
+                ha="center", va="center", fontsize=6,
+                color="white" if fired[f] else col, zorder=4,
+                fontweight="bold")
+    # contacts
+    amax = max(float(np.max(np.abs(amps_mA))), 1e-6)
+    for k in range(n_contacts):
+        cx, cy = float(contact_xyz_final[k, 0]), float(contact_xyz_final[k, 1])
+        a = float(amps_mA[k])
+        if   a < -1e-4: ccol = "C2"               # cathodic = green
+        elif a > +1e-4: ccol = "C3"               # anodic   = red
+        else:           ccol = "0.6"              # off
+        ms = 8 + 14 * (abs(a) / amax)
+        ax.plot(cx, cy, marker="^", color=ccol, ms=ms,
+                markeredgecolor="k", markeredgewidth=0.8, zorder=2)
+        # label with amp
+        rr = (cx**2 + cy**2) ** 0.5
+        if rr > 0:
+            tx, ty = cx * 1.1, cy * 1.1
+        else:
+            tx, ty = cx + 50, cy + 50
+        ax.text(tx, ty, f"C{k}\n{a:+.2f}", fontsize=7, ha="center", va="center")
+        if contact_xyz_init is not None:
+            ix, iy = float(contact_xyz_init[k, 0]), float(contact_xyz_init[k, 1])
+            if abs(ix - cx) + abs(iy - cy) > 1e-3:
+                ax.annotate("", xy=(cx, cy), xytext=(ix, iy),
+                            arrowprops=dict(arrowstyle="->", color="k",
+                                             lw=0.7, alpha=0.6, mutation_scale=10),
+                            zorder=1)
+                ax.plot(ix, iy, "o", color="0.4", ms=4, alpha=0.6, zorder=1)
+    lim = cuff_radius_um * 1.25
+    ax.set_xlim(-lim, lim); ax.set_ylim(-lim, lim)
+    ax.set_xlabel("x (µm)"); ax.set_ylabel("y (µm)")
+    n_tgt_fired = int(fired[target].sum());  n_tgt = int(target.sum())
+    n_off_fired = int(fired[~target].sum()); n_off = int((~target).sum())
+    ax.set_title(
+        f"A   Cross-section + activation\n"
+        f"target fired {n_tgt_fired}/{n_tgt}   off-target fired {n_off_fired}/{n_off}",
+        fontsize=10, fontweight="bold",
+    )
+    leg_handles = [
+        mpatches.Patch(facecolor="C0", edgecolor="k", label="target fired"),
+        mpatches.Patch(facecolor="white", edgecolor="C0", label="target silent"),
+        mpatches.Patch(facecolor="C1", edgecolor="k", label="off-target fired"),
+        mpatches.Patch(facecolor="white", edgecolor="C1", label="off-target silent"),
+    ]
+    ax.legend(handles=leg_handles, loc="upper right", fontsize=7, framealpha=0.85)
+    ax.grid(alpha=0.25, lw=0.4)
+
+    # ── B: per-fiber activation bars ────────────────────────────────────────
+    ax = axes[0, 1]
+    colors = ["C0" if t else "C1" for t in target]
+    bars = ax.bar(np.arange(n_fibers), acts, color=colors,
+                   edgecolor="k", lw=0.5)
+    for f in range(n_fibers):
+        if not fired[f]:
+            bars[f].set_alpha(0.45)
+    ax.axhline(activation_threshold, color="gray", ls="--", lw=0.8,
+                label=f"threshold = {activation_threshold}")
+    ax.set_ylim(0, 1.05)
+    ax.set_xlabel("fiber #"); ax.set_ylabel("activation proxy")
+    ax.set_title(
+        f"B   Per-fiber activation   "
+        f"(SI baseline {si_baseline:+.3f}, best {si_best:+.3f}, last {si_last:+.3f})",
+        fontsize=10, fontweight="bold",
+    )
+    ax.legend(handles=[
+        mpatches.Patch(facecolor="C0", label="target"),
+        mpatches.Patch(facecolor="C1", label="off-target"),
+    ] + ax.get_legend_handles_labels()[0], loc="upper right", fontsize=8)
+    ax.grid(axis="y", alpha=0.3, lw=0.4)
+    if n_fibers <= 30:
+        ax.set_xticks(np.arange(n_fibers))
+        ax.set_xticklabels([f"F{f}" for f in range(n_fibers)],
+                            rotation=45, fontsize=7)
+
+    # ── C: training curves ──────────────────────────────────────────────────
+    ax = axes[1, 0]
+    ax.plot(loss_hist, color="C0", lw=1.5, label="WQ loss")
+    ax.set_xlabel("iteration"); ax.set_ylabel("WQ loss", color="C0")
+    ax.tick_params(axis="y", labelcolor="C0")
+    ax.grid(alpha=0.3, lw=0.4)
+    ax2 = ax.twinx()
+    ax2.plot(si_hist, color="C3", lw=1.5, ls="--", label="SI")
+    ax2.axhline(0, color="k", lw=0.4, alpha=0.4)
+    ax2.set_ylabel("SI", color="C3")
+    ax2.tick_params(axis="y", labelcolor="C3")
+    ax2.set_ylim(-1.05, 1.05)
+    ax.set_title("C   Training curves", fontsize=10, fontweight="bold")
+
+    # ── D: per-contact amplitudes ───────────────────────────────────────────
+    ax = axes[1, 1]
+    ccols = ["C2" if a < 0 else ("C3" if a > 0 else "0.6") for a in amps_mA]
+    bars = ax.bar(np.arange(n_contacts), amps_mA, color=ccols,
+                   edgecolor="k", lw=0.6)
+    ax.axhline(0, color="k", lw=0.5)
+    ax.set_xticks(np.arange(n_contacts))
+    ax.set_xticklabels([f"C{k}" for k in range(n_contacts)])
+    ax.set_ylabel("amplitude (mA)")
+    for k in range(n_contacts):
+        ax.text(k, amps_mA[k] + 0.02 * np.sign(amps_mA[k] or 1),
+                f"{amps_mA[k]:+.2f}",
+                ha="center", va="bottom" if amps_mA[k] >= 0 else "top",
+                fontsize=8)
+    ax.set_title("D   Optimised amplitudes   (green = cathodic, red = anodic)",
+                  fontsize=10, fontweight="bold")
+    ax.grid(axis="y", alpha=0.3, lw=0.4)
+
+    if title:
+        fig.suptitle(title, fontsize=12, fontweight="bold")
+    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    import matplotlib.pyplot as plt2
+    plt2.close(fig)
+    print(f"  -> {out_path}")

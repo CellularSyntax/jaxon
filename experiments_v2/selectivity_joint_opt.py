@@ -43,7 +43,7 @@ from jaxfibers.stim.batch_solve import stack_fiber_statics, initial_states_batch
 from jaxfibers.optim.losses import activation_proxy_batch, selectivity_index
 from jaxfibers.optim.optimizer import run_rect_optimization, run_joint_optimization
 from jaxfibers.fibers.mrg import section_centers_um
-from experiments_v2.utils import ensure_dir, save_json
+from experiments_v2.utils import ensure_dir, save_json, plot_seed_summary
 
 OUT = ensure_dir(ROOT / "outputs" / "selectivity_joint_opt")
 
@@ -214,7 +214,39 @@ def main():
     }
     save_json(result, OUT / "data_joint_opt.json")
 
-    # ── figures ───────────────────────────────────────────────────────────────
+    # ── per-seed cross-section + activation summaries ─────────────────────────
+    # Show the rect endpoint and the joint endpoint separately so the
+    # user can see how moving contacts on top of amplitude tuning changed
+    # which fibres ended up activated.
+    plot_seed_summary(
+        out_path=OUT / "fig_rect_summary.png",
+        nerve=nerve,
+        contact_xyz_final=contact_xyz,
+        amps_mA=np.array(rect_res["amps"]),
+        acts=np.array(rect_res["history"]["acts"][-1]),
+        loss_hist=list(rect_res["history"]["loss"]),
+        si_hist=list(rect_res["history"]["si"]),
+        si_baseline=si_baseline,
+        title=f"Rect (Adam-FD, {N_OPT_RECT} iters) — single seed {SEED}",
+        nerve_radius_um=NERVE_RADIUS_UM,
+        cuff_radius_um=CUFF_RADIUS_UM,
+    )
+    plot_seed_summary(
+        out_path=OUT / "fig_joint_summary.png",
+        nerve=nerve,
+        contact_xyz_final=joint_res["contact_xyz_um"],
+        amps_mA=np.array(joint_res["amps"]),
+        acts=np.array(joint_res["history"]["acts"][-1]),
+        loss_hist=list(joint_res["history"]["loss"]),
+        si_hist=list(joint_res["history"]["si"]),
+        si_baseline=si_baseline,
+        title=f"Joint amp + position (Adam, {N_OPT_JOINT} iters) — seed {SEED}",
+        contact_xyz_init=contact_xyz,
+        nerve_radius_um=NERVE_RADIUS_UM,
+        cuff_radius_um=CUFF_RADIUS_UM,
+    )
+
+    # ── legacy SI-comparison + displacement figure (kept for continuity) ──────
     fig, axes = plt.subplots(1, 3, figsize=(14, 4))
 
     # SI comparison bar

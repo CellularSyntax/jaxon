@@ -8,6 +8,38 @@ prior validated state.
 ## [Unreleased]
 
 ### Added
+- **Phase B2 emergent-phenomena demos** (Hussain *Nat. Commun.* 15:7597
+  Fig 3 equivalent) — four new scripts in `experiments_v2/`, each
+  producing a manuscript-grade figure that reproduces a non-trivial
+  biophysical phenomenon **without any phenomenon-specific tuning**
+  (the coupled solver + MRG channels just work):
+  - `ap_collision.py` (Fig 3c) — two intracellular pulses at opposite
+    ends of an MRG fiber; symmetric inward propagation and mutual
+    annihilation at the midpoint; node-only V_m snapshots at 5 timepoints
+    × 4 diameters.
+  - `dc_block.py` (Fig 3a) — cathodic monophasic pulse with extracellular
+    point source, amplitude scan from 0.5× to 15× threshold; snapshots
+    show clean bidirectional propagation up to 3× threshold and onset of
+    deep-amplitude artefacts at 15× (delayed re-excitation residue).
+  - `khz_block.py` (Fig 3b) — sinusoidal extracellular at 1, 2, 5, 10 kHz
+    over 100 Hz intrinsic pacing; recruitment vs amplitude curves show
+    the canonical HFAC nerve-block signature (10 kHz suppresses pacing
+    to ~30 % of baseline; 2 kHz curve is non-monotonic — partial block
+    window).
+  - `spike_desync.py` (Fig 3d) — biphasic stim at 30 / 50 / 100 Hz with
+    Poisson intracellular pacing; Kreuz et al. 2015 SPIKE-synchronization
+    metric tracks how rapidly the propagated spike train decorrelates
+    from the intrinsic rhythm.
+  All four run end-to-end on CPU in 1-10 minutes each. Output figures
+  + JSON data land in `outputs/{ap_collision,dc_block,khz_block,spike_desync}/`.
+
+- **`experiments_v2/analyze_selectivity_sweep.py` enhanced.** Now produces
+  six paper-grade figures (violin, CDF, loss curves, rect-vs-wave pair
+  scatter, activation-map examples, LBFGS restart-winner histogram) plus
+  a numeric summary JSON. Ready to run as soon as the cluster sweep
+  finishes — single `python experiments_v2/analyze_selectivity_sweep.py`
+  produces the entire selectivity figure set.
+
 - `AUDIT.md` (2026-06-02): full project audit against Hussain, Grill & Pelot
   *Nat. Commun.* 15:7597 (2024), with prioritised roadmap to Nat Commun
   submission.

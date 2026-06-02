@@ -295,4 +295,4 @@ def save_json(data, path: pathlib.Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:
         json.dump(data, f, indent=2, cls=_NumpyEncoder)
-    print(f"  → {path}")
+    print(f"  -> {path}")

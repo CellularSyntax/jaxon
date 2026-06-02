@@ -518,14 +518,18 @@ def fig_sd_curves(sd: dict) -> None:
             pf_t  = [abs(sd[D][pk][pw]["pyfibers"]) for pw in pws]
             jax_t = [abs(sd[D][pk][pw]["jax"])      for pw in pws]
             c = cmap(di / max(len(diams) - 1, 1))
-            ax.loglog(pws, pf_t,  "o-",  color=c, lw=1.5, ms=4,
-                      label=f"{D}µm PF" if di == 0 else f"{D}µm")
+            ax.loglog(pws, pf_t,  "o-",  color=c, lw=1.5, ms=4, label=f"{D} µm")
             ax.loglog(pws, jax_t, "s--", color=c, lw=1.0, ms=3)
         ax.set_title(PULSES[pk].name, fontsize=9)
         ax.set_xlabel("PW (ms)", fontsize=8); ax.set_ylabel("|Thr| (mA)", fontsize=8)
         ax.grid(True, alpha=0.3, which="both")
         if idx == 0:
-            ax.legend(fontsize=6, ncol=2)
+            import matplotlib.lines as mlines
+            diam_leg = ax.legend(fontsize=6, ncol=2, loc="upper right")
+            ax.add_artist(diam_leg)
+            h_pf  = mlines.Line2D([], [], color="k", ls="-",  marker="o", ms=4, lw=1.5, label="PyFibers")
+            h_jax = mlines.Line2D([], [], color="k", ls="--", marker="s", ms=3, lw=1.0, label="JAX")
+            ax.legend(handles=[h_pf, h_jax], fontsize=7, loc="lower left")
 
     for ax in axes[len(PULSE_KEYS):]:
         ax.set_axis_off()

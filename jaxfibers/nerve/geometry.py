@@ -179,6 +179,8 @@ def make_hussain_style_nerve(
     inter_fascicle_gap_um:     float = 12.0,
     divider_angle_deg:         float = 0.0,
     diameters:                 list[float] | None = None,
+    target_diameter_um:        float | None = None,
+    offtarget_diameter_um:     float | None = None,
     seed:                      int   = 42,
     max_packing_attempts:      int   = 4000,
 ) -> NerveGeometry:
@@ -232,6 +234,19 @@ def make_hussain_style_nerve(
     diameters : list[float] | None
         MRG fibre diameters to sample from per-fibre.  Default
         ``[5.7]`` (single representative diameter, à la Hussain).
+        Ignored if either ``target_diameter_um`` or
+        ``offtarget_diameter_um`` is set.
+    target_diameter_um : float | None
+        If set, ALL fibres in target fascicles get this diameter.
+        Overrides ``diameters`` for target fibres.  Use together with
+        ``offtarget_diameter_um`` to set up *mixed-diameter*
+        selectivity problems where the two populations have different
+        chronaxie — the regime where waveform optimisation can beat
+        rectangular pulses (Hussain Fig 5 beat).  Typical pair:
+        target = 5.7 µm (sensory), off-target = 14 µm (motor).
+    offtarget_diameter_um : float | None
+        If set, ALL fibres in off-target fascicles get this diameter.
+        See ``target_diameter_um``.
     seed : int
         RNG seed.
     max_packing_attempts : int
@@ -325,7 +340,19 @@ def make_hussain_style_nerve(
     positions   = np.concatenate(positions, axis=0)
     target_mask = np.concatenate(target_mask_chunks, axis=0)
     n_fibers    = positions.shape[0]
-    fiber_diam  = rng.choice(diameters, size=n_fibers).astype(float)
+
+    # Per-side diameter override: target_diameter_um / offtarget_diameter_um
+    # take precedence over the generic `diameters` pool when set.
+    if target_diameter_um is not None or offtarget_diameter_um is not None:
+        fiber_diam = np.empty(n_fibers, dtype=float)
+        tgt_d = (target_diameter_um if target_diameter_um is not None
+                  else float(rng.choice(diameters)))
+        off_d = (offtarget_diameter_um if offtarget_diameter_um is not None
+                  else float(rng.choice(diameters)))
+        fiber_diam[target_mask]  = float(tgt_d)
+        fiber_diam[~target_mask] = float(off_d)
+    else:
+        fiber_diam = rng.choice(diameters, size=n_fibers).astype(float)
 
     return NerveGeometry(
         n_fibers=n_fibers,

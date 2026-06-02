@@ -383,17 +383,34 @@ def run_rect_optimization_lbfgs(
         loss_traces = jnp.concatenate([losses, final_loss[None]], axis=0)
         return final_params, final_loss, loss_traces
 
-    # vmap over the M restarts.
+    # lax.map (instead of vmap) over the M restarts.
+    #
+    # The XLA remat planner has known pathological compile times when
+    # @jax.checkpoint is nested inside vmap(scan(value_and_grad(scan(...))))
+    # and optax.scale_by_zoom_linesearch is involved — the 5-level-nested
+    # control flow takes 25+ min to schedule on A16 even at small N_FIBERS.
+    #
+    # lax.map runs the M restarts SEQUENTIALLY but reuses a single compiled
+    # graph (no outer vmap dim).  This:
+    #   - Eliminates the outer vmap level → graph compiles in 3-5 min
+    #     instead of 25+ min.
+    #   - Peak memory = single-restart footprint (no parallel accumulation
+    #     across restarts), so @jax.checkpoint isn't strictly required for
+    #     N_FIBERS ≤ ~400 on A16.
+    #   - Wall time per restart is the same; total wall is M× single-restart
+    #     (e.g. M=2 → 2× the runtime of one restart, but starts after a
+    #     much faster compile, so net wall is way smaller).
     if verbose:
         print(
             f"  LBFGS multi-restart: K={K} contacts, n_fibers={n_fibers}, "
-            f"{n_restarts} restarts × {n_steps} steps. Compiling ...",
+            f"{n_restarts} restarts × {n_steps} steps "
+            f"(sequential via lax.map). Compiling ...",
             flush=True,
         )
 
     t0 = time.time()
     final_params_all, final_losses_all, loss_traces_all = jax.jit(
-        jax.vmap(one_restart)
+        lambda init: jax.lax.map(one_restart, init),
     )(init_amps)
     # Block on the result so timing is accurate.
     jax.block_until_ready(final_losses_all)
@@ -532,7 +549,12 @@ def run_rect_optimization_lbfgs_batched(
             loss_traces = jnp.concatenate([losses, final_loss[None]], axis=0)
             return final_params, final_loss, loss_traces
 
-        final_params_all, final_losses_all, loss_traces_all = jax.vmap(one_restart)(init_amps)
+        # lax.map (instead of vmap) over the M restarts — same rationale as
+        # in run_rect_optimization_lbfgs above.  Sequential restarts; smaller
+        # XLA graph; avoids the remat planner pathology under zoom_linesearch.
+        final_params_all, final_losses_all, loss_traces_all = jax.lax.map(
+            one_restart, init_amps
+        )
         best_idx = jnp.argmin(final_losses_all)
         best_amps = final_params_all[best_idx]
         best_loss = final_losses_all[best_idx]

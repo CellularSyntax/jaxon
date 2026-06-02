@@ -80,7 +80,16 @@ RECT_OPTIMIZER = os.environ.get("OPTIMIZER", "lbfgs").lower()
 from jaxfibers.fibers.mrg import section_centers_um
 from experiments_v2.utils import ensure_dir, plot_seed_summary, plot_seed_cross_section
 
-OUT = ensure_dir(ROOT / "outputs" / "selectivity_sweep")
+# Output dir can be redirected per-phase by the manuscript sbatch via
+# JAXLEY_FIBERS_OUTPUT_DIR; default is outputs/selectivity_sweep/.
+_OUT_OVERRIDE = os.environ.get("JAXLEY_FIBERS_OUTPUT_DIR", "").strip()
+if _OUT_OVERRIDE:
+    _OUT_PATH = pathlib.Path(_OUT_OVERRIDE)
+    if not _OUT_PATH.is_absolute():
+        _OUT_PATH = ROOT / _OUT_PATH
+    OUT = ensure_dir(_OUT_PATH)
+else:
+    OUT = ensure_dir(ROOT / "outputs" / "selectivity_sweep")
 
 # ─────────────────────────────────────────────────── sweep parameters ─────────
 # Every parameter below is env-overridable so a smoketest sbatch can shrink
@@ -115,6 +124,15 @@ DIVIDER_ANGLE_DEG  = _env_flt("DIVIDER_ANGLE_DEG", 0.0)
                                 # off-target by a straight line at
                                 # DIVIDER_ANGLE_DEG through the centre.
                                 # 0° = horizontal line, target = top half.
+
+# Mixed-diameter mode: when both are set (non-zero), target fascicles use
+# TARGET_DIAMETER_UM, off-target fascicles use OFFTARGET_DIAMETER_UM.
+# This is the regime where waveform optimisation can beat rectangular —
+# different chronaxie between the two populations.  Typical pair:
+# 5.7 µm sensory target vs 14 µm motor off-target.  When either is 0,
+# fall back to single-diameter FIBER_DIAMETER_UM for the whole nerve.
+TARGET_DIAMETER_UM    = _env_flt("TARGET_DIAMETER_UM",    0.0)
+OFFTARGET_DIAMETER_UM = _env_flt("OFFTARGET_DIAMETER_UM", 0.0)
 DT              = _env_flt("DT", 0.005)        # ms
 T_STOP          = _env_flt("T_STOP", 3.0)      # ms; PW + DELAY + slowest-MRG propagation ≈ 2.1 ms.
 DELAY_MS        = 1.0
@@ -153,12 +171,15 @@ def _build_seed_inputs(seed: int, verbose: bool = True) -> dict:
     # the Hussain 2024 anatomies (P1-P6 pig: motor-vs-sensory split;
     # H1-H6 human: random semicircle split).
     n_per_fasc = max(1, N_FIBERS // N_FASCICLES)
+    mixed_diam = TARGET_DIAMETER_UM > 0 and OFFTARGET_DIAMETER_UM > 0
     nerve = make_hussain_style_nerve(
         n_fascicles=N_FASCICLES,
         n_fibers_per_fascicle=n_per_fasc,
         nerve_radius_um=NERVE_RADIUS_UM,
         divider_angle_deg=DIVIDER_ANGLE_DEG,
         diameters=[FIBER_DIAMETER_UM],
+        target_diameter_um=TARGET_DIAMETER_UM if mixed_diam else None,
+        offtarget_diameter_um=OFFTARGET_DIAMETER_UM if mixed_diam else None,
         seed=seed,
     )
     n_tgt = int(nerve.target_mask.sum())
@@ -166,10 +187,15 @@ def _build_seed_inputs(seed: int, verbose: bool = True) -> dict:
     if verbose:
         n_tgt_fasc = sum(1 for f in nerve.fascicles if f.is_target)
         n_off_fasc = len(nerve.fascicles) - n_tgt_fasc
+        if mixed_diam:
+            diam_str = (f"D_target={TARGET_DIAMETER_UM} µm / "
+                        f"D_offtarget={OFFTARGET_DIAMETER_UM} µm")
+        else:
+            diam_str = f"D={FIBER_DIAMETER_UM} µm"
         print(f"{label} Nerve: {n_total} fibres in {len(nerve.fascicles)} "
               f"fascicles ({n_tgt_fasc} target / {n_off_fasc} off-target, "
               f"{n_per_fasc} fibres/fasc)  targets={n_tgt}/{n_total}  "
-              f"D={FIBER_DIAMETER_UM} µm  divider={DIVIDER_ANGLE_DEG}°",
+              f"{diam_str}  divider={DIVIDER_ANGLE_DEG}°",
               flush=True)
 
     contact_xyz = make_ring_cuff_positions(
@@ -381,13 +407,25 @@ def _run_seed_chunk(seeds: list[int], verbose: bool = True) -> list[dict]:
               f"{si_rect:+.3f}  best_restart={rect_res['best_restart']}", flush=True)
 
     # ── Waveform (Adam, per-seed) ─────────────────────────────────────────────
+    # Skip the waveform step entirely when N_OPT_WAVE=0 (used by the LBFGS
+    # verification phase of the manuscript sbatch, which only cares about
+    # the rect result).
     results = []
+    skip_wave = N_OPT_WAVE <= 0
     for s_in, rect_res in zip(seed_inputs, rect_lbfgs_results):
-        wave_res, wave_t = _waveform_step_per_seed(s_in, rect_res["amps"], verbose)
-        si_wave = wave_res["history"]["si"][-1]
         si_rect = selectivity_index(rect_res["final_acts"], s_in["nerve"].target_mask)
-        print(f"{s_in['label']} Wave done: SI {si_rect:+.3f} → {si_wave:+.3f}  "
-              f"({wave_t:.0f}s)", flush=True)
+        if skip_wave:
+            print(f"{s_in['label']} Waveform step skipped (N_OPT_WAVE=0).",
+                  flush=True)
+            wave_res = {"history": {"loss": [], "si": [], "acts": [
+                np.array(rect_res["final_acts"]),
+            ]}, "u": None}
+            wave_t = 0.0
+        else:
+            wave_res, wave_t = _waveform_step_per_seed(s_in, rect_res["amps"], verbose)
+            si_wave = wave_res["history"]["si"][-1]
+            print(f"{s_in['label']} Wave done: SI {si_rect:+.3f} → {si_wave:+.3f}  "
+                  f"({wave_t:.0f}s)", flush=True)
 
         results.append(_package_result(s_in, rect_res, rect_t_per_seed, wave_res, wave_t))
 
@@ -435,7 +473,10 @@ def _run_seed_chunk(seeds: list[int], verbose: bool = True) -> list[dict]:
         # Waveform figure: pick the BEST iter (by SI) rather than the last,
         # so the cross-section reflects the activation pattern at the
         # solution we're actually reporting — not whatever post-overshoot
-        # state Adam happened to land in at the final iter.
+        # state Adam happened to land in at the final iter.  Skipped if
+        # the waveform step was bypassed (N_OPT_WAVE=0, LBFGS verify).
+        if skip_wave:
+            continue
         wave_si_hist  = list(wave_res["history"]["si"])
         wave_loss     = list(wave_res["history"]["loss"])
         wave_acts_all = wave_res["history"]["acts"]

@@ -350,29 +350,56 @@ def plot_seed_cross_section(
     acts = np.asarray(acts)
     fired = acts > activation_threshold
 
-    # ── infer target fascicle boundary from the target fibres ────────────────
-    tgt_x = np.asarray(nerve.fiber_x_um)[target]
-    tgt_y = np.asarray(nerve.fiber_y_um)[target]
-    if len(tgt_x) > 0:
-        fc_cx = float(tgt_x.mean())
-        fc_cy = float(tgt_y.mean())
-        max_r = float(np.max(np.hypot(tgt_x - fc_cx, tgt_y - fc_cy)))
-        fc_r  = max(max_r * 1.15, 60.0)   # pad so the boundary clearly
-                                             # contains all target fibres
-    else:
-        fc_cx, fc_cy, fc_r = 0.0, 0.0, nerve_radius_um * 0.3
-
     fig, ax = plt.subplots(figsize=(8.0, 8.0), constrained_layout=True)
     ax.set_aspect("equal")
 
     # nerve outline (a thicker, slightly grey ring so contacts pop)
     ax.add_patch(plt.Circle((0, 0), nerve_radius_um,
                               fill=False, edgecolor="0.25", lw=2.0, zorder=1))
-    # target fascicle: light-blue fill
-    ax.add_patch(plt.Circle((fc_cx, fc_cy), fc_r,
-                              facecolor="#cfe2f3", edgecolor="C0",
-                              lw=1.8, alpha=0.55, zorder=2,
-                              label="target fascicle"))
+
+    # ── draw fascicles ───────────────────────────────────────────────────────
+    # Prefer the *actual* fascicle outlines (FascicleOutline list on the
+    # NerveGeometry) so the boundary matches what the geometry builder
+    # used to place fibres.  Fall back to inferring a single outline from
+    # target-fibre positions if the nerve has no fascicle metadata
+    # (legacy single-disk scatter case).
+    fascicles_meta = getattr(nerve, "fascicles", None) or []
+    if fascicles_meta:
+        for fc in fascicles_meta:
+            if fc.is_target:
+                # Filled disk for the target fascicle.
+                ax.add_patch(plt.Circle(
+                    (fc.cx_um, fc.cy_um), fc.r_um,
+                    facecolor="#cfe2f3", edgecolor="none",
+                    alpha=0.55, zorder=2,
+                ))
+                ax.add_patch(plt.Circle(
+                    (fc.cx_um, fc.cy_um), fc.r_um,
+                    facecolor="none", edgecolor="C0",
+                    lw=2.5, zorder=6,
+                ))
+            else:
+                # Off-target: hollow with a thick coloured rim so it reads
+                # without competing visually with the target fill.
+                ax.add_patch(plt.Circle(
+                    (fc.cx_um, fc.cy_um), fc.r_um,
+                    facecolor="none", edgecolor="#c0392b",
+                    lw=2.5, linestyle="-", zorder=6,
+                ))
+    else:
+        # Legacy fallback: estimate a single target fascicle boundary.
+        tgt_x = np.asarray(nerve.fiber_x_um)[target]
+        tgt_y = np.asarray(nerve.fiber_y_um)[target]
+        if len(tgt_x) > 0:
+            fc_cx = float(tgt_x.mean())
+            fc_cy = float(tgt_y.mean())
+            max_r = float(np.max(np.hypot(tgt_x - fc_cx, tgt_y - fc_cy)))
+            fc_r  = max(max_r * 1.15, 60.0)
+        else:
+            fc_cx, fc_cy, fc_r = 0.0, 0.0, nerve_radius_um * 0.3
+        ax.add_patch(plt.Circle((fc_cx, fc_cy), fc_r,
+                                  facecolor="#cfe2f3", edgecolor="C0",
+                                  lw=1.8, alpha=0.55, zorder=2))
 
     # ── fibres ───────────────────────────────────────────────────────────────
     # Use *distinct markers* so target vs off-target reads even in greyscale,
@@ -450,6 +477,8 @@ def plot_seed_cross_section(
 
     legend_handles = [
         mpatches.Patch(facecolor="#cfe2f3", edgecolor="C0", label="target fascicle"),
+        mpatches.Patch(facecolor="none", edgecolor="#c0392b",
+                        linewidth=1.8, label="off-target fascicle"),
         Line2D([0], [0], marker="o", color="w", markerfacecolor="C0",
                 markeredgecolor="k", markersize=11, label="target fibre — fired"),
         Line2D([0], [0], marker="o", color="w", markerfacecolor="none",

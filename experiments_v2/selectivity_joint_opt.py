@@ -35,7 +35,7 @@ import jax.numpy as jnp
 
 jax.config.update("jax_enable_x64", True)
 
-from jaxfibers.nerve.geometry import make_synthetic_nerve
+from jaxfibers.nerve.geometry import make_multi_fascicle_nerve
 from jaxfibers.stim.multichannel_field import (
     make_ring_cuff_positions, precompute_ve_unit, build_fiber_arrays,
 )
@@ -74,16 +74,18 @@ SIGMA_S_M       = 0.3
 def main():
     print(f"[joint-opt] seed={SEED}, N_FIBERS={N_FIBERS}, N_NODES={N_NODES}", flush=True)
 
-    # ── nerve + cuff ──────────────────────────────────────────────────────────
-    nerve = make_synthetic_nerve(
-        n_fibers=N_FIBERS,
+    # ── nerve + cuff (two-fascicle model: target right, off-target left) ─────
+    n_per_fasc = max(1, N_FIBERS // 2)
+    nerve = make_multi_fascicle_nerve(
+        n_fibers_per_fascicle=n_per_fasc,
         nerve_radius_um=NERVE_RADIUS_UM,
-        target_fraction=TARGET_FRACTION,
         diameters=[FIBER_DIAMETER_UM],
         seed=SEED,
     )
     n_tgt = int(nerve.target_mask.sum())
-    print(f"[joint-opt] Nerve: {N_FIBERS} fibers  targets={n_tgt}/{N_FIBERS} ({n_tgt/N_FIBERS*100:.0f}%)  "
+    n_total = nerve.n_fibers
+    print(f"[joint-opt] Nerve: {n_total} fibres in {len(nerve.fascicles)} "
+          f"fascicles ({n_per_fasc}/fasc)  targets={n_tgt}/{n_total}  "
           f"D={FIBER_DIAMETER_UM} µm", flush=True)
 
     N_STEPS = int(T_STOP / DT)

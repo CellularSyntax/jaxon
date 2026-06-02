@@ -60,7 +60,7 @@ import jax.numpy as jnp
 
 jax.config.update("jax_enable_x64", True)
 
-from jaxfibers.nerve.geometry import make_synthetic_nerve
+from jaxfibers.nerve.geometry import make_multi_fascicle_nerve
 from jaxfibers.stim.multichannel_field import make_ring_cuff_positions, precompute_ve_unit
 from jaxfibers.stim.batch_solve import stack_fiber_statics, initial_states_batch
 from jaxfibers.optim.losses import activation_proxy_batch, selectivity_index
@@ -139,17 +139,25 @@ def _build_seed_inputs(seed: int, verbose: bool = True) -> dict:
     label = f"[seed={seed}]"
     if verbose:
         print(f"{label} Building nerve ...", flush=True)
-    nerve = make_synthetic_nerve(
-        n_fibers=N_FIBERS,
+    # Two-fascicle nerve: target fascicle on the +x side, off-target on -x.
+    # Fibres are placed WITHIN their respective fascicle outline, not
+    # scattered across the whole nerve — this is what gives the optimiser
+    # a fighting chance at selectivity (spatial separation between
+    # populations).  See jaxfibers/nerve/geometry.py for the rationale.
+    # N_FIBERS is split evenly between the two fascicles.
+    n_per_fasc = max(1, N_FIBERS // 2)
+    nerve = make_multi_fascicle_nerve(
+        n_fibers_per_fascicle=n_per_fasc,
         nerve_radius_um=NERVE_RADIUS_UM,
-        target_fraction=TARGET_FRACTION,
         diameters=[FIBER_DIAMETER_UM],
         seed=seed,
     )
     n_tgt = int(nerve.target_mask.sum())
+    n_total = nerve.n_fibers
     if verbose:
-        print(f"{label} Nerve: {N_FIBERS} fibers  targets={n_tgt}/{N_FIBERS} "
-              f"({n_tgt/N_FIBERS*100:.0f}%)  D={FIBER_DIAMETER_UM} µm", flush=True)
+        print(f"{label} Nerve: {n_total} fibres in {len(nerve.fascicles)} "
+              f"fascicles  ({n_per_fasc}/fasc)  targets={n_tgt}/{n_total}  "
+              f"D={FIBER_DIAMETER_UM} µm", flush=True)
 
     contact_xyz = make_ring_cuff_positions(
         n_contacts=N_CONTACTS, cuff_radius_um=CUFF_RADIUS_UM, cuff_z_um=0.0,

@@ -63,11 +63,13 @@ export T_STOP=2.0                 # 3.0 → 2.0 ms (still covers PW + delay + AP
 # Pure JAX job — skip the ~10 s NMODL compile.
 export SKIP_PYFIBERS_COMPILE=1
 
-# Disable @jax.checkpoint in _integrate_one_fiber_m_max_fd.  At N_FIBERS=30
-# the autodiff-backward graph fits in A16 memory without rematerialisation,
-# and the XLA remat planner is the dominant cost — disabling it cuts the
-# LBFGS compile from 25+ min to ~3-5 min.
-export JAXLEY_FIBERS_FD_CHECKPOINT=0
+# Use Adam-FD for the rect step instead of LBFGS.  Same loss, same forward,
+# but finite-difference gradient instead of autodiff backward — so no XLA
+# remat planner pathology and no autodiff-backward memory blowup.  Compiles
+# in 2-3 min on A16 vs LBFGS's 25+ min, and runs without memory issues at
+# N_FIBERS=30.  The smoketest is for verifying the pipeline (init, loss,
+# figures, JSON output) end-to-end, not LBFGS specifically.
+export OPTIMIZER=adam_fd
 
 echo "Project root    : ${PROJECT_ROOT}"
 echo "Container       : ${CONTAINER_IMAGE}"
@@ -93,7 +95,7 @@ export N_OPT_WAVE=\"${N_OPT_WAVE}\"
 export N_RESTARTS_RECT=\"${N_RESTARTS_RECT}\"
 export T_STOP=\"${T_STOP}\"
 export SKIP_PYFIBERS_COMPILE=\"${SKIP_PYFIBERS_COMPILE}\"
-export JAXLEY_FIBERS_FD_CHECKPOINT=\"${JAXLEY_FIBERS_FD_CHECKPOINT}\"
+export OPTIMIZER=\"${OPTIMIZER}\"
 bash \"${PROJECT_ROOT}/slurm/setup_env.sh\"
 echo '[job] Running selectivity_sweep.py smoketest ...'
 python -u experiments_v2/selectivity_sweep.py

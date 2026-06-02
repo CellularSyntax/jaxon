@@ -65,10 +65,18 @@ from jaxfibers.stim.multichannel_field import make_ring_cuff_positions, precompu
 from jaxfibers.stim.batch_solve import stack_fiber_statics, initial_states_batch
 from jaxfibers.optim.losses import activation_proxy_batch, selectivity_index
 from jaxfibers.optim.optimizer import (
-    run_rect_optimization_lbfgs,
+    run_rect_optimization,           # Adam-FD (pure forward, fast compile)
+    run_rect_optimization_lbfgs,     # LBFGS autodiff (slow compile)
     run_rect_optimization_lbfgs_batched,
     run_waveform_optimization,
 )
+
+# Rect-step optimiser selection.  Default LBFGS is what the manuscript-scale
+# job uses.  Smoketests / debug runs can set `OPTIMIZER=adam_fd` to swap in
+# the legacy Adam-FD path — same loss, same forward, but FD gradient instead
+# of autodiff backward, so no remat planner pathology and no autodiff
+# memory blowup (compile drops from 25 min to ~2 min on A16).
+RECT_OPTIMIZER = os.environ.get("OPTIMIZER", "lbfgs").lower()
 from jaxfibers.fibers.mrg import section_centers_um
 from experiments_v2.utils import ensure_dir, plot_seed_summary
 
@@ -279,7 +287,41 @@ def _run_seed_chunk(seeds: list[int], verbose: bool = True) -> list[dict]:
     AMP_INIT_MA = -1.5
     AMP_CLIP    = (-3.0, 3.0)
 
-    if len(seeds) == 1:
+    if len(seeds) == 1 and RECT_OPTIMIZER == "adam_fd":
+        # Adam-FD smoketest path: pure forward + finite-difference gradient.
+        # No autodiff backward, so no remat planner pathology and no
+        # @jax.checkpoint required.  Compiles in 2-3 min on A16 vs LBFGS's
+        # 25+ min.  Adapt run_rect_optimization's history into the same
+        # dict shape that the rest of the script expects from LBFGS.
+        s_in = seed_inputs[0]
+        print(f"{s_in['label']} Rect Adam-FD ({N_OPT_RECT} iters) "
+              f"[OPTIMIZER=adam_fd smoketest path]", flush=True)
+        adam_res = run_rect_optimization(
+            fiber_statics_batch=s_in["fs_batch"],
+            state0_batch=s_in["s0_batch"],
+            Ve_unit=s_in["Ve_unit"],
+            pulse_mask=pulse_mask,
+            node_indices=s_in["node_indices"],
+            target_mask=s_in["nerve"].target_mask,
+            dt=DT, n_steps=max(N_OPT_RECT * 3, 30),  # Adam needs more iters
+            amp_init_mA=AMP_INIT_MA, amp_clip=AMP_CLIP,
+            verbose=verbose,
+        )
+        # Convert Adam-FD result into the LBFGS-result dict shape that
+        # _package_result and the figure code expect.
+        loss_hist = np.asarray(adam_res["history"]["loss"])
+        rect_lbfgs_res = {
+            "amps":             adam_res["amps"],
+            "final_loss":       float(loss_hist.min()),
+            "final_acts":       np.asarray(adam_res["history"]["acts"][-1]),
+            "best_restart":     0,
+            "all_loss_traces":  loss_hist[None, :],
+            "all_final_amps":   adam_res["amps"][None, :],
+            "all_final_losses": np.asarray([loss_hist[-1]]),
+            "wall_time_s":      0.0,
+        }
+        rect_lbfgs_results = [rect_lbfgs_res]
+    elif len(seeds) == 1:
         s_in = seed_inputs[0]
         print(f"{s_in['label']} Rect LBFGS ({N_RESTARTS_RECT} restarts × "
               f"{N_OPT_RECT} steps) ...", flush=True)

@@ -480,13 +480,24 @@ def main():
     print(f"[sweep] Running seeds {args.seeds[0]}..{args.seeds[-1]} "
           f"({len(args.seeds)} seeds), {args.seeds_per_task} per vmap chunk")
 
-    # Pre-filter seeds that already have output
-    pending = [s for s in args.seeds
-               if not (OUT / f"data_seed_{s:04d}.json").exists()]
-    skipped = [s for s in args.seeds if s not in pending]
+    # Pre-filter seeds that already have output, UNLESS FORCE_RERUN=1.
+    # The skip is convenient for resuming interrupted multi-seed sweeps but
+    # is a footgun for smoketest re-runs (silently produces no new output).
+    # Smoketest sbatch always sets FORCE_RERUN=1.
+    force_rerun = os.environ.get("FORCE_RERUN", "0") == "1"
+    if force_rerun:
+        print("[sweep] FORCE_RERUN=1 — re-running every seed and overwriting "
+              "existing outputs.", flush=True)
+        pending = list(args.seeds)
+        skipped = []
+    else:
+        pending = [s for s in args.seeds
+                    if not (OUT / f"data_seed_{s:04d}.json").exists()]
+        skipped = [s for s in args.seeds if s not in pending]
     if skipped:
         print(f"[sweep] Skipping {len(skipped)} seeds with existing output: "
-              f"{skipped[:5]}{'...' if len(skipped) > 5 else ''}", flush=True)
+              f"{skipped[:5]}{'...' if len(skipped) > 5 else ''}  "
+              f"(set FORCE_RERUN=1 to overwrite)", flush=True)
 
     # Chunk by SEEDS_PER_TASK
     for i in range(0, len(pending), args.seeds_per_task):

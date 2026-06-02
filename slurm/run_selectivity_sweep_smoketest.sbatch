@@ -63,6 +63,11 @@ export T_STOP=2.0                 # 3.0 → 2.0 ms (still covers PW + delay + AP
 # Pure JAX job — skip the ~10 s NMODL compile.
 export SKIP_PYFIBERS_COMPILE=1
 
+# Always re-run the smoketest even if a stale data_seed_0000.json exists
+# from a prior run.  Without this, the sweep's "skip existing output"
+# filter silently produces no new output.
+export FORCE_RERUN=1
+
 # Use Adam-FD for the rect step instead of LBFGS.  Same loss, same forward,
 # but finite-difference gradient instead of autodiff backward — so no XLA
 # remat planner pathology and no autodiff-backward memory blowup.  Compiles
@@ -96,6 +101,7 @@ export N_RESTARTS_RECT=\"${N_RESTARTS_RECT}\"
 export T_STOP=\"${T_STOP}\"
 export SKIP_PYFIBERS_COMPILE=\"${SKIP_PYFIBERS_COMPILE}\"
 export OPTIMIZER=\"${OPTIMIZER}\"
+export FORCE_RERUN=\"${FORCE_RERUN}\"
 bash \"${PROJECT_ROOT}/slurm/setup_env.sh\"
 echo '[job] Running selectivity_sweep.py smoketest ...'
 python -u experiments_v2/selectivity_sweep.py

@@ -74,6 +74,10 @@ fi
 
 mkdir -p "${PROJECT_ROOT}/logs" "${PROJECT_ROOT}/outputs"
 
+# selectivity_joint_opt.py is pure JAX — no NEURON mechanisms needed.
+# Skip the ~10 s pyfibers_compile pass in setup_env.sh.
+export SKIP_PYFIBERS_COMPILE=1
+
 echo "Project root : ${PROJECT_ROOT}"
 echo "Container    : ${CONTAINER_IMAGE}"
 
@@ -90,6 +94,7 @@ srun \
 set -euo pipefail
 export PROJECT_ROOT=\"${PROJECT_ROOT}\"
 export JAX_ENABLE_X64=1
+export SKIP_PYFIBERS_COMPILE=\"${SKIP_PYFIBERS_COMPILE}\"
 bash \"${PROJECT_ROOT}/slurm/setup_env.sh\"
 echo '[job] Running experiments_v2/selectivity_joint_opt.py ...'
 python -u experiments_v2/selectivity_joint_opt.py

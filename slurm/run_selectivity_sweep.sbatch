@@ -109,6 +109,10 @@ export SEEDS_PER_TASK
 # N_FIBERS=200; bump to 4 on a100/h100 (see header).
 export N_RESTARTS_RECT="${N_RESTARTS_RECT:-2}"
 
+# selectivity_sweep.py is pure JAX — no NEURON mechanisms needed.
+# Skip the ~10 s pyfibers_compile pass in setup_env.sh.
+export SKIP_PYFIBERS_COMPILE=1
+
 echo "Project root    : ${PROJECT_ROOT}"
 echo "Container       : ${CONTAINER_IMAGE}"
 echo "Array task ID   : ${TASK_ID}"
@@ -132,6 +136,7 @@ export SEED_START=\"${SEED_START}\"
 export SEED_END=\"${SEED_END}\"
 export SEEDS_PER_TASK=\"${SEEDS_PER_TASK}\"
 export N_RESTARTS_RECT=\"${N_RESTARTS_RECT}\"
+export SKIP_PYFIBERS_COMPILE=\"${SKIP_PYFIBERS_COMPILE}\"
 bash \"${PROJECT_ROOT}/slurm/setup_env.sh\"
 echo \"[job] Running selectivity_sweep.py seeds \${SEED_START}..\$((SEED_END-1)) (\${SEEDS_PER_TASK} per vmap chunk) ...\"
 python -u experiments_v2/selectivity_sweep.py

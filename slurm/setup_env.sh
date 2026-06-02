@@ -31,9 +31,17 @@ else
     pip install --upgrade -r "${PROJECT_ROOT}/requirements_gpu.txt"
 fi
 
-echo "[setup] Compiling PyFibers NMODL mechanisms (creates x86_64/ in project root) ..."
-cd "${PROJECT_ROOT}"
-pyfibers_compile
+# JAX-only jobs (e.g. selectivity_sweep.py, selectivity_joint_opt.py) don't
+# need NEURON mechanisms.  Skip the compile by exporting SKIP_PYFIBERS_COMPILE=1
+# in the sbatch.  Validation scripts that import PyFibers/NEURON should leave
+# it unset so the x86_64/ tree is fresh.
+if [ "${SKIP_PYFIBERS_COMPILE:-0}" = "1" ]; then
+    echo "[setup] SKIP_PYFIBERS_COMPILE=1 — not compiling NMODL mechanisms (JAX-only job)."
+else
+    echo "[setup] Compiling PyFibers NMODL mechanisms (creates x86_64/ in project root) ..."
+    cd "${PROJECT_ROOT}"
+    pyfibers_compile
+fi
 
 echo "[setup] JAX devices:"
 python -c "import jax; print(jax.devices())"

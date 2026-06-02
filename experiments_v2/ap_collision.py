@@ -55,6 +55,8 @@ from jaxfibers.fibers.mrg import (
 )
 from jaxfibers.channels.mrg_axnode import AxnodeMyel
 from jaxfibers.stim.extracellular_coupled import arrays_from_geometry, integrate
+from jaxfibers.nrn_baseline import build_mrg_pyfibers
+from neuron import h
 
 from experiments_v2.utils import ensure_dir, save_json
 
@@ -166,16 +168,42 @@ def _run_one_diameter(D: float) -> dict:
     # Internode compartments stay near rest, dominating the visual otherwise.
     snapshots_nodes = snapshots[:, nodes]                          # [n_snap, n_nodes]
 
+    # ── PyFibers comparison: two simultaneous IClamps at the end nodes ───────
+    print(f"  PyFibers comparison ...", flush=True)
+    fiber = build_mrg_pyfibers(diameter=D, n_nodes=N_NODES, temperature=CELSIUS)
+    fiber.record_vm()
+    # IClamp at the first and last node-of-Ranvier sections (centre = 0.5).
+    # h.IClamp.amp is in nA, matching our PULSE_AMP_NA convention.
+    iclamp0 = h.IClamp(fiber[0](0.5))
+    iclamp0.delay = DELAY; iclamp0.dur = PULSE_PW_MS; iclamp0.amp = PULSE_AMP_NA
+    iclampN = h.IClamp(fiber[-1](0.5))
+    iclampN.delay = DELAY; iclampN.dur = PULSE_PW_MS; iclampN.amp = PULSE_AMP_NA
+    # Recordings must be set up BEFORE h.finitialize, else they capture nothing.
+    t_vec = h.Vector().record(h._ref_t)
+    h.celsius = CELSIUS
+    h.dt = DT
+    h.finitialize(fiber.v_rest)
+    h.continuerun(TSTOP)
+    vm_pf = np.array([np.array(v) for v in fiber.vm])     # [n_nodes, n_t]
+    t_pf  = np.array(t_vec)
+    # Resample PyFibers traces to the same time grid as JAX (output[s] at t=(s+1)*dt)
+    pf_snap_indices = [np.argmin(np.abs(t_pf - (DELAY + s))) for s in SNAPSHOT_TS]
+    snapshots_nodes_pf = vm_pf[:, pf_snap_indices].T               # [n_snap, n_nodes]
+    print(f"    JAX peak {Vm_all.max():.1f} mV, PyFibers peak {vm_pf.max():.1f} mV  "
+          f"(|diff|={abs(Vm_all.max() - vm_pf.max()):.2f} mV)", flush=True)
+
     return {
-        "diameter_um":     D,
-        "n_comp":          n_comp,
-        "n_nodes":         len(nodes),
-        "node_indices":    nodes,
-        "centers_um":      centers,
-        "snapshots":       snapshots,                             # [n_snap, n_comp]
-        "snapshots_nodes": snapshots_nodes,                       # [n_snap, n_nodes]
-        "snapshot_t_ms":   SNAPSHOT_TS,
-        "vm_peak_mV":      float(Vm_all.max()),
+        "diameter_um":        D,
+        "n_comp":             n_comp,
+        "n_nodes":            len(nodes),
+        "node_indices":       nodes,
+        "centers_um":         centers,
+        "snapshots":          snapshots,                             # [n_snap, n_comp]
+        "snapshots_nodes":    snapshots_nodes,                       # [n_snap, n_nodes]
+        "snapshots_nodes_pf": snapshots_nodes_pf,                    # [n_snap, n_nodes]
+        "snapshot_t_ms":      SNAPSHOT_TS,
+        "vm_peak_mV":         float(Vm_all.max()),
+        "vm_peak_pf_mV":      float(vm_pf.max()),
     }
 
 
@@ -189,13 +217,18 @@ def make_figure(results: list[dict]) -> None:
         axes = axes[None, :]
 
     # Hussain Fig 3c: x-axis = node number (0..n_nodes-1), node-only Vm.
+    # PyFibers (blue, solid) and jaxfibers (orange, dashed) — matches Hussain
+    # convention where NEURON is solid blue and S-MF is dashed orange.
     for r, res in enumerate(results):
         D = res["diameter_um"]
         n_nodes_r = res["n_nodes"]
         node_x = np.arange(n_nodes_r)
         for c, t in enumerate(SNAPSHOT_TS):
             ax = axes[r, c]
-            ax.plot(node_x, res["snapshots_nodes"][c], color="C0", lw=1.4)
+            ax.plot(node_x, res["snapshots_nodes_pf"][c], color="C0", lw=1.6,
+                    label="PyFibers" if (r == 0 and c == 0) else None)
+            ax.plot(node_x, res["snapshots_nodes"][c],    color="C1", lw=1.2, ls="--",
+                    label="jaxfibers" if (r == 0 and c == 0) else None)
             ax.axhline(V_REST, color="gray", lw=0.4, ls=":")
             ax.set_xlim(0, n_nodes_r - 1)
             ax.set_ylim(-90, 50)
@@ -207,6 +240,8 @@ def make_figure(results: list[dict]) -> None:
                 ax.set_xlabel("node #", fontsize=9)
             ax.tick_params(labelsize=7)
             ax.grid(alpha=0.3, lw=0.4)
+            if r == 0 and c == 0:
+                ax.legend(fontsize=7, loc="upper right")
 
     fig.suptitle("AP collision — symmetric annihilation in MRG fibers "
                  f"(intracellular pulse {PULSE_AMP_NA} nA × {PULSE_PW_MS} ms "
@@ -233,13 +268,15 @@ def main():
         "celsius":        CELSIUS,
         "results":        [
             {
-                "diameter_um":         r["diameter_um"],
-                "n_nodes":             r["n_nodes"],
-                "centers_um":          r["centers_um"].tolist(),
-                "node_indices":        r["node_indices"],
-                "snapshots_nodes_mV":  r["snapshots_nodes"].tolist(),
-                "snapshots_all_mV":    r["snapshots"].tolist(),
-                "vm_peak_mV":          r["vm_peak_mV"],
+                "diameter_um":            r["diameter_um"],
+                "n_nodes":                r["n_nodes"],
+                "centers_um":             r["centers_um"].tolist(),
+                "node_indices":           r["node_indices"],
+                "snapshots_nodes_mV":     r["snapshots_nodes"].tolist(),
+                "snapshots_nodes_pf_mV":  r["snapshots_nodes_pf"].tolist(),
+                "snapshots_all_mV":       r["snapshots"].tolist(),
+                "vm_peak_mV":             r["vm_peak_mV"],
+                "vm_peak_pf_mV":          r["vm_peak_pf_mV"],
             }
             for r in results
         ],

@@ -2,11 +2,26 @@
 
 Wraps PyFibers' `build_fiber` + `IntraStim` / `ScaledStim` for MRG_DISCRETE.
 Returns numpy arrays in the same shape as our Jaxley outputs.
+
+Windows note: two NEURON installs may coexist on the user's machine —
+  c:/nrn       (legacy, only Python 2.7/3.5/3.6/3.7 hoc binaries)
+  c:/nrn826    (current, Python 3.10/3.11/3.12 hoc binaries)
+If `c:/nrn` is first in PYTHONPATH, `import neuron` finds the legacy
+package and fails to locate `hoc311`. We prepend c:/nrn826 to sys.path
+here so the working install loads regardless of shell setup. Linux is
+unaffected (NEURON installs via pip into site-packages).
 """
 
 from __future__ import annotations
 
+import os
+import sys
 from dataclasses import dataclass
+
+if sys.platform == "win32":
+    _NRN826 = r"c:\nrn826\lib\python"
+    if os.path.isdir(_NRN826) and _NRN826 not in sys.path[:3]:
+        sys.path.insert(0, _NRN826)
 
 import numpy as np
 from neuron import h

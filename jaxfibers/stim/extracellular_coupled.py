@@ -74,6 +74,58 @@ def block_thomas(D, Low, Up, R):
     return jnp.concatenate([x_rev[::-1], x_last[None]], 0)
 
 
+def block_thomas_assoc(D, Low, Up, R):
+    """Block-tridiagonal 2×2 solve: sequential forward sweep + O(log n) backward.
+
+    Forward elimination is unchanged (Riccati recurrence — not linearisable for
+    associative_scan).  Back-substitution is replaced by jax.lax.associative_scan
+    with the affine-map composition operator, reducing its sequential depth from
+    O(n) to O(log n).  This cuts the autodiff backward depth through the
+    back-substitution in half and gives a modest wall-time improvement on GPU.
+
+    The affine recurrence x[k] = A[k]@x[k+1] + b[k] satisfies:
+        combine((A_l,b_l), (A_r,b_r)) = (A_r@A_l, A_r@b_l + b_r)
+    which is associative (function composition of affine maps).  Reversing the
+    elements so index 0 = boundary (k=n-1, A=0) and doing a left-to-right prefix
+    scan yields b_scan[j] = x[n-1-j]; reversing back gives x[k].
+
+    Same API and output as block_thomas().
+    """
+    n = D.shape[0]
+
+    # ── Forward elimination (sequential — unavoidable) ─────────────────────────
+    def fwd(carry, k):
+        Dp_prev, Rp_prev = carry
+        W    = Low[k] @ _inv2(Dp_prev)
+        Dp_k = D[k] - W @ Up[k - 1]
+        Rp_k = R[k] - W @ Rp_prev
+        return (Dp_k, Rp_k), (Dp_k, Rp_k)
+
+    _, (Dp_tail, Rp_tail) = jax.lax.scan(fwd, (D[0], R[0]), jnp.arange(1, n))
+    Dp = jnp.concatenate([D[0][None], Dp_tail], 0)   # [n, 2, 2]
+    Rp = jnp.concatenate([R[0][None], Rp_tail], 0)   # [n, 2]
+
+    # ── Back-substitution via associative_scan ────────────────────────────────
+    # Affine recurrence: x[k] = A[k] @ x[k+1] + b[k]
+    # Pack into 3×3 homogeneous matrices to keep a single array (no mixed-rank
+    # pytree, which associative_scan cannot handle):
+    #   M[k] = [[A[k], b[k]],   x[k] = M[k] @ M[k+1] @ ... @ M[n-1] @ [0,0,1]^T
+    #           [0,    1   ]]          = M_scan[k, :2, 2]
+    # combine(left=M_scan[k+1], right=M[k]) = M[k] @ M_scan[k+1]  — standard matmul
+    invDp = _inv2(Dp)                                 # [n, 2, 2] — batched via ...
+    A = -(invDp @ Up)                                 # [n, 2, 2] — batched @
+    b = (invDp @ Rp[..., None])[..., 0]              # [n, 2]
+    # Boundary at k=n-1: no x[n], so A[n-1] = 0.
+    A = A.at[-1].set(jnp.zeros((2, 2), dtype=A.dtype))
+
+    top = jnp.concatenate([A, b[..., None]], axis=-1)               # [n, 2, 3]
+    bot = jnp.zeros((n, 1, 3), dtype=A.dtype).at[:, 0, 2].set(1.0) # [n, 1, 3]
+    M   = jnp.concatenate([top, bot], axis=-2)                       # [n, 3, 3]
+
+    M_scan = jax.lax.associative_scan(lambda l, r: r @ l, M, reverse=True)
+    return M_scan[:, :2, 2]    # x[k] = M_scan[k, :2, 2]
+
+
 # ============================================================ static assembly
 def _build_static(Gi, Gp, is_node):
     """Constant matrix pieces (axial). Gi, Gp length n-1 (bond k joins comp k,k+1)."""
@@ -98,7 +150,7 @@ def _be_step(Vi, Vp, ve, ve_prev, g_eff, i_ion,
                    jnp.stack([jnp.where(is_node, 0.0, -a),
                               jnp.where(is_node, 1.0, a + c + Gp_diag)], -1)], -2)
     R = jnp.stack([b, jnp.where(is_node, ve, -b + c * ve + d)], -1)
-    X = block_thomas(D, Low, Up, R)
+    X = block_thomas_assoc(D, Low, Up, R)
     return X[:, 0], X[:, 1]
 
 

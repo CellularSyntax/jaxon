@@ -201,6 +201,371 @@ def run_rect_optimization(
     return {"amps": best_amps, "history": history}
 
 
+# ─────────────────────────────────── LBFGS + multi-restart rect optimization ─
+
+def _build_rect_loss_fn(
+    fiber_statics_batch: FiberStatics,
+    state0_batch: tuple,
+    Ve_unit_j: jnp.ndarray,            # [K, n_fibers, n_comp]
+    pulse_j: jnp.ndarray,              # [T]
+    pulse_prev_j: jnp.ndarray,         # [T]
+    node_idx_j: jnp.ndarray,           # [n_fibers, n_nodes]
+    tgt_j: jnp.ndarray,                # [n_fibers]
+    w_j: jnp.ndarray,                  # [n_fibers]
+    dt: float,
+):
+    """Closes over a single seed's data; returns scalar wq_loss(amps)."""
+    def loss_fn(amps):
+        # Ve_comb [n_fibers, n_comp] — minus sign because amp<0 = cathodic.
+        Ve_comb = jnp.einsum("k,kfn->fn", -amps, Ve_unit_j)
+        m_max = batch_integrate_m_max_fd(
+            fiber_statics_batch, state0_batch, Ve_comb,
+            pulse_j, pulse_prev_j, dt,
+        )                                                          # [n_f, n_c]
+        acts = activation_proxy_batch(m_max, node_idx_j)           # [n_f]
+        return wq_loss(acts, tgt_j, w_j)
+    return loss_fn
+
+
+def _initial_amps_for_seed(
+    Ve_unit_j: jnp.ndarray,            # [K, n_fibers, n_comp]
+    tgt_j: jnp.ndarray,                # [n_fibers]
+    amp_init_mA: float,
+    amp_clip: tuple[float, float],
+    n_restarts: int,
+    rng_key: jnp.ndarray,              # PRNGKey for the random restarts
+) -> jnp.ndarray:
+    """Build an [n_restarts, K] stack of initial amplitudes.
+
+    Restart 0: deterministic Ve-weighted init (same logic as the legacy
+        run_rect_optimization — anchors the search at a known-decent start).
+    Restarts 1..M-1: uniform random in (-amp_clip_span/4, +amp_clip_span/4),
+        so we sample both polarities but don't pin on the clip boundary.
+
+    rng_key must be a PRNGKey (jax.random.PRNGKey output) — passed as a
+    traced array, so this function is vmap-safe over seeds.
+    """
+    K = Ve_unit_j.shape[0]
+    # Ve-weighted deterministic restart
+    ve_tgt_sum  = jnp.where(tgt_j[None, :, None], jnp.abs(Ve_unit_j), 0.0).sum((1, 2))
+    ve_tgt_mean = ve_tgt_sum / jnp.maximum(tgt_j.sum(), 1.0)
+    ve_range    = ve_tgt_mean.max() - ve_tgt_mean.min()
+    ve_norm     = (ve_tgt_mean - ve_tgt_mean.min()) / (ve_range + 1e-10)
+    amps_ve     = jnp.clip(ve_norm * amp_init_mA, amp_clip[0], amp_clip[1]).astype(jnp.float64)
+
+    if n_restarts <= 1:
+        return amps_ve[None, :]
+
+    keys = jax.random.split(rng_key, n_restarts - 1)
+    half_range = (amp_clip[1] - amp_clip[0]) / 4.0
+    rand_amps = jax.vmap(
+        lambda k: jax.random.uniform(
+            k, shape=(K,),
+            minval=-half_range, maxval=half_range,
+            dtype=jnp.float64,
+        )
+    )(keys)                                                           # [M-1, K]
+    return jnp.concatenate([amps_ve[None, :], rand_amps], axis=0)     # [M, K]
+
+
+def run_rect_optimization_lbfgs(
+    fiber_statics_batch: FiberStatics,
+    state0_batch: tuple,
+    Ve_unit: jnp.ndarray,                      # [K, n_fibers, n_comp]
+    pulse_mask: jnp.ndarray,                   # [T]
+    node_indices: np.ndarray,                  # [n_fibers, n_nodes]
+    target_mask: np.ndarray,                   # [n_fibers] bool
+    dt: float,
+    n_restarts: int = 4,
+    n_steps: int = 30,
+    amp_init_mA: float = -0.4,
+    amp_clip: tuple[float, float] = (-2.5, 2.5),
+    weights: np.ndarray | None = None,
+    rng_seed: int = 0,
+    lbfgs_memory: int = 10,
+    linesearch_max_steps: int = 20,
+    verbose: bool = True,
+) -> dict:
+    """LBFGS with M parallel random restarts (single seed).
+
+    Strategy
+    --------
+    * LBFGS uses autodiff gradient + Strong Wolfe zoom line search.
+      Typically converges in ~20-50 iters vs ~100-200 for Adam-FD on the
+      same loss surface (smooth, locally convex near the minimum).
+    * M restarts are vmapped, so all run on the GPU in parallel. Restart 0
+      starts at the Ve-weighted deterministic init (matches the legacy
+      Adam-FD optimiser); 1..M-1 sample uniformly in [-clip/4, +clip/4]
+      to spread across cathodic / anodic / mixed initial configurations.
+    * At the end, we pick the restart with the smallest final loss.
+
+    Returns
+    -------
+    result : dict
+        'amps'              [K]                     — best amplitudes (mA)
+        'final_loss'        float                   — wq_loss at best
+        'final_acts'        [n_fibers]              — activation proxies at best
+        'best_restart'      int                     — which restart won
+        'all_loss_traces'   [n_restarts, n_steps+1] — per-step loss for every restart
+        'all_final_amps'    [n_restarts, K]
+        'all_final_losses'  [n_restarts]
+    """
+    K        = Ve_unit.shape[0]
+    n_fibers = Ve_unit.shape[1]
+
+    Ve_unit_j    = jnp.asarray(Ve_unit,    dtype=jnp.float64)
+    pulse_j      = jnp.asarray(pulse_mask, dtype=jnp.float64)
+    pulse_prev_j = jnp.concatenate([jnp.zeros(1, dtype=jnp.float64), pulse_j[:-1]])
+    node_idx_j   = jnp.asarray(node_indices, dtype=jnp.int32)
+    tgt_j        = jnp.asarray(target_mask,  dtype=jnp.float64)
+    w_j = (jnp.ones(n_fibers, dtype=jnp.float64) / n_fibers
+           if weights is None else jnp.asarray(weights, dtype=jnp.float64))
+
+    loss_fn = _build_rect_loss_fn(
+        fiber_statics_batch, state0_batch,
+        Ve_unit_j, pulse_j, pulse_prev_j,
+        node_idx_j, tgt_j, w_j, dt,
+    )
+
+    init_amps = _initial_amps_for_seed(
+        Ve_unit_j, tgt_j, amp_init_mA, amp_clip, n_restarts,
+        jax.random.PRNGKey(rng_seed),
+    )                                                                  # [M, K]
+
+    optimizer = optax.lbfgs(
+        memory_size=lbfgs_memory,
+        scale_init_precond=True,
+        linesearch=optax.scale_by_zoom_linesearch(
+            max_linesearch_steps=linesearch_max_steps,
+        ),
+    )
+
+    def one_restart(amps0: jnp.ndarray):
+        """Run LBFGS for n_steps starting at amps0. vmappable."""
+        opt_state = optimizer.init(amps0)
+
+        def step(carry, _):
+            params, opt_state = carry
+            value, grad = jax.value_and_grad(loss_fn)(params)
+            updates, opt_state = optimizer.update(
+                grad, opt_state, params,
+                value=value, grad=grad, value_fn=loss_fn,
+            )
+            params = jnp.clip(
+                optax.apply_updates(params, updates),
+                amp_clip[0], amp_clip[1],
+            )
+            return (params, opt_state), value
+
+        (final_params, _), losses = jax.lax.scan(
+            step, (amps0, opt_state), None, length=n_steps,
+        )
+        final_loss = loss_fn(final_params)
+        # Concatenate so loss_traces has length n_steps+1 (init + post-step values)
+        loss_traces = jnp.concatenate([losses, final_loss[None]], axis=0)
+        return final_params, final_loss, loss_traces
+
+    # vmap over the M restarts.
+    if verbose:
+        print(
+            f"  LBFGS multi-restart: K={K} contacts, n_fibers={n_fibers}, "
+            f"{n_restarts} restarts × {n_steps} steps. Compiling ...",
+            flush=True,
+        )
+
+    t0 = time.time()
+    final_params_all, final_losses_all, loss_traces_all = jax.jit(
+        jax.vmap(one_restart)
+    )(init_amps)
+    # Block on the result so timing is accurate.
+    jax.block_until_ready(final_losses_all)
+    t_total = time.time() - t0
+
+    best_idx = int(jnp.argmin(final_losses_all))
+
+    # Compute acts at the best restart for reporting.
+    Ve_comb_best = jnp.einsum("k,kfn->fn", -final_params_all[best_idx], Ve_unit_j)
+    m_max_best = batch_integrate_m_max_fd(
+        fiber_statics_batch, state0_batch, Ve_comb_best,
+        pulse_j, pulse_prev_j, dt,
+    )
+    best_acts = activation_proxy_batch(m_max_best, node_idx_j)
+
+    if verbose:
+        print(
+            f"  LBFGS done in {t_total:.1f} s. Best restart: {best_idx}/{n_restarts}, "
+            f"final loss = {float(final_losses_all[best_idx]):.4f}.",
+            flush=True,
+        )
+
+    return {
+        "amps":             np.array(final_params_all[best_idx]),
+        "final_loss":       float(final_losses_all[best_idx]),
+        "final_acts":       np.array(best_acts),
+        "best_restart":     best_idx,
+        "all_loss_traces":  np.array(loss_traces_all),
+        "all_final_amps":   np.array(final_params_all),
+        "all_final_losses": np.array(final_losses_all),
+        "wall_time_s":      t_total,
+    }
+
+
+# ─────────────────────────── multi-seed batched LBFGS rect optimization ───────
+
+def run_rect_optimization_lbfgs_batched(
+    fiber_statics_batches: list,                # list of S FiberStatics
+    state0_batches: list,                        # list of S state tuples
+    Ve_units: np.ndarray,                        # [S, K, n_fibers, n_comp]
+    pulse_mask: np.ndarray,                      # [T]
+    node_indices_batches: np.ndarray,            # [S, n_fibers, n_nodes]
+    target_masks: np.ndarray,                    # [S, n_fibers] bool
+    dt: float,
+    n_restarts: int = 4,
+    n_steps: int = 30,
+    amp_init_mA: float = -0.4,
+    amp_clip: tuple[float, float] = (-2.5, 2.5),
+    weights_per_seed: np.ndarray | None = None,  # [S, n_fibers] or None
+    rng_seeds: list[int] | None = None,
+    lbfgs_memory: int = 10,
+    linesearch_max_steps: int = 20,
+    verbose: bool = True,
+) -> list[dict]:
+    """LBFGS multi-restart over a batch of S seeds via outer vmap.
+
+    All S × M × n_fibers effective fibers participate in a single vmapped
+    forward pass per LBFGS step. On an a100 (40 GB) S=8, M=8 fits with
+    n_fibers=100; on an a16 (16 GB) S=4, M=4 is the safe budget.
+
+    Returns a list of S dicts, one per input seed, each with the same shape
+    as the single-seed run_rect_optimization_lbfgs output.
+    """
+    S = len(fiber_statics_batches)
+    assert len(state0_batches) == S
+    assert Ve_units.shape[0] == S
+    assert node_indices_batches.shape[0] == S
+    assert target_masks.shape[0] == S
+    if rng_seeds is None:
+        rng_seeds = list(range(S))
+    assert len(rng_seeds) == S
+
+    n_fibers = Ve_units.shape[2]
+    K        = Ve_units.shape[1]
+
+    # Stack the S FiberStatics into FiberStatics-of-arrays with shape [S, n_fibers, ...]
+    stacked_fs = FiberStatics(*[
+        jnp.stack([getattr(fs, field) for fs in fiber_statics_batches], axis=0)
+        for field in FiberStatics._fields
+    ])
+    # state0 is a tuple of 4 arrays each [n_fibers, n_comp]; stack across seeds.
+    stacked_s0 = tuple(
+        jnp.stack([s0[i] for s0 in state0_batches], axis=0)            # [S, n_fibers, n_comp]
+        for i in range(len(state0_batches[0]))
+    )
+
+    Ve_units_j        = jnp.asarray(Ve_units, dtype=jnp.float64)
+    node_idx_j        = jnp.asarray(node_indices_batches, dtype=jnp.int32)
+    tgt_j             = jnp.asarray(target_masks, dtype=jnp.float64)
+    if weights_per_seed is None:
+        weights_per_seed_j = jnp.ones((S, n_fibers), dtype=jnp.float64) / n_fibers
+    else:
+        weights_per_seed_j = jnp.asarray(weights_per_seed, dtype=jnp.float64)
+    pulse_j      = jnp.asarray(pulse_mask, dtype=jnp.float64)
+    pulse_prev_j = jnp.concatenate([jnp.zeros(1, dtype=jnp.float64), pulse_j[:-1]])
+    # One PRNGKey per seed (vmap-safe; can't use Python int inside vmap).
+    rng_keys_j = jax.vmap(jax.random.PRNGKey)(jnp.asarray(rng_seeds, dtype=jnp.uint32))
+
+    optimizer = optax.lbfgs(
+        memory_size=lbfgs_memory,
+        scale_init_precond=True,
+        linesearch=optax.scale_by_zoom_linesearch(
+            max_linesearch_steps=linesearch_max_steps,
+        ),
+    )
+
+    def one_seed(fs_one, s0_one, Ve_unit_one, node_idx_one, tgt_one, w_one, rng_key_one):
+        """Run M restarts of LBFGS for one seed. vmappable over the S axis."""
+        loss_fn = _build_rect_loss_fn(
+            fs_one, s0_one,
+            Ve_unit_one, pulse_j, pulse_prev_j,
+            node_idx_one, tgt_one, w_one, dt,
+        )
+        init_amps = _initial_amps_for_seed(
+            Ve_unit_one, tgt_one, amp_init_mA, amp_clip, n_restarts, rng_key_one,
+        )
+
+        def one_restart(amps0):
+            opt_state = optimizer.init(amps0)
+            def step(carry, _):
+                params, opt_state = carry
+                value, grad = jax.value_and_grad(loss_fn)(params)
+                updates, opt_state = optimizer.update(
+                    grad, opt_state, params,
+                    value=value, grad=grad, value_fn=loss_fn,
+                )
+                params = jnp.clip(
+                    optax.apply_updates(params, updates),
+                    amp_clip[0], amp_clip[1],
+                )
+                return (params, opt_state), value
+            (final_params, _), losses = jax.lax.scan(
+                step, (amps0, opt_state), None, length=n_steps,
+            )
+            final_loss = loss_fn(final_params)
+            loss_traces = jnp.concatenate([losses, final_loss[None]], axis=0)
+            return final_params, final_loss, loss_traces
+
+        final_params_all, final_losses_all, loss_traces_all = jax.vmap(one_restart)(init_amps)
+        best_idx = jnp.argmin(final_losses_all)
+        best_amps = final_params_all[best_idx]
+        best_loss = final_losses_all[best_idx]
+
+        # Reproduce acts at the best restart
+        Ve_comb_best = jnp.einsum("k,kfn->fn", -best_amps, Ve_unit_one)
+        m_max_best = batch_integrate_m_max_fd(
+            fs_one, s0_one, Ve_comb_best,
+            pulse_j, pulse_prev_j, dt,
+        )
+        best_acts = activation_proxy_batch(m_max_best, node_idx_one)
+
+        return (final_params_all, final_losses_all, loss_traces_all,
+                best_amps, best_loss, best_acts, best_idx)
+
+    if verbose:
+        print(
+            f"  LBFGS batched: S={S} seeds × M={n_restarts} restarts × {n_steps} steps. "
+            f"Compiling ...",
+            flush=True,
+        )
+
+    t0 = time.time()
+    batched = jax.jit(jax.vmap(one_seed))(
+        stacked_fs, stacked_s0, Ve_units_j, node_idx_j, tgt_j,
+        weights_per_seed_j, rng_keys_j,
+    )
+    jax.block_until_ready(batched[1])   # final_losses_all
+    t_total = time.time() - t0
+
+    if verbose:
+        print(f"  LBFGS batched done in {t_total:.1f} s for {S} seeds.", flush=True)
+
+    final_params_all_S, final_losses_all_S, loss_traces_all_S, \
+        best_amps_S, best_losses_S, best_acts_S, best_idx_S = batched
+
+    results = []
+    for s in range(S):
+        results.append({
+            "amps":             np.array(best_amps_S[s]),
+            "final_loss":       float(best_losses_S[s]),
+            "final_acts":       np.array(best_acts_S[s]),
+            "best_restart":     int(best_idx_S[s]),
+            "all_loss_traces":  np.array(loss_traces_all_S[s]),
+            "all_final_amps":   np.array(final_params_all_S[s]),
+            "all_final_losses": np.array(final_losses_all_S[s]),
+            "wall_time_s":      t_total / S,    # amortised across seeds
+        })
+    return results
+
+
 # ─────────────────────────────────────────── arbitrary waveform optimization ─
 
 def run_waveform_optimization(

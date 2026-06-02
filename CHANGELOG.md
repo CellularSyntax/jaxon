@@ -26,6 +26,30 @@ prior validated state.
   eliminate single-step argmax discretisation noise (~1–2 % at typical
   C-fiber Δt ≈ 0.3–0.5 ms).
 
+### Added
+- **`run_rect_optimization_lbfgs`** in `jaxfibers/optim/optimizer.py` — LBFGS
+  + M random restarts for rectangular-amplitude selectivity. Uses optax's
+  zoom-line-search LBFGS with autodiff gradients (via the existing
+  checkpointed `batch_integrate_m_max_fd`). Restart 0 is the
+  Ve-weighted deterministic init (matches the legacy Adam-FD optimiser);
+  1..M-1 sample uniformly in (-clip/4, +clip/4). All M restarts are
+  vmapped, so they run in parallel as a single GPU pass; best-of-M wins.
+  Typical convergence: ~20-30 steps × ~3-5 forward-equivalents per step
+  ≈ ~100 forward equivalents (vs ~700 for 100 iters of Adam-FD).
+
+- **`run_rect_optimization_lbfgs_batched`** — same as above, but outer-vmaps
+  over a list of S seeds. Stacks each seed's FiberStatics + Ve_unit +
+  target_mask along a leading S axis. Compile cost paid once per chunk;
+  total work scales linearly with S but GPU utilisation improves
+  significantly (a16 was underused at S=1).
+
+- **`SEEDS_PER_TASK` env-var batching in `selectivity_sweep.py`.** Set to
+  1 (default) for the legacy single-seed path; set to N > 1 to vmap the
+  rect optimiser over N seeds at once. The sweep main loop now chunks
+  the seed list and dispatches to either the single-seed or batched
+  LBFGS entry point. Waveform step (Adam, autodiff backward) remains
+  per-seed for now — batching it requires more memory-careful design.
+
 ### Performance
 - **Selectivity sweep: per-seed wall reduced ~5×.** Three parallel cuts to
   `experiments_v2/selectivity_sweep.py` (and same to
@@ -39,6 +63,19 @@ prior validated state.
     headroom for the 100-fiber sweep.
   - Net effect: ~30 s/iter × 400 iters = ~3.3 h/seed → ~22 s × 200 iters
     = ~40-60 min/seed.
+
+- **Selectivity sweep now uses LBFGS + 4 restarts + 4-seed vmap by default.**
+  - Optimiser: LBFGS (was Adam-FD). ~3-4× fewer iterations to convergence
+    because LBFGS uses curvature info via zoom line search.
+  - Multi-restart: M=4 parallel restarts per seed, vmapped. Robust against
+    local minima (especially on mixed-diameter seeds where Adam stalled
+    at SI ~ 0.05). Best-of-M wins.
+  - Multi-seed batching: SEEDS_PER_TASK=4 → 16 LBFGS trajectories vmapped
+    in parallel per task. Bumps GPU utilisation from ~50 % to ~90 % on a16;
+    larger gains on a100/h100.
+  - Net wall: ~30-60 min per task (4 seeds), 25 tasks × 8 concurrent
+    = ~4 array waves × ~45 min ≈ ~3 h total for 100 seeds.
+  - On a100/h100: set `SEEDS_PER_TASK=8` (or 16); fewer/faster tasks.
 
 - **`slurm/run_selectivity_sweep.sbatch` converted to a SLURM array job.**
   `#SBATCH --array=0-99%8` runs 100 seeds as 100 array tasks, 8 at a

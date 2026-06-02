@@ -160,7 +160,8 @@ def main():
         contact_xyz_init=contact_xyz,
         amps_init=rect_res["amps"],
         n_steps=N_OPT_JOINT,
-        lr_amp=5e-2,
+        # lr_amp default (8e-2) matches selectivity_demo's working regime;
+        # lr_pos kept explicit because position scale (µm) is unrelated to lr_amp scale (mA).
         lr_pos=10.0,
         verbose=True,
         sigma_S_m=SIGMA_S_M,

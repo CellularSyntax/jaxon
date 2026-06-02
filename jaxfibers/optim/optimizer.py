@@ -69,9 +69,9 @@ def run_rect_optimization(
     target_mask: np.ndarray,           # [n_fibers] bool
     dt: float,
     n_steps: int = 100,
-    lr: float = 5e-2,
-    amp_init_mA: float = -1.5,
-    amp_clip: tuple[float, float] = (-5.0, -0.05),
+    lr: float = 8e-2,
+    amp_init_mA: float = -0.4,
+    amp_clip: tuple[float, float] = (-2.5, 2.5),
     weights: np.ndarray | None = None,
     fd_eps: float = 5e-2,
     verbose: bool = True,
@@ -135,13 +135,21 @@ def run_rect_optimization(
     # Initialize amplitudes proportional to each contact's mean |Ve| at target
     # fibers.  This immediately breaks ring symmetry for eccentric fascicles:
     # the contact closest to the target fascicle gets amp_init_mA, the contact
-    # farthest away gets the floor (amp_clip[1]).  Uniform init otherwise.
+    # farthest away gets ~0 (the neutral "off" baseline).  Uniform-magnitude
+    # init across all contacts otherwise.
+    #
+    # The "off" anchor is 0, NOT amp_clip[1].  An earlier formula used
+    # amp_clip[1] as the anchor, which only worked for cathodic-only clips
+    # like (-5, -0.05): with a symmetric clip like (-2.5, +2.5) it would
+    # pin the farthest contact at the positive (anodic) clip — actively
+    # firing the off-target fibers from the wrong side.  Anchoring at 0
+    # is clip-invariant.
     ve_tgt_sum  = jnp.where(tgt_j[None, :, None], jnp.abs(Ve_unit_j), 0.0).sum((1, 2))
     ve_tgt_mean = ve_tgt_sum / jnp.maximum(tgt_j.sum(), 1.0)   # [K]
     ve_range    = ve_tgt_mean.max() - ve_tgt_mean.min()
     ve_norm     = (ve_tgt_mean - ve_tgt_mean.min()) / (ve_range + 1e-10)   # [K] in [0,1]
     amps0 = jnp.clip(
-        amp_clip[1] + ve_norm * (amp_init_mA - amp_clip[1]),
+        ve_norm * amp_init_mA,
         amp_clip[0], amp_clip[1],
     ).astype(jnp.float64)
 
@@ -301,9 +309,9 @@ def run_joint_optimization(
     contact_xyz_init: np.ndarray,      # [K, 3]
     amps_init: np.ndarray,             # [K]
     n_steps: int = 100,
-    lr_amp: float = 5e-2,
+    lr_amp: float = 8e-2,
     lr_pos: float = 10.0,
-    amp_clip: tuple[float, float] = (-5.0, -0.05),
+    amp_clip: tuple[float, float] = (-2.5, 2.5),
     xyz_min: float = -3000.0,
     xyz_max: float = 3000.0,
     weights: np.ndarray | None = None,

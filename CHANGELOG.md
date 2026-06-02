@@ -18,6 +18,45 @@ prior validated state.
   C-fiber Δt ≈ 0.3–0.5 ms).
 
 ### Fixed
+- **Selectivity optimisation stalled at suboptimal SI in cluster runs**
+  (`selectivity_sweep.py`, `selectivity_joint_opt.py`) while
+  `selectivity_demo.py` reached SI = 1.0. Root cause: the cluster scripts
+  inherited `run_rect_optimization` / `run_joint_optimization` defaults
+  that pre-dated the audit:
+  - `amp_clip=(-5.0, -0.05)` — **cathodic-only**, no field steering.
+    Multi-contact selective stimulation needs anodic contacts to actively
+    hyperpolarise off-target fascicles via virtual anode. Without anodic
+    headroom the optimiser is stuck with whatever passive shape the
+    geometry permits.
+  - `amp_init_mA=-1.5` — ~8× the MRG D = 10 µm threshold, putting the
+    initial state deep in the suprathreshold regime where every fiber
+    fires and the loss surface is flat (acts ≈ 1 everywhere, no
+    gradient signal).
+  - `lr=5e-2` — slower than necessary.
+
+  Defaults changed to match the working demo regime: `lr=8e-2`,
+  `amp_init_mA=-0.4` (~2× threshold, gentle), `amp_clip=(-2.5, +2.5)`
+  (symmetric, allows anodic steering). Same change applied to
+  `run_joint_optimization` (`lr_amp=8e-2`, `amp_clip=(-2.5, +2.5)`).
+
+  The Ve-weighted amplitude initialisation formula was also broken under
+  the new symmetric clip: it used `amp_clip[1]` as the "off" anchor, which
+  with a symmetric clip pins the farthest contacts at the **positive
+  (anodic) maximum** — actively firing off-target fibers from the wrong
+  side. Reformulated as `clip(ve_norm * amp_init_mA, ...)` with 0 as the
+  off anchor (clip-invariant).
+
+  `experiments_v2/selectivity_joint_opt.py` removed its explicit
+  `lr_amp=5e-2` override so it inherits the new default.
+
+  - Re-run required:
+    - `sbatch slurm/run_selectivity_sweep.sbatch`
+    - `sbatch slurm/run_selectivity_joint_opt.sbatch`
+  - Expected: rect SI = 1.0 reachable on most seeds (the same regime
+    that worked in selectivity_demo). Mixed-diameter populations may
+    cap the achievable rect SI below 1.0 — that's a real geometric
+    limit, separately from this fix.
+
 - **Rattay bi_ca threshold over-estimate (+6 to +8.2 %)** at PW ≥ 0.1 ms,
   across all 5 diameters. Root cause: asymmetric exponential clip
   `jnp.exp(jnp.clip(-vsh / k, -50.0, 0.0))` in
@@ -75,6 +114,19 @@ prior validated state.
   paper-relevant runs.
 
 ### Changed
+- **`PYFIBERS_BUDGET_S` in `experiments_v2/scaling.py` raised from 120 s
+  to 7200 s** (2 hours), and made overridable via the
+  `JAXLEY_FIBERS_PF_BUDGET_S` environment variable. The 2 min cap was
+  truncating PyFibers data at N ≤ 1000 for Sundt, Rattay, Schild94 and
+  Schild97 (which run ~30 min - 1 hour for N = 10 000 PyFibers serial),
+  forcing the scaling figure to fall back on linear extrapolation for
+  those cells. With the new budget, the cluster pass yields real
+  measured timings at N = 10 000 for every model in the registry.
+  Set `JAXLEY_FIBERS_PF_BUDGET_S=300` for fast local smoke runs that
+  still extrapolate past the budget.
+  - Re-run required: `sbatch slurm/run_scaling.sbatch` to regenerate
+    `outputs/scaling/data_scaling.json` with real N = 10 000 PyFibers
+    timings.
 - **`outputs/` is now gitignored** (reversing the earlier decision in this
   changelog entry to track it). Reasons: PNGs are binary and don't diff;
   large sweeps would balloon the repo; cluster re-runs would require

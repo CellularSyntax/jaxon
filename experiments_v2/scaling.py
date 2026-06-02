@@ -17,6 +17,7 @@ Run from project root:
 
 from __future__ import annotations
 
+import os
 import sys
 import pathlib
 import time
@@ -62,7 +63,12 @@ OUT = ensure_dir(ROOT / "outputs" / "scaling")
 
 # ── timing budget for PyFibers serial ────────────────────────────────────────
 # Stop adding N-values once cumulative time exceeds this; extrapolate instead.
-PYFIBERS_BUDGET_S = 120.0
+# 2 hours covers full N=10000 PyFibers serial for every model in the registry
+# on the MedUni Vienna cluster (Sundt/Rattay ~30 min, Schild94/97 ~1 hour
+# each). Set via JAXLEY_FIBERS_PF_BUDGET_S env var to override per-run, e.g.
+# `JAXLEY_FIBERS_PF_BUDGET_S=300 python experiments_v2/scaling.py` for a fast
+# local smoke run with extrapolation past N=100.
+PYFIBERS_BUDGET_S = float(os.environ.get("JAXLEY_FIBERS_PF_BUDGET_S", 7200.0))
 
 N_FIBERS = [1, 10, 100, 1000, 10000]
 

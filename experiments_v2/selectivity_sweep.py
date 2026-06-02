@@ -381,6 +381,12 @@ def _run_seed_chunk(seeds: list[int], verbose: bool = True) -> list[dict]:
         # at the achieved value for visual reference.
         rect_loss = rect_res["all_loss_traces"][rect_res["best_restart"]]
         rect_loss_list = np.array(rect_loss).tolist()
+        rect_title = (
+            f"seed {seed_id} — Rect (Adam-FD, {len(rect_loss_list)} iters)"
+            if RECT_OPTIMIZER == "adam_fd"
+            else f"seed {seed_id} — Rect (LBFGS, "
+                  f"best of {N_RESTARTS_RECT} restarts × {N_OPT_RECT} steps)"
+        )
         plot_seed_summary(
             out_path=OUT / f"fig_seed_{seed_id:04d}_rect.png",
             nerve=s_in["nerve"],
@@ -390,11 +396,19 @@ def _run_seed_chunk(seeds: list[int], verbose: bool = True) -> list[dict]:
             loss_hist=rect_loss_list,
             si_hist=[si_rect] * len(rect_loss_list),
             si_baseline=s_in["si_baseline"],
-            title=f"seed {seed_id} — Rect (LBFGS, "
-                   f"best of {N_RESTARTS_RECT} restarts × {N_OPT_RECT} steps)",
+            title=rect_title,
             nerve_radius_um=NERVE_RADIUS_UM,
             cuff_radius_um=CUFF_RADIUS_UM,
         )
+        # Waveform figure: pick the BEST iter (by SI) rather than the last,
+        # so the cross-section reflects the activation pattern at the
+        # solution we're actually reporting — not whatever post-overshoot
+        # state Adam happened to land in at the final iter.
+        wave_si_hist  = list(wave_res["history"]["si"])
+        wave_loss     = list(wave_res["history"]["loss"])
+        wave_acts_all = wave_res["history"]["acts"]
+        best_wave_idx = int(np.argmax(wave_si_hist)) if wave_si_hist else -1
+        wave_acts_best = np.asarray(wave_acts_all[best_wave_idx])
         plot_seed_summary(
             out_path=OUT / f"fig_seed_{seed_id:04d}_wave.png",
             nerve=s_in["nerve"],
@@ -403,12 +417,13 @@ def _run_seed_chunk(seeds: list[int], verbose: bool = True) -> list[dict]:
                                                      # per-contact amplitudes
                                                      # directly; show rect amps
                                                      # as the steering pattern
-            acts=np.array(wave_res["history"]["acts"][-1]),
-            loss_hist=list(wave_res["history"]["loss"]),
-            si_hist=list(wave_res["history"]["si"]),
+            acts=wave_acts_best,
+            loss_hist=wave_loss,
+            si_hist=wave_si_hist,
             si_baseline=s_in["si_baseline"],
-            title=f"seed {seed_id} — Waveform (Adam, "
-                   f"warm-started from rect, {N_OPT_WAVE} iters)",
+            title=(f"seed {seed_id} — Waveform (Adam, warm-started from rect, "
+                    f"{N_OPT_WAVE} iters; cross-section shown at "
+                    f"best iter {best_wave_idx})"),
             nerve_radius_um=NERVE_RADIUS_UM,
             cuff_radius_um=CUFF_RADIUS_UM,
         )

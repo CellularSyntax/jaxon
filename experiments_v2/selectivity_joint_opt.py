@@ -35,7 +35,7 @@ import jax.numpy as jnp
 
 jax.config.update("jax_enable_x64", True)
 
-from jaxfibers.nerve.geometry import make_multi_fascicle_nerve
+from jaxfibers.nerve.geometry import make_hussain_style_nerve
 from jaxfibers.stim.multichannel_field import (
     make_ring_cuff_positions, precompute_ve_unit, build_fiber_arrays,
 )
@@ -74,18 +74,24 @@ SIGMA_S_M       = 0.3
 def main():
     print(f"[joint-opt] seed={SEED}, N_FIBERS={N_FIBERS}, N_NODES={N_NODES}", flush=True)
 
-    # ── nerve + cuff (two-fascicle model: target right, off-target left) ─────
-    n_per_fasc = max(1, N_FIBERS // 2)
-    nerve = make_multi_fascicle_nerve(
+    # ── nerve + cuff (Hussain-style multi-fascicle anatomy) ───────────────────
+    N_FASCICLES_JOINT = 8
+    n_per_fasc = max(1, N_FIBERS // N_FASCICLES_JOINT)
+    nerve = make_hussain_style_nerve(
+        n_fascicles=N_FASCICLES_JOINT,
         n_fibers_per_fascicle=n_per_fasc,
         nerve_radius_um=NERVE_RADIUS_UM,
+        divider_angle_deg=0.0,
         diameters=[FIBER_DIAMETER_UM],
         seed=SEED,
     )
     n_tgt = int(nerve.target_mask.sum())
     n_total = nerve.n_fibers
+    n_tgt_fasc = sum(1 for f in nerve.fascicles if f.is_target)
+    n_off_fasc = len(nerve.fascicles) - n_tgt_fasc
     print(f"[joint-opt] Nerve: {n_total} fibres in {len(nerve.fascicles)} "
-          f"fascicles ({n_per_fasc}/fasc)  targets={n_tgt}/{n_total}  "
+          f"fascicles ({n_tgt_fasc} target / {n_off_fasc} off-target, "
+          f"{n_per_fasc} fibres/fasc)  targets={n_tgt}/{n_total}  "
           f"D={FIBER_DIAMETER_UM} µm", flush=True)
 
     N_STEPS = int(T_STOP / DT)

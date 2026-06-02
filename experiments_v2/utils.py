@@ -357,6 +357,33 @@ def plot_seed_cross_section(
     ax.add_patch(plt.Circle((0, 0), nerve_radius_um,
                               fill=False, edgecolor="0.25", lw=2.0, zorder=1))
 
+    # ── target/off-target divider line (Hussain-style nerves only) ───────────
+    divider = getattr(nerve, "divider_angle_deg", None)
+    if divider is not None:
+        th = np.deg2rad(divider)
+        # Line direction = (cosθ, sinθ); normal = (-sinθ, cosθ).  Draw the
+        # chord from (-nerve_r·cosθ, -nerve_r·sinθ) to
+        # (+nerve_r·cosθ, +nerve_r·sinθ).
+        L = nerve_radius_um * 1.05
+        ax.plot([-L * np.cos(th), +L * np.cos(th)],
+                [-L * np.sin(th), +L * np.sin(th)],
+                color="0.35", lw=1.6, linestyle="--", dashes=(8, 4),
+                zorder=2)
+        # tiny label "target" on the + normal side
+        nx, ny = -np.sin(th), np.cos(th)
+        ax.annotate("target ↑", xy=(nx * nerve_radius_um * 0.7,
+                                     ny * nerve_radius_um * 0.7),
+                     fontsize=9, color="C0", fontweight="bold",
+                     ha="center", va="center", zorder=7,
+                     bbox=dict(boxstyle="round,pad=0.25", facecolor="white",
+                                edgecolor="C0", alpha=0.9))
+        ax.annotate("off-target ↓", xy=(-nx * nerve_radius_um * 0.7,
+                                         -ny * nerve_radius_um * 0.7),
+                     fontsize=9, color="#c0392b", fontweight="bold",
+                     ha="center", va="center", zorder=7,
+                     bbox=dict(boxstyle="round,pad=0.25", facecolor="white",
+                                edgecolor="#c0392b", alpha=0.9))
+
     # ── draw fascicles ───────────────────────────────────────────────────────
     # Prefer the *actual* fascicle outlines (FascicleOutline list on the
     # NerveGeometry) so the boundary matches what the geometry builder

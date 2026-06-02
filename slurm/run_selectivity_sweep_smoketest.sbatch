@@ -54,7 +54,8 @@ export SEEDS_PER_TASK=1
 # Smoketest dimensions — keep graph small.
 # Compile cost scales with (N_FIBERS × T × N_OPT_RECT × N_RESTARTS_RECT) — shrink
 # each by ~3-7×.
-export N_FIBERS=30                # 200 → 30 fibers
+export N_FIBERS=60                # 200 → 60 (15/fascicle × 4 fascicles)
+export N_FASCICLES=4              #  8  → 4 (still has 2 target / 2 off-target)
 export N_OPT_RECT=10              # 30  → 10 LBFGS outer iters
 export N_OPT_WAVE=20              # 100 → 20 waveform Adam iters
 export N_RESTARTS_RECT=2          # keep, restart 0 is bipolar Ve-weighted init
@@ -95,6 +96,7 @@ export SEED_START=\"${SEED_START}\"
 export SEED_END=\"${SEED_END}\"
 export SEEDS_PER_TASK=\"${SEEDS_PER_TASK}\"
 export N_FIBERS=\"${N_FIBERS}\"
+export N_FASCICLES=\"${N_FASCICLES}\"
 export N_OPT_RECT=\"${N_OPT_RECT}\"
 export N_OPT_WAVE=\"${N_OPT_WAVE}\"
 export N_RESTARTS_RECT=\"${N_RESTARTS_RECT}\"

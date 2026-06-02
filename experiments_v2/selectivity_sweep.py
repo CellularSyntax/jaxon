@@ -60,7 +60,7 @@ import jax.numpy as jnp
 
 jax.config.update("jax_enable_x64", True)
 
-from jaxfibers.nerve.geometry import make_multi_fascicle_nerve
+from jaxfibers.nerve.geometry import make_hussain_style_nerve
 from jaxfibers.stim.multichannel_field import make_ring_cuff_positions, precompute_ve_unit
 from jaxfibers.stim.batch_solve import stack_fiber_statics, initial_states_batch
 from jaxfibers.optim.losses import activation_proxy_batch, selectivity_index
@@ -107,6 +107,14 @@ N_CONTACTS      = 6
 NERVE_RADIUS_UM = 500.0
 CUFF_RADIUS_UM  = 1500.0
 TARGET_FRACTION = 0.30
+N_FASCICLES        = _env_int("N_FASCICLES", 8)
+DIVIDER_ANGLE_DEG  = _env_flt("DIVIDER_ANGLE_DEG", 0.0)
+                                # Hussain-style nerve: N_FASCICLES non-
+                                # overlapping fascicles packed inside the
+                                # nerve outline, then split into target /
+                                # off-target by a straight line at
+                                # DIVIDER_ANGLE_DEG through the centre.
+                                # 0° = horizontal line, target = top half.
 DT              = _env_flt("DT", 0.005)        # ms
 T_STOP          = _env_flt("T_STOP", 3.0)      # ms; PW + DELAY + slowest-MRG propagation ≈ 2.1 ms.
 DELAY_MS        = 1.0
@@ -139,25 +147,30 @@ def _build_seed_inputs(seed: int, verbose: bool = True) -> dict:
     label = f"[seed={seed}]"
     if verbose:
         print(f"{label} Building nerve ...", flush=True)
-    # Two-fascicle nerve: target fascicle on the +x side, off-target on -x.
-    # Fibres are placed WITHIN their respective fascicle outline, not
-    # scattered across the whole nerve — this is what gives the optimiser
-    # a fighting chance at selectivity (spatial separation between
-    # populations).  See jaxfibers/nerve/geometry.py for the rationale.
-    # N_FIBERS is split evenly between the two fascicles.
-    n_per_fasc = max(1, N_FIBERS // 2)
-    nerve = make_multi_fascicle_nerve(
+    # Hussain-style multi-fascicle nerve: pack several non-overlapping
+    # circular fascicles inside the nerve outline, then split into
+    # target / off-target by a straight line through the centre — matches
+    # the Hussain 2024 anatomies (P1-P6 pig: motor-vs-sensory split;
+    # H1-H6 human: random semicircle split).
+    n_per_fasc = max(1, N_FIBERS // N_FASCICLES)
+    nerve = make_hussain_style_nerve(
+        n_fascicles=N_FASCICLES,
         n_fibers_per_fascicle=n_per_fasc,
         nerve_radius_um=NERVE_RADIUS_UM,
+        divider_angle_deg=DIVIDER_ANGLE_DEG,
         diameters=[FIBER_DIAMETER_UM],
         seed=seed,
     )
     n_tgt = int(nerve.target_mask.sum())
     n_total = nerve.n_fibers
     if verbose:
+        n_tgt_fasc = sum(1 for f in nerve.fascicles if f.is_target)
+        n_off_fasc = len(nerve.fascicles) - n_tgt_fasc
         print(f"{label} Nerve: {n_total} fibres in {len(nerve.fascicles)} "
-              f"fascicles  ({n_per_fasc}/fasc)  targets={n_tgt}/{n_total}  "
-              f"D={FIBER_DIAMETER_UM} µm", flush=True)
+              f"fascicles ({n_tgt_fasc} target / {n_off_fasc} off-target, "
+              f"{n_per_fasc} fibres/fasc)  targets={n_tgt}/{n_total}  "
+              f"D={FIBER_DIAMETER_UM} µm  divider={DIVIDER_ANGLE_DEG}°",
+              flush=True)
 
     contact_xyz = make_ring_cuff_positions(
         n_contacts=N_CONTACTS, cuff_radius_um=CUFF_RADIUS_UM, cuff_z_um=0.0,

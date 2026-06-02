@@ -12,6 +12,15 @@ prior validated state.
   *Nat. Commun.* 15:7597 (2024), with prioritised roadmap to Nat Commun
   submission.
 - `CHANGELOG.md` (this file).
+- `slurm/build_container.sh` — one-time builder for a project-private Pyxis
+  SquashFS at `$HOME/containers/jaxfibers.sqsh`. Starts from
+  `nvcr.io#nvidia/pytorch:25.03-py3`, runs `pip install -r
+  requirements_gpu.txt` inside the container, and saves the resulting
+  layer. After this exists, the sbatch auto-detect picks it up and
+  `setup_env.sh` skips its pip step entirely — sub-second container
+  startup. The only per-job cost remaining is `pyfibers_compile` (writes
+  to project root, must stay per-job). README documents the procedure.
+
 - `experiments_v2/utils.py::ap_arrival_time` — sub-step linearly-interpolated
   rising-edge AP arrival time. Used by Sundt and Rattay CV measurement to
   eliminate single-step argmax discretisation noise (~1–2 % at typical
@@ -114,16 +123,22 @@ prior validated state.
   paper-relevant runs.
 
 ### Changed
-- **All 11 SLURM sbatch files now auto-detect a local SquashFS container**
-  at `$HOME/containers/pytorch_25.03.sqsh` and fall back to the nvcr.io
-  reference if it doesn't exist. Resolution order:
-  1. Explicit `CONTAINER_IMAGE` env-var override (unchanged behaviour).
-  2. `$HOME/containers/pytorch_25.03.sqsh` if present.
-  3. `nvcr.io#nvidia/pytorch:25.03-py3` (the previous default).
-  A one-time `srun … --container-save=$HOME/containers/pytorch_25.03.sqsh`
-  pull then makes every subsequent job start in seconds instead of paying
-  the 5-10 min Pyxis pull cost on cold node caches. Documented in README
-  under "One-time cluster setup".
+- **All 11 SLURM sbatch files now auto-detect a project SquashFS container**
+  at `$HOME/containers/jaxfibers.sqsh` (the deps-baked-in container built
+  by `slurm/build_container.sh`) and fall back to the nvcr.io reference if
+  it doesn't exist. Resolution order:
+  1. Explicit `CONTAINER_IMAGE` env-var override.
+  2. `$HOME/containers/jaxfibers.sqsh` if present.
+  3. `nvcr.io#nvidia/pytorch:25.03-py3`.
+  Earlier intermediate iterations of this auto-detect (which looked for a
+  bare `pytorch_25.03.sqsh` without pip deps installed) are superseded —
+  there's only one project-blessed SquashFS path now.
+
+- **`slurm/setup_env.sh` short-circuits when deps are pre-installed.** It
+  now probe-imports `jaxley` and `pyfibers`; if both are present (the
+  case inside the `jaxfibers.sqsh` container) it skips the entire
+  `pip install -r requirements_gpu.txt` step. On the nvcr.io fallback,
+  behaviour is unchanged.
 
 - **All 11 SLURM sbatch files set `SLURM_STEP_LAUNCH_TIMEOUT=600`**.
   Several cluster runs failed with `srun: error: timeout waiting for task

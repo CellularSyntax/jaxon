@@ -66,37 +66,46 @@ python experiments_v2/selectivity_joint_opt.py # joint amps + electrode position
 Outputs land in `outputs/<experiment>/`. Heavier sweeps are wired for SLURM
 under `slurm/` — see `slurm/submit_all.sh`.
 
-### One-time cluster setup: cache the container as SquashFS
+### One-time cluster setup: build a project SquashFS with deps baked in
 
 The sbatch jobs run inside `nvcr.io#nvidia/pytorch:25.03-py3` via Pyxis.
-A fresh pull of this ~10 GB image on a cold node cache takes 5–10 min and
-counts against `SLURM_STEP_LAUNCH_TIMEOUT` (we already bump that to 600 s,
-but pulls can still slow down every job).
+Two costs hit every job otherwise:
 
-Pull it once to a SquashFS in your home directory and every subsequent
-job starts in seconds, regardless of which node SLURM assigns:
+* a 5–10 min Pyxis pull of the ~10 GB base image when the node cache is
+  cold (mitigated by `SLURM_STEP_LAUNCH_TIMEOUT=600` in the sbatch files);
+* a 1–2 min `pip install -r requirements_gpu.txt` inside the container at
+  job start (`slurm/setup_env.sh`).
+
+Build a private SquashFS once with the pip deps **baked in** and both go
+away — subsequent jobs start in seconds:
 
 ```bash
-mkdir -p $HOME/containers
-
-# One-time pull — adjust QOS / GRES to whatever you have access to.
-# Note: --mem=128G is intentional. The fetch is small, but mksquashfs
-# (which builds the .sqsh file from extracted layers) can peak at
-# 60-100 GB of RAM with default parallel compression. Requesting 16 G
-# causes OOM-kill at the "Creating squashfs filesystem..." step.
-# Throttle with ENROOT_MAX_PROCESSORS=2 if you want to use less memory.
-srun --partition=gpu --qos=a16 --gres=gpu:a16:1 \
-     --cpus-per-task=4 --mem=128G -t 0:30:00 \
-     --container-image=nvcr.io#nvidia/pytorch:25.03-py3 \
-     --container-save=$HOME/containers/pytorch_25.03.sqsh \
-     true
+# Run from the project root.  --mem=128G is intentional: mksquashfs peaks
+# at ~60-100 GB of RAM during the final compression step.
+bash slurm/build_container.sh
 ```
 
-After the file exists at `$HOME/containers/pytorch_25.03.sqsh` all sbatch
-files in `slurm/` auto-detect and use it (the resolution logic at the top
-of each script: explicit `CONTAINER_IMAGE` env-var override > local
-SquashFS > nvcr.io fallback). No code change needed; nothing breaks if
-you skip this step.
+This `srun`s the build, pulls the base image if not yet cached, runs
+`pip install -r requirements_gpu.txt` inside the container, and saves
+the result to `$HOME/containers/jaxfibers.sqsh` (~7-9 GB).  Expected wall
+time: 5–15 minutes.
+
+After the file exists, every sbatch in `slurm/` auto-detects it
+(resolution order: explicit `CONTAINER_IMAGE` env-var > the local
+`jaxfibers.sqsh` > nvcr.io fallback) and `setup_env.sh` notices the
+deps are present and skips its pip install.
+
+The only per-job cost that remains is `pyfibers_compile` (~10 s), which
+generates `x86_64/` NMODL artefacts in the project root — that's outside
+the container and must stay per-job.
+
+Nothing breaks if you skip this step; the nvcr.io fallback works on a
+fresh clone.  Verify the auto-detect kicked in on a new job:
+
+```bash
+grep '^Container' logs/<new-job-id>.out
+# Expected:  Container    : /msc/home/<you>/containers/jaxfibers.sqsh
+```
 
 ## Package layout
 

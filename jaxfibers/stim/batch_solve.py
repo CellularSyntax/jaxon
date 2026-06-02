@@ -249,14 +249,20 @@ def _integrate_one_fiber_m_max_fd(
     n = fs.is_node.shape[0]
     T = pulse_seq.shape[0]
 
-    # `@jax.checkpoint` is a no-op for pure forward (Adam-FD path), but
-    # essential when this scan is run under autodiff (LBFGS rect path):
-    # without it, value_and_grad materialises the full T-step trajectory
-    # of every state variable for every fiber, blowing up GPU memory
-    # (~250 GB at N_FIBERS=200, n_restarts=4 on a 16 GB A16).  With
-    # checkpointing, each step's state is recomputed during backward,
-    # bringing peak memory in line with the forward-only footprint.
-    @jax.checkpoint
+    # Checkpoint policy selectable per job via JAXLEY_FIBERS_FD_CHECKPOINT.
+    #   "1" (default) — wrap step in @jax.checkpoint.  Caps memory at the
+    #     forward-only footprint when this scan runs under autodiff
+    #     (LBFGS rect path); essential for N_FIBERS≥~100 on A16.
+    #   "0" — no checkpoint.  Forces full-trajectory storage during
+    #     backward, but eliminates a known XLA pathology where the remat
+    #     planner stalls for 25+ min trying to schedule a 5-level-nested
+    #     vmap/scan/value_and_grad/scan/checkpoint stack under
+    #     optax.zoom_linesearch.  Use for small N_FIBERS that fit without
+    #     remat, or for the Adam-FD path (which has no backward and is
+    #     insensitive to this flag).
+    import os as _os
+    _use_checkpoint = _os.environ.get("JAXLEY_FIBERS_FD_CHECKPOINT", "1") != "0"
+
     def step(carry, s):
         Vi, Vp, st, m_max = carry
         M, H, MP, S = st
@@ -288,6 +294,9 @@ def _integrate_one_fiber_m_max_fd(
             fs.Gi_diag, fs.Gp_diag, fs.Up, fs.Low, fs.is_node,
         )
         return (Vi2, Vp2, (M2, H2, MP2, S2), jnp.maximum(m_max, M2)), None
+
+    if _use_checkpoint:
+        step = jax.checkpoint(step)
 
     Vi0    = jnp.full(n, V_REST, dtype=jnp.float64)
     Vp0    = jnp.zeros(n, dtype=jnp.float64)

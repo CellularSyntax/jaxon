@@ -38,7 +38,28 @@ from jaxfibers.stim.batch_solve import (
     batch_integrate_m_max_fd,
 )
 from jaxfibers.stim.multichannel_field import compute_ve_unit_jax
-from jaxfibers.optim.losses import activation_proxy_batch, wq_loss, wbce, selectivity_index
+from jaxfibers.optim.losses import (
+    activation_proxy_batch as _activation_proxy_batch_impl,
+    wq_loss, wbce, selectivity_index,
+)
+import os as _os
+
+# Soft activation-proxy temperature.  Set JAXLEY_FIBERS_SOFT_TEMPERATURE to
+# a positive value (typical 0.05-0.20) to apply a sigmoid smoother to the
+# per-fibre activation proxy:
+#   soft_act = sigmoid((m_max[node] - 0.5) / soft_temperature)
+# This widens the gradient-informative window so the optimiser can adjust
+# toward firing/non-firing transitions even when starting from a saturated
+# state (every fibre firmly above or firmly below threshold).
+#
+# Required for the mixed-diameter type-selectivity problem where the
+# binary proxy traps both rect and waveform optimisation at SI=0.
+# Default 0.0 (binary) preserves prior behaviour for single-diameter
+# spatial-selectivity runs.
+_SOFT_T = float(_os.environ.get("JAXLEY_FIBERS_SOFT_TEMPERATURE", "0.0"))
+
+def activation_proxy_batch(m_max, node_idx):
+    return _activation_proxy_batch_impl(m_max, node_idx, soft_temperature=_SOFT_T)
 
 
 # ──────────────────────────────────────────────── statics tiling helpers ──────

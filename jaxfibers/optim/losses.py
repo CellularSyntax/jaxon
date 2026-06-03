@@ -24,6 +24,7 @@ backprop (gradients explode near 0/1); only logged during optimisation.
 """
 from __future__ import annotations
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -31,6 +32,8 @@ import numpy as np
 def activation_proxy_batch(
     m_max_batch: jnp.ndarray,
     node_indices: np.ndarray | jnp.ndarray,
+    soft_temperature: float = 0.0,
+    soft_threshold:  float = 0.5,
 ) -> jnp.ndarray:
     """Compute activation proxy for all fibers.
 
@@ -40,18 +43,40 @@ def activation_proxy_batch(
         Max m-gate at each compartment over the simulation (from batch_integrate_m_max).
     node_indices : [n_fibers, n_nodes] int
         Compartment indices of nodes for each fiber.
+    soft_temperature : float, default 0.0
+        If 0.0, use the original BINARY-ish proxy:
+            min(m_max[first_node], m_max[last_node])
+        Returns ~1.0 for a fibre that fires and propagates to both ends,
+        ~0.05 (the resting m-gate value) otherwise.  The gradient is
+        nearly zero everywhere except in a narrow window at threshold,
+        which traps waveform/Adam optimisation in flat-loss saturation
+        on mixed-diameter problems.
+
+        If > 0, apply a sigmoid smoother per node:
+            soft_act = sigmoid((m_node - soft_threshold) / soft_temperature)
+        then take the min across the two end nodes.  Larger temperature
+        widens the gradient-informative window; gradients survive far
+        from threshold so the optimiser can adjust toward a transition
+        from any starting point.  Typical values: 0.05 (mildly smoothed,
+        almost binary) to 0.2 (very smooth, gradient everywhere).
+    soft_threshold : float, default 0.5
+        Sigmoid centre.  0.5 places the soft boundary halfway between
+        the resting (~0.03) and saturated (~1.0) m-gate values.
 
     Returns
     -------
-    acts : [n_fibers]
-        Scalar activation proxy per fiber ∈ [0, 1].
+    acts : [n_fibers]  ∈ [0, 1]
     """
     node_indices = jnp.asarray(node_indices, dtype=jnp.int32)
     n_fibers = m_max_batch.shape[0]
     f_idx = jnp.arange(n_fibers)[:, None]            # [n_fibers, 1]
     m_nodes = m_max_batch[f_idx, node_indices]        # [n_fibers, n_nodes]
-    # Activation requires propagation to BOTH ends of the fiber
-    return jnp.minimum(m_nodes[:, 0], m_nodes[:, -1])  # [n_fibers]
+    if soft_temperature > 0.0:
+        # Soft sigmoid proxy — gradient informative far from threshold.
+        soft = jax.nn.sigmoid((m_nodes - soft_threshold) / soft_temperature)
+        return jnp.minimum(soft[:, 0], soft[:, -1])
+    # Binary-ish proxy (original behaviour).
+    return jnp.minimum(m_nodes[:, 0], m_nodes[:, -1])
 
 
 def wq_loss(

@@ -47,6 +47,13 @@ export TARGET_DIAMETER_UM=5.7
 export OFFTARGET_DIAMETER_UM=14.0
 export N_OPT_RECT=30 N_OPT_WAVE=50
 export T_STOP=2.0
+# Soft sigmoid activation proxy — required for mixed-diameter selectivity.
+# Without this the binary min(m[first], m[last]) proxy has zero gradient
+# at the saturated state both rect and waveform converge to, trapping
+# them at SI=0 (verified empirically on this geometry).  0.1 is the
+# default sweet spot: wide enough to give gradients in the relevant
+# range, narrow enough that "fired" still means m_node ≈ 1.
+export JAXLEY_FIBERS_SOFT_TEMPERATURE=0.1
 export JAXLEY_FIBERS_OUTPUT_DIR=outputs/selectivity_sweep_phase1_mixed_diam
 
 echo "Phase 1 — mixed-diameter rect+wave (target 5.7 µm / off 14 µm)"
@@ -68,6 +75,7 @@ export TARGET_DIAMETER_UM=5.7
 export OFFTARGET_DIAMETER_UM=14.0
 export N_OPT_RECT=30 N_OPT_WAVE=50
 export T_STOP=2.0
+export JAXLEY_FIBERS_SOFT_TEMPERATURE=0.1
 export JAXLEY_FIBERS_OUTPUT_DIR=\"${JAXLEY_FIBERS_OUTPUT_DIR}\"
 bash \"${PROJECT_ROOT}/slurm/setup_env.sh\"
 python -u experiments_v2/selectivity_sweep.py

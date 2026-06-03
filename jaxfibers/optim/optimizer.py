@@ -40,26 +40,33 @@ from jaxfibers.stim.batch_solve import (
 from jaxfibers.stim.multichannel_field import compute_ve_unit_jax
 from jaxfibers.optim.losses import (
     activation_proxy_batch as _activation_proxy_batch_impl,
-    wq_loss, wbce, selectivity_index,
+    wq_loss as _wq_loss_impl,
+    wbce, selectivity_index,
 )
 import os as _os
 
-# Soft activation-proxy temperature.  Set JAXLEY_FIBERS_SOFT_TEMPERATURE to
-# a positive value (typical 0.05-0.20) to apply a sigmoid smoother to the
-# per-fibre activation proxy:
-#   soft_act = sigmoid((m_max[node] - 0.5) / soft_temperature)
-# This widens the gradient-informative window so the optimiser can adjust
-# toward firing/non-firing transitions even when starting from a saturated
-# state (every fibre firmly above or firmly below threshold).
-#
-# Required for the mixed-diameter type-selectivity problem where the
-# binary proxy traps both rect and waveform optimisation at SI=0.
-# Default 0.0 (binary) preserves prior behaviour for single-diameter
-# spatial-selectivity runs.
+# JAXLEY_FIBERS_SOFT_TEMPERATURE: sigmoid-smooth the per-fibre activation
+# proxy.  See losses.activation_proxy_batch docstring.  Default 0 = binary.
 _SOFT_T = float(_os.environ.get("JAXLEY_FIBERS_SOFT_TEMPERATURE", "0.0"))
+
+# JAXLEY_FIBERS_ENERGY_LAMBDA: amplitude-energy regularisation strength.
+# Adds `lambda * mean(amps²)` to the selectivity loss.  Required for the
+# mixed-diameter type-selectivity problem where the unregularised optimiser
+# falls into the trivial "crank everything to ±3 mA so all fibres fire"
+# equilibrium.  Default 0 = no regularisation (single-diameter runs).
+# Typical values: 1e-3 to 1e-2.
+_ENERGY_LAMBDA = float(_os.environ.get("JAXLEY_FIBERS_ENERGY_LAMBDA", "0.0"))
+
 
 def activation_proxy_batch(m_max, node_idx):
     return _activation_proxy_batch_impl(m_max, node_idx, soft_temperature=_SOFT_T)
+
+
+def wq_loss(acts, target_mask, weights=None, amps=None):
+    return _wq_loss_impl(
+        acts, target_mask, weights=weights,
+        amps=amps, energy_lambda=_ENERGY_LAMBDA,
+    )
 
 
 # ──────────────────────────────────────────────── statics tiling helpers ──────
@@ -146,7 +153,14 @@ def run_rect_optimization(
 
         # Activation proxy and loss for every config.
         acts_all   = jax.vmap(lambda m: activation_proxy_batch(m, node_idx_j))(m_max_all)
-        losses_all = jax.vmap(lambda a: wq_loss(a, tgt_j, w))(acts_all)
+
+        # Per-config amplitudes for the energy-regularisation term:
+        # base = amps, perturbed config k = amps + fd_eps · e_k.
+        amps_pert  = amps[None, :] + fd_eps * jnp.eye(K, dtype=amps.dtype)
+        amps_all   = jnp.concatenate([amps[None, :], amps_pert], axis=0)
+        losses_all = jax.vmap(
+            lambda a, ak: wq_loss(a, tgt_j, w, amps=ak)
+        )(acts_all, amps_all)
 
         loss_base = losses_all[0]
         acts_base = acts_all[0]
@@ -255,7 +269,7 @@ def _build_rect_loss_fn(
             pulse_j, pulse_prev_j, dt,
         )                                                          # [n_f, n_c]
         acts = activation_proxy_batch(m_max, node_idx_j)           # [n_f]
-        return wq_loss(acts, tgt_j, w_j)
+        return wq_loss(acts, tgt_j, w_j, amps=amps)
     return loss_fn
 
 

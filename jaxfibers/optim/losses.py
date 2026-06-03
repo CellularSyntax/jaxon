@@ -83,8 +83,10 @@ def wq_loss(
     acts: jnp.ndarray,
     target_mask: np.ndarray | jnp.ndarray,
     weights: np.ndarray | jnp.ndarray | None = None,
+    amps: jnp.ndarray | None = None,
+    energy_lambda: float = 0.0,
 ) -> jnp.ndarray:
-    """Weighted selectivity loss.
+    """Weighted selectivity loss with optional amplitude-energy regularisation.
 
     Parameters
     ----------
@@ -94,6 +96,18 @@ def wq_loss(
         True for target fascicle fibers.
     weights : [n_fibers] or None
         Per-fiber weights (e.g. fascicle cross-sectional area). Uniform if None.
+    amps : jnp.ndarray | None, shape [K] or [K, T]
+        Per-contact amplitudes (rect mode: [K]) or per-contact waveforms
+        (waveform mode: [K, T]).  Required iff ``energy_lambda > 0``.
+    energy_lambda : float, default 0.0
+        Energy-regularisation strength.  When > 0, adds
+        ``energy_lambda * mean(amps²)`` to the loss.  This prevents the
+        trivial "fire everything" minimum that the optimiser falls
+        into when amps can grow arbitrarily (e.g. mixed-diameter
+        type-selectivity problems where rect/wave both plateau at
+        SI=0 because cranking all contacts to ±3 mA fires both target
+        and off-target indiscriminately).  Typical values:
+        1e-3 to 1e-2 in mA².
 
     Returns
     -------
@@ -102,7 +116,11 @@ def wq_loss(
     n = acts.shape[0]
     target = jnp.asarray(target_mask, dtype=jnp.float64)
     w = jnp.ones(n, dtype=jnp.float64) / n if weights is None else jnp.asarray(weights, dtype=jnp.float64)
-    return jnp.sum(w * (target * (1.0 - acts) + (1.0 - target) * acts))
+    sel = jnp.sum(w * (target * (1.0 - acts) + (1.0 - target) * acts))
+    if energy_lambda > 0.0 and amps is not None:
+        amps_j = jnp.asarray(amps, dtype=jnp.float64)
+        sel = sel + energy_lambda * jnp.mean(amps_j ** 2)
+    return sel
 
 
 def wbce(

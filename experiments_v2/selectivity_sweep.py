@@ -156,6 +156,20 @@ N_RESTARTS_RECT = int(os.environ.get("N_RESTARTS_RECT", 2))
 # higher) in the sbatch.
 N_OPT_WAVE      = _env_int("N_OPT_WAVE", 100)
                                 # Waveform still uses Adam; 100 iters is plenty.
+WAVE_LR         = _env_flt("WAVE_LR", 5e-4)
+                                # Adam LR for waveform optimisation.  Default
+                                # 5e-4 is tuned for the warm-start case where
+                                # u_init = rect_amps × pulse_mask already sits
+                                # at SI≈1; lr=5e-3 (the legacy default) was
+                                # too aggressive and destroyed the warm-start
+                                # in <20 iters (Phase 3 seed 0: SI 0.97 → 0.00).
+                                # For cold-start runs (u_init=0) bump back to
+                                # 5e-3 in the sbatch.
+WAVE_PATIENCE   = _env_int("WAVE_PATIENCE", 20)
+                                # Early-stop if best_loss hasn't improved for
+                                # this many iters.  0 disables.  20 iters is
+                                # plenty for Adam to escape a small local min;
+                                # any longer means it's wandering.
 EXAMPLE_SEED    = 0            # seed for the example activation-map figure
 
 
@@ -264,6 +278,7 @@ def _waveform_step_per_seed(seed_in: dict, rect_amps: np.ndarray, verbose: bool)
         node_indices=seed_in["node_indices"],
         target_mask=seed_in["nerve"].target_mask,
         dt=DT, T=N_STEPS, n_steps=N_OPT_WAVE, u_init=u_init,
+        lr=WAVE_LR, early_stop_patience=WAVE_PATIENCE,
         verbose=verbose,
     )
     return wave_res, time.time() - t0
@@ -299,11 +314,21 @@ def _package_result(seed_in: dict, rect_lbfgs_res: dict, rect_t: float,
         "waveform": {
             "optimizer": "Adam",
             "n_steps": N_OPT_WAVE,
-            "final_si": wave_res["history"]["si"][-1],
+            "lr": WAVE_LR,
+            "patience": WAVE_PATIENCE,
+            # final_si / final_acts now report the BEST-LOSS iter (not the
+            # last iter), because Adam can wander off a good warm-start.
+            # Phase 3 seed 0 hit SI=0.97 at iter 0 but reported 0.00 at
+            # iter 99 under the old packaging — losing the actual result.
+            "final_si":    float(wave_res["best_si"]),
+            "best_iter":   int(wave_res["best_iter"]),
+            "last_si":     (float(wave_res["history"]["si"][-1])
+                            if wave_res["history"]["si"] else float(wave_res["best_si"])),
+            "n_iters_run": len(wave_res["history"]["loss"]),
             "loss_history": wave_res["history"]["loss"],
-            "si_history": wave_res["history"]["si"],
-            "final_acts": wave_res["history"]["acts"][-1].tolist(),
-            "time_s": wave_t,
+            "si_history":  wave_res["history"]["si"],
+            "final_acts":  wave_res["best_acts"].tolist(),
+            "time_s":      wave_t,
         },
         "nerve": {
             "fiber_diam": nerve.fiber_diam.tolist(),
@@ -418,15 +443,22 @@ def _run_seed_chunk(seeds: list[int], verbose: bool = True) -> list[dict]:
         if skip_wave:
             print(f"{s_in['label']} Waveform step skipped (N_OPT_WAVE=0).",
                   flush=True)
-            wave_res = {"history": {"loss": [], "si": [], "acts": [
-                np.array(rect_res["final_acts"]),
-            ]}, "u": None}
+            rect_acts_np = np.array(rect_res["final_acts"])
+            wave_res = {
+                "u":         None,
+                "best_iter": 0,
+                "best_acts": rect_acts_np,
+                "best_si":   float(si_rect),
+                "history":   {"loss": [], "bce": [], "si": [], "acts": [rect_acts_np]},
+            }
             wave_t = 0.0
         else:
             wave_res, wave_t = _waveform_step_per_seed(s_in, rect_res["amps"], verbose)
-            si_wave = wave_res["history"]["si"][-1]
-            print(f"{s_in['label']} Wave done: SI {si_rect:+.3f} → {si_wave:+.3f}  "
-                  f"({wave_t:.0f}s)", flush=True)
+            si_wave_best = float(wave_res["best_si"])
+            si_wave_last = float(wave_res["history"]["si"][-1])
+            print(f"{s_in['label']} Wave done: SI {si_rect:+.3f} → "
+                  f"{si_wave_best:+.3f} (best @ iter {wave_res['best_iter']}, "
+                  f"last={si_wave_last:+.3f})  ({wave_t:.0f}s)", flush=True)
 
         results.append(_package_result(s_in, rect_res, rect_t_per_seed, wave_res, wave_t))
 

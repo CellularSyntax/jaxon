@@ -42,6 +42,13 @@ export SEED_END="${SEED_END:-100}"
 export SEEDS_PER_TASK=1
 export OPTIMIZER=adam_fd
 export N_OPT_RECT=30 N_OPT_WAVE=100
+# Wave Adam tuned for warm-start (u_init = rect_amps × pulse_mask).
+# Previous run with lr=5e-3: SI=0.97 at iter 0 → SI=0.00 at iter 99 on
+# 5/7 seeds (Adam overshoots, lands in "fire everything").  10× smaller
+# lr + early-stop fixes the overshoot.  Wave packaging now reports
+# best-iter SI, so even on a remaining bad seed we keep the warm-start.
+export WAVE_LR=5e-4
+export WAVE_PATIENCE=20
 export JAXLEY_FIBERS_OUTPUT_DIR=outputs/selectivity_sweep_phase3_manuscript
 
 echo "Phase 3 — manuscript sweep, seeds ${SEED_START}..$((SEED_END-1))"
@@ -61,6 +68,8 @@ export SEED_END=\"${SEED_END}\"
 export SEEDS_PER_TASK=1
 export OPTIMIZER=adam_fd
 export N_OPT_RECT=30 N_OPT_WAVE=100
+export WAVE_LR=5e-4
+export WAVE_PATIENCE=20
 export JAXLEY_FIBERS_OUTPUT_DIR=\"${JAXLEY_FIBERS_OUTPUT_DIR}\"
 bash \"${PROJECT_ROOT}/slurm/setup_env.sh\"
 python -u experiments_v2/selectivity_sweep.py

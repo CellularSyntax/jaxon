@@ -657,6 +657,7 @@ def run_waveform_optimization(
     u_clip: tuple[float, float] = (-5.0, 5.0),
     weights: np.ndarray | None = None,
     verbose: bool = True,
+    early_stop_patience: int = 0,
 ) -> dict:
     """Optimize arbitrary per-contact waveforms u[K, T] via autodiff.
 
@@ -664,11 +665,29 @@ def run_waveform_optimization(
     Autodiff backward through the ODE scan is slow (~100s/iter for T=1600).
     Reduce T_STOP / DT or switch to a surrogate for large-scale sweeps.
 
+    Warm-start note
+    ---------------
+    When ``u_init`` is the rect-found amps × pulse_mask, iter 0 already sits
+    at the rect optimum.  In that case ``lr=5e-3`` is far too aggressive —
+    the first Adam step overshoots into the "fire everything" attractor and
+    a near-perfect SI≈1 collapses to SI=0 in <20 iters.  For warm-started
+    runs use ``lr <= 1e-3`` and ``early_stop_patience`` >0 so the optimiser
+    can't destroy a good init.
+
+    Parameters
+    ----------
+    early_stop_patience : int, default 0 (disabled)
+        Stop if best_loss hasn't improved for this many consecutive iters.
+        Cheap insurance against Adam wandering off a good warm-start.
+
     Returns
     -------
     result : dict with keys
-        'u'       : [K, T] best waveforms (mA)
-        'history' : dict of lists {'loss', 'bce', 'si', 'acts'}
+        'u'        : [K, T] best-loss waveforms (mA)
+        'best_iter': int — iter index where best_loss was attained
+        'best_acts': [n_fibers] — activation proxies at best_iter
+        'best_si'  : float — SI at best_iter (use this, not history[-1])
+        'history'  : dict of lists {'loss', 'bce', 'si', 'acts'}
     """
     K        = Ve_unit.shape[0]
     n_fibers = Ve_unit.shape[1]
@@ -698,41 +717,70 @@ def run_waveform_optimization(
     history   = {"loss": [], "bce": [], "si": [], "acts": []}
     best_loss = float("inf")
     best_u    = np.array(u0)
+    best_iter = 0
+    best_acts = np.zeros(n_fibers, dtype=np.float64)
+    best_si   = 0.0
+    stale     = 0   # iters since last best_loss improvement
 
     if verbose:
         print(
-            f"  Waveform opt (autodiff): K={K} contacts, T={T} steps, {n_steps} iters",
+            f"  Waveform opt (autodiff): K={K} contacts, T={T} steps, {n_steps} iters, "
+            f"lr={lr:.1e}, patience={early_stop_patience}",
             flush=True,
         )
         print("  [iter 0] XLA compile — first call only ...", flush=True)
 
     for i in range(n_steps):
         t0 = time.time()
+        # Evaluate at current u BEFORE stepping so iter 0 records the
+        # warm-start performance (critical for u_init = rect amps × pulse).
         (loss_val, acts_val), grads = loss_and_grad(u)
-        updates, opt_state = optimizer.update(grads, opt_state)
-        u = jnp.clip(optax.apply_updates(u, updates), u_clip[0], u_clip[1])
 
         acts_np = np.array(acts_val)
+        si_now  = selectivity_index(acts_np, target_mask)
         history["loss"].append(float(loss_val))
         history["bce"].append(float(wbce(acts_val, tgt_j, w)))
-        history["si"].append(selectivity_index(acts_np, target_mask))
+        history["si"].append(si_now)
         history["acts"].append(acts_np)
         if float(loss_val) < best_loss:
             best_loss = float(loss_val)
             best_u    = np.array(u)
+            best_iter = i
+            best_acts = acts_np
+            best_si   = si_now
+            stale     = 0
+        else:
+            stale += 1
+
+        # Step AFTER recording so we keep iter 0 = warm-start state.
+        updates, opt_state = optimizer.update(grads, opt_state)
+        u = jnp.clip(optax.apply_updates(u, updates), u_clip[0], u_clip[1])
 
         if verbose and (i % max(1, n_steps // 20) == 0 or i == n_steps - 1):
             dt_ms = (time.time() - t0) * 1000
             u_np  = np.array(u)
             print(
                 f"  [{i:3d}/{n_steps}] loss={float(loss_val):.4f}  "
-                f"SI={history['si'][-1]:+.3f}  "
+                f"SI={si_now:+.3f}  best={best_loss:.4f}@{best_iter}  "
                 f"rms={float(np.sqrt(np.mean(u_np**2))):.3f} mA  "
                 f"peak={float(np.abs(u_np).max()):.3f} mA  dt={dt_ms:.0f}ms",
                 flush=True,
             )
 
-    return {"u": best_u, "history": history}
+        if early_stop_patience > 0 and stale >= early_stop_patience:
+            if verbose:
+                print(f"  [early stop] no improvement for {stale} iters "
+                      f"(best loss {best_loss:.4f} @ iter {best_iter})",
+                      flush=True)
+            break
+
+    return {
+        "u":         best_u,
+        "best_iter": best_iter,
+        "best_acts": best_acts,
+        "best_si":   float(best_si),
+        "history":   history,
+    }
 
 
 # ─────────────────────────────── joint amplitude + electrode position opt ──────

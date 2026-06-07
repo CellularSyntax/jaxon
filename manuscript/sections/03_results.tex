@@ -39,7 +39,7 @@ the median across all 1\,152 configurations is below $0.1\,\%$.
   \label{tab:validation-sd}
   \begin{tabular}{lrrrrr}
     \toprule
-    Model    & $n_{\mathrm{cfg}}$ & median err.\ & 95\textsuperscript{th} \%ile & peak err.\ & \%\,$<1\%$ \\
+    Model    & configs tested & median err.\ & 95\textsuperscript{th} \%ile & peak err.\ & \%\,$<1\%$ \\
     \midrule
     MRG      &  432 & 0.04\,\% & 0.20\,\% & 0.39\,\% & 100\,\% \\
     Sundt    &  240 & 0.34\,\% & 0.42\,\% & 0.46\,\% & 100\,\% \\
@@ -51,25 +51,31 @@ the median across all 1\,152 configurations is below $0.1\,\%$.
 
 Conduction velocity (CV) is independently sensitive to the
 internodal and nodal time constants and so probes a different
-component of the model.  Table~\ref{tab:validation-cv} reports the CV
-agreement; for MRG, Sweeney and Rattay the median error rounds to
-zero across the manufacturer-supported diameter range, with the
-Sundt model showing a peak $0.24\,\%$ error at the smallest tested
-diameter.
+component of the model.  Table~\ref{tab:validation-cv} reports the
+CV agreement across the published diameter range of each model
+(myelinated MRG: $5.7$--$16\,\mu\mathrm{m}$; Sweeney
+$2$--$12\,\mu\mathrm{m}$; unmyelinated Sundt $0.3$--$1.2\,\mu\mathrm{m}$;
+Rattay $0.3$--$1.5\,\mu\mathrm{m}$).  For MRG, Sweeney and Rattay
+the median error rounds to zero across every tested diameter; the
+Sundt model shows a peak $0.24\,\%$ error at the smallest tested
+diameter ($D=0.3\,\mu\mathrm{m}$).
 
 \begin{table}[h]
   \centering
   \caption{Conduction velocity agreement against NEURON, evaluated
-    at each tested diameter for each model.}
+    at each tested diameter for each model.  Diameter ranges follow
+    those over which each fiber model has been parameterised in the
+    original publication.  The exact diameters tested are listed in
+    Methods (Section~\ref{sec:methods-validation}).}
   \label{tab:validation-cv}
-  \begin{tabular}{lrrrr}
+  \begin{tabular}{lcrrr}
     \toprule
-    Model    & $n_{D}$ & median err.\ & peak err.\ & \%\,$<1\%$ \\
+    Model    & diameter range ($\mu$m) & median err.\ & peak err.\ & \%\,$<1\%$ \\
     \midrule
-    MRG      & 9 & $<0.01$\,\% & $0.00$\,\% & 100\,\% \\
-    Sundt    & 5 & $<0.01$\,\% & $0.24$\,\% & 100\,\% \\
-    Sweeney  & 6 & $<0.01$\,\% & $0.00$\,\% & 100\,\% \\
-    Rattay   & 5 & $<0.01$\,\% & $<0.01$\,\% & 100\,\% \\
+    MRG      & 5.7\,--\,16.0 ($n=9$) & $<0.01$\,\% & $0.00$\,\% & 100\,\% \\
+    Sundt    & 0.3\,--\,1.2  ($n=5$) & $<0.01$\,\% & $0.24$\,\% & 100\,\% \\
+    Sweeney  & 2.0\,--\,12.0 ($n=6$) & $<0.01$\,\% & $0.00$\,\% & 100\,\% \\
+    Rattay   & 0.3\,--\,1.5  ($n=5$) & $<0.01$\,\% & $<0.01$\,\% & 100\,\% \\
     \bottomrule
   \end{tabular}
 \end{table}

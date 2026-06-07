@@ -3,8 +3,8 @@
 #SBATCH -N 1
 #SBATCH -n 1
 #SBATCH -p gpu
-#SBATCH -q a16
-#SBATCH --gres=gpu:a16:1
+#SBATCH -q a100
+#SBATCH --gres=gpu:a100:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
 #SBATCH -t 23:59:00

@@ -94,7 +94,7 @@ $(T, n_{\mathrm{comp}})$ voltage trace or---when only the activation
 proxy is needed for selectivity optimisation---only the per-compartment
 maximum of $\mathbf{m}_{\mathrm{Na}}$ (i.e.\ the peak Na$^+$ activation
 gate at each node), which suffices to detect fiber recruitment with
-\$\ge$2 orders of magnitude lower memory cost.
+$\ge\!2$ orders of magnitude lower memory cost.
 
 Validation against NEURON used the following exact parameters: time
 step $\Delta t = 5\,\mu\mathrm{s}$, simulation length 3\,ms,
@@ -213,7 +213,7 @@ For each fiber model we computed and compared against NEURON:
 Each comparison runs the same stimulus through both the jaxon
 forward solver and a pyfibers-wrapped NEURON simulation of the
 identical model with identical parameters; agreement to within
-\$1\%$ on all three metrics is required for model acceptance.
+$<\!1\%$ on all three metrics is required for model acceptance.
 Reproduction scripts are
 \texttt{experiments\_v2/validate\_\{mrg,sundt,sweeney,rattay\}.py}.
 

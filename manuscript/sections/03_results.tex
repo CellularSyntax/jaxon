@@ -22,7 +22,7 @@ $\Delta t = 5\,\mu\mathrm{s}$.
 
 \begin{figure}[h]
   \centering
-  \includegraphics[width=0.95\textwidth]{validation_combined_placeholder.pdf}
+  \figmaybe[width=0.95\textwidth]{validation_combined_placeholder.pdf}
   \caption{Validation of jaxon against NEURON for all four axon models.
     \textbf{a}, Strength--duration curves for MRG (10\,\(\mu\)m),
     Sundt (1.0\,\(\mu\)m), Sweeney (10\,\(\mu\)m) and Rattay
@@ -57,7 +57,7 @@ Numbers TBD pending final benchmark.}
 
 \begin{figure}[h]
   \centering
-  \includegraphics[width=0.65\textwidth]{fig_scaling.png}
+  \figmaybe[width=0.65\textwidth]{fig_scaling.png}
   \caption{Wall time per forward simulation vs.\ fiber count $N$
     for jaxon on a single NVIDIA A100 GPU versus pyfibers
     (NEURON-wrapped, 8-thread CPU parallel) on a matched host.
@@ -101,7 +101,7 @@ activation pattern that LBFGS finds.
 
 \begin{figure}[h]
   \centering
-  \includegraphics[width=0.85\textwidth]{selectivity_violin_placeholder.pdf}
+  \figmaybe[width=0.85\textwidth]{selectivity_violin_placeholder.pdf}
   \caption{Selectivity index distribution across $N=100$ Hussain-style
     multi-fascicle nerve realisations.  \textbf{a}, Violin plot of
     rectangular-pulse SI (left) and warm-started waveform SI (right);
@@ -116,7 +116,7 @@ activation pattern that LBFGS finds.
 
 \begin{figure}[h]
   \centering
-  \includegraphics[width=0.85\textwidth]{fig_seed_0000_rect_xsection.png}
+  \figmaybe[width=0.85\textwidth]{fig_seed_0000_rect_xsection.png}
   \caption{Example optimised activation pattern for seed 0.
     Nerve cross-section showing the eight fascicles (target = filled
     blue, off-target = hollow red), per-fiber activation
@@ -145,7 +145,7 @@ result rather than omit it: it delineates the regime in which the
 present cuff geometry and loss formulation are sufficient
 (single-diameter spatial selectivity) versus the regime in which an
 additional design lever---most plausibly anatomically realistic
-\$V_e\$ with target-fascicle-adjacent contacts---is required.
+$V_e$ with target-fascicle-adjacent contacts---is required.
 
 \subsection{Mixed-diameter limitation and outlook}
 \label{sec:results-mixed-diam}

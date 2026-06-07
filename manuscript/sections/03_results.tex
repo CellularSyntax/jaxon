@@ -86,10 +86,14 @@ diameter (top row, jaxon as solid line, NEURON as open circles),
 CV-vs.-diameter agreement (middle row), and the empirical distribution
 of relative threshold error across the full sweep (bottom row, with
 median and the $1\,\%$ acceptance criterion shown).  Every histogram
-is wholly to the left of the red $1\,\%$ line.  Beyond the threshold
-test, the full intracellular voltage trace at the centre node also
-matches NEURON's analytic update within the dt-quantisation noise
-floor of the comparison (Figure~\ref{fig:traces}).
+is wholly to the left of the red $1\,\%$ line.  Because the manuscript
+ultimately targets \emph{extracellular} stimulation (Section
+\ref{sec:results-selectivity}), we additionally verified that the
+full extracellular-stimulation membrane-potential response at the
+centre node matches NEURON's analytic update within the
+$\Delta t$-quantisation noise floor of the comparison
+(Figure~\ref{fig:traces}); intracellular-injection agreement on the
+same fibres is comparable and is not shown.
 
 \begin{figure}[h]
   \centering
@@ -113,11 +117,20 @@ floor of the comparison (Figure~\ref{fig:traces}).
 \begin{figure}[h]
   \centering
   \figmaybe[width=0.98\textwidth]{fig_traces_4models.png}
-  \caption{Intracellular membrane-potential trace at the centre node
-    for a single suprathreshold cathodic pulse, jaxon (coloured) vs.\
-    NEURON (dashed black).  Peak absolute voltage discrepancy is
-    annotated in each panel; in every case it falls below the
-    quantisation floor of the $\Delta t = 5\,\mu\mathrm{s}$ integrator.}
+  \caption{Membrane-potential response to a single extracellular
+    cathodic pulse, jaxon vs.\ NEURON, for all four fibre models.
+    \textbf{Top row:} the applied extracellular cathodic rectangular
+    pulse $I_e(t)$ delivered at $t = 1\,\mathrm{ms}$
+    (PW $= 0.1\,\mathrm{ms}$ for MRG and Sweeney; $0.2\,\mathrm{ms}$
+    for the unmyelinated Sundt and Rattay models).  The grey dotted
+    line marks the model-specific activation threshold; the
+    suprathreshold stimulus amplitude actually applied is annotated
+    in each panel.  \textbf{Bottom row:} membrane potential $V_m$ at
+    the centre node of the fibre, jaxon (coloured solid) overlying
+    NEURON (dashed black).  Peak absolute voltage discrepancy
+    $|\Delta V_m^{\mathrm{peak}}|$ is annotated in each panel; in
+    every case it falls below the $\Delta t = 5\,\mu\mathrm{s}$
+    quantisation noise floor of the comparison.}
   \label{fig:traces}
 \end{figure}
 

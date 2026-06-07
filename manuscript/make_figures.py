@@ -120,38 +120,96 @@ def fig_validation_4models():
     print(f"  -> {out.name}")
 
 
-# ─── 2. intracellular traces: all 4 models, jax vs NEURON overlay ─────────────
+# ─── 2. extracellular-stimulation traces: all 4 models, jax vs NEURON overlay ──
 def fig_traces_4models():
-    """1-row × 4-column trace overlay at the centre node."""
-    fig, axes = plt.subplots(1, 4, figsize=(12, 2.8))
+    """2-row × 4-column: stimulus pulse (top) + Vm response (bottom).
+
+    Shows extracellular stimulation rather than direct intracellular
+    current injection, because the manuscript is about extracellular
+    PNS — that is the regime in which the model has to agree with
+    NEURON for the selectivity-optimisation result to be credible.
+    Each column = one fibre model; per-model pulse width matches the
+    validation scripts (MRG / Sweeney: 0.1 ms; Sundt / Rattay: 0.2 ms).
+    """
+    # Per-model extracellular pulse parameters (from validate_*.py)
+    DELAY_MS = 1.0
+    PW_MS = {"mrg": 0.1, "sweeney": 0.1, "sundt": 0.2, "rattay": 0.2}
+
+    fig, axes = plt.subplots(
+        2, 4, figsize=(12, 4.2),
+        gridspec_kw={"height_ratios": [1, 3], "hspace": 0.15, "wspace": 0.28},
+        sharex="col",
+    )
+
     for col, model in enumerate(MODELS):
         p = OUTROOT / f"{model}_validation/data_{model}_traces.json"
         if not p.exists():
             continue
         tr = json.loads(p.read_text())
         clr = COLORS[model]
-        t_jax = np.array(tr["t_intra_jax"])
-        vm_jax = np.array(tr["vm_intra_jax"])
-        t_nrn = np.array(tr["t_intra_nrn"])
-        vm_nrn = np.array(tr["vm_intra_nrn"])
-        # Pick centre node trace (last axis index ~middle)
+
+        t_jax = np.array(tr["t_extra_jax"])
+        vm_jax = np.array(tr["vm_extra_jax"])
+        t_nrn = np.array(tr["t_extra_nrn"])
+        vm_nrn = np.array(tr["vm_extra_nrn"])
+        amp = float(tr["amp_extra_mA"])
+        thr = float(tr["threshold_extra_mA"])
+        D = float(tr["diameter"])
+
+        # Centre-node trace
         c = vm_jax.shape[1] // 2 if vm_jax.ndim > 1 else None
         v_jax = vm_jax[:, c] if c is not None else vm_jax
         c2 = vm_nrn.shape[1] // 2 if vm_nrn.ndim > 1 else None
         v_nrn = vm_nrn[:, c2] if c2 is not None else vm_nrn
-        ax = axes[col]
-        ax.plot(t_nrn, v_nrn, "k--", lw=1.5, alpha=0.8, label="NEURON")
+
+        # ── Top: rectangular cathodic stimulus ────────────────────────────────
+        ax_stim = axes[0, col]
+        pw = PW_MS[model]
+        t_stim = np.linspace(0, t_jax[-1], 2000)
+        stim_mA = np.where(
+            (t_stim >= DELAY_MS) & (t_stim < DELAY_MS + pw), amp, 0.0
+        )
+        ax_stim.fill_between(t_stim, 0, stim_mA, color=clr, alpha=0.75, lw=0)
+        ax_stim.axhline(0, color="black", lw=0.4, alpha=0.6)
+        ax_stim.axhline(thr, color="grey", lw=0.8, ls=":", alpha=0.8)
+        ax_stim.set_title(f"{MODEL_LABEL[model]}  $D={D:g}\\,\\mu$m", color=clr,
+                          fontsize=10, pad=4)
+        # Set ylim symmetric so the cathodic dip + threshold both visible
+        ymin = min(amp, thr) * 1.15
+        ax_stim.set_ylim(ymin, abs(ymin) * 0.12)
+        if col == 0:
+            ax_stim.set_ylabel("$I_e$ (mA)", fontsize=8)
+        ax_stim.tick_params(axis="y", labelsize=7)
+        # Annotate amp + threshold on the stimulus panel
+        ax_stim.text(0.97, 0.08,
+                     f"amp = {amp:.2f} mA\nthr = {thr:.2f} mA",
+                     transform=ax_stim.transAxes, ha="right", va="bottom",
+                     fontsize=6, family="DejaVu Sans Mono",
+                     bbox=dict(boxstyle="round,pad=0.18", fc="white",
+                               ec="grey", lw=0.4))
+
+        # ── Bottom: Vm at centre node, jaxon vs NEURON overlay ────────────────
+        ax = axes[1, col]
+        ax.plot(t_nrn, v_nrn, "k--", lw=1.4, alpha=0.85, label="NEURON")
         ax.plot(t_jax, v_jax, "-", color=clr, lw=1.4, label="jaxon")
-        ax.set_xlabel("time (ms)"); ax.set_ylabel("$V_m$ (mV)" if col == 0 else "")
-        ax.set_title(f"{MODEL_LABEL[model]}", color=clr)
+        ax.set_xlabel("time (ms)", fontsize=8)
+        if col == 0:
+            ax.set_ylabel("$V_m$ at centre node (mV)", fontsize=8)
+        ax.tick_params(axis="both", labelsize=7)
         ax.legend(loc="upper right", frameon=False, fontsize=7)
-        peak_diff_mV = float(np.max(np.abs(np.interp(t_jax, t_nrn, v_nrn) - v_jax)))
+        peak_diff_mV = float(
+            np.max(np.abs(np.interp(t_jax, t_nrn, v_nrn) - v_jax))
+        )
         ax.text(0.04, 0.05, f"$\\Delta V_m^{{peak}}={peak_diff_mV:.2f}$ mV",
                 transform=ax.transAxes, fontsize=7,
-                bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="grey"))
-    plt.suptitle("Intracellular membrane-potential traces: jaxon vs NEURON",
-                 fontsize=10, fontweight="bold")
-    plt.tight_layout(rect=[0, 0, 1, 0.93])
+                bbox=dict(boxstyle="round,pad=0.2", fc="white",
+                          ec="grey", lw=0.4))
+
+    plt.suptitle(
+        "Response to a single extracellular cathodic pulse: jaxon vs NEURON",
+        fontsize=11, fontweight="bold", y=0.99,
+    )
+    plt.tight_layout(rect=[0, 0, 1, 0.94])
     out = FIGDIR / "fig_traces_4models.png"
     fig.savefig(out)
     plt.close(fig)
@@ -160,48 +218,73 @@ def fig_traces_4models():
 
 # ─── 3. propagation phenomena: collision, kHz block, DC block ─────────────────
 def fig_phenomena():
-    """2×2: AP collision, kHz block, DC block, jax vs pyfibers."""
-    fig, axes = plt.subplots(2, 2, figsize=(10, 6.5))
+    """2×2 panel: AP collision, kHz block, DC block, spike desync.
 
-    # AP collision: snapshot Vm along the fiber at the moment two APs meet
+    Short axes titles + (a)/(b)/(c)/(d) panel labels in the top-left
+    corner of each axes — the full descriptive title for each panel
+    lives in the figure caption.  Generous wspace / hspace so the
+    panels never touch, regardless of how long the legends are.
+    """
+    fig, axes = plt.subplots(2, 2, figsize=(11, 7.5))
+    fig.subplots_adjust(left=0.07, right=0.98, bottom=0.07, top=0.93,
+                        wspace=0.28, hspace=0.38)
+    PANEL_LBL = dict(fontsize=12, fontweight="bold")
+
+    def _label_panel(ax, letter):
+        ax.text(-0.10, 1.06, f"({letter})", transform=ax.transAxes,
+                ha="left", va="bottom", **PANEL_LBL)
+
+    # ── (a) AP collision: snapshot Vm along the fibre ────────────────────────
     ax = axes[0, 0]
     d = json.loads((OUTROOT / "ap_collision/data_ap_collision.json").read_text())
-    r = d["results"][2]  # pick D=10 µm
+    r = d["results"][2]  # D=10 µm
     snap_t = d["snapshot_t_ms"]
-    snaps_jax = np.array(r["snapshots_nodes_mV"])  # [n_snap, n_nodes]
-    snaps_pf = np.array(r["snapshots_nodes_pf_mV"])
-    n_nodes = r["n_nodes"]
-    nodes = np.arange(n_nodes)
+    snaps_jax = np.array(r["snapshots_nodes_mV"])      # [n_snap, n_nodes]
+    snaps_pf  = np.array(r["snapshots_nodes_pf_mV"])
+    n_nodes   = r["n_nodes"]
+    nodes     = np.arange(n_nodes)
     for i, t in enumerate(snap_t):
         ax.plot(nodes, snaps_pf[i], "k--", lw=0.9, alpha=0.5)
-        ax.plot(nodes, snaps_jax[i], "-", color=plt.cm.viridis(i / len(snap_t)),
-                lw=1.5, label=f"t={t:.2f} ms")
-    ax.set_xlabel("node index"); ax.set_ylabel("$V_m$ (mV)")
-    ax.set_title(f"AP collision (MRG $D={r['diameter_um']}\\,\\mu$m): "
-                 f"two cathodic pulses from opposite ends annihilate on meeting")
-    ax.legend(loc="upper right", frameon=False, fontsize=7, ncol=2)
-    ax.text(0.97, 0.05,
-            f"peak $|\\Delta V_m|$ jax/NEURON = {abs(r['vm_peak_mV']-r['vm_peak_pf_mV'])*1000:.2f} $\\mu$V",
-            transform=ax.transAxes, ha="right", fontsize=7,
-            bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="grey"))
+        ax.plot(nodes, snaps_jax[i], "-",
+                color=plt.cm.viridis(i / len(snap_t)), lw=1.5,
+                label=f"t = {t:.2f} ms")
+    ax.set_xlabel("node index")
+    ax.set_ylabel("$V_m$ (mV)")
+    ax.set_title(f"AP collision  (MRG $D={r['diameter_um']:g}\\,\\mu$m)",
+                 fontsize=10, pad=6)
+    ax.legend(loc="upper right", frameon=False, fontsize=7, ncol=2,
+              columnspacing=0.6, handlelength=1.2)
+    ax.text(0.97, 0.04,
+            f"peak $|\\Delta V_m|$ jax/NEURON = "
+            f"{abs(r['vm_peak_mV']-r['vm_peak_pf_mV'])*1000:.2f} $\\mu$V",
+            transform=ax.transAxes, ha="right", fontsize=6.5,
+            bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="grey",
+                      lw=0.4))
+    _label_panel(ax, "a")
 
-    # kHz block: distal-node Vm trace; pace pulses are blocked by 20 kHz hold
+    # ── (b) kHz block: distal-node Vm trace, 4 amplitudes ────────────────────
     ax = axes[0, 1]
     d = json.loads((OUTROOT / "khz_block/data_khz_block.json").read_text())
     pace = d["pace"]
     for r in d["results"]:
-        t = np.array(r["t_pf_ms"])
+        t   = np.array(r["t_pf_ms"])
         v_pf = np.array(r["vm_pf_90"])
         v_jx = np.array(r["vm_jax_90"])
         t_jx = np.linspace(t[0], t[-1], len(v_jx))
-        ax.plot(t, v_pf, "k--", lw=0.6, alpha=0.5)
-        ax.plot(t_jx, v_jx, "-", lw=1.0,
-                label=f"block $A$={r['amp_mA']:.2f} mA: {r['n_aps_jax']}/{pace['n_pulses']} APs")
-    ax.set_xlabel("time (ms)"); ax.set_ylabel("$V_m$ at distal node (mV)")
-    ax.set_title(f"kHz conduction block ({d['khz_freq']} kHz, MRG $D={d['diameter_um']}\\,\\mu$m)")
-    ax.legend(loc="upper right", frameon=False, fontsize=7)
+        ax.plot(t,    v_pf, "k--", lw=0.6, alpha=0.5)
+        ax.plot(t_jx, v_jx, "-",   lw=1.0,
+                label=f"$|A|$={abs(r['amp_mA']):.2f} mA  "
+                      f"({r['n_aps_jax']}/{pace['n_pulses']} APs)")
+    ax.set_xlabel("time (ms)")
+    ax.set_ylabel("$V_m$ at distal node (mV)")
+    ax.set_title(f"kHz block  ({d['khz_freq']:g} kHz, MRG "
+                 f"$D={d['diameter_um']:g}\\,\\mu$m)",
+                 fontsize=10, pad=6)
+    ax.legend(loc="upper right", frameon=False, fontsize=7,
+              handlelength=1.2)
+    _label_panel(ax, "b")
 
-    # DC block: distal-node Vm trace; cathodic DC of varying amplitude
+    # ── (c) DC block: distal-node Vm trace, 4 amplitudes ─────────────────────
     ax = axes[1, 0]
     d = json.loads((OUTROOT / "dc_block/data_dc_block.json").read_text())
     for r in d["results"]:
@@ -210,12 +293,16 @@ def fig_phenomena():
         v_jx_d = v_jx[:, -1] if v_jx.ndim > 1 else v_jx
         v_pf_d = v_pf[:, -1] if v_pf.ndim > 1 else v_pf
         ax.plot(t_pf, v_pf_d, "k--", lw=0.6, alpha=0.5)
-        ax.plot(t_jx, v_jx_d, "-", lw=1.2,
-                label=f"$\\alpha$={r['amp_factor']:.2f}, $A$={r['amp_mA']*1000:.0f} $\\mu$A")
-    ax.set_xlabel("time (ms)"); ax.set_ylabel("$V_m$ at distal node (mV)")
-    ax.set_title(f"DC block (MRG $D={d['diameter_um']}\\,\\mu$m): "
-                 f"hyperpolarising block prevents AP propagation past source")
-    ax.legend(loc="upper right", frameon=False, fontsize=7)
+        ax.plot(t_jx, v_jx_d, "-",   lw=1.2,
+                label=f"$\\alpha$={r['amp_factor']:.2f}  "
+                      f"(${r['amp_mA']*1000:.0f}\\,\\mu$A)")
+    ax.set_xlabel("time (ms)")
+    ax.set_ylabel("$V_m$ at distal node (mV)")
+    ax.set_title(f"DC block  (MRG $D={d['diameter_um']:g}\\,\\mu$m)",
+                 fontsize=10, pad=6)
+    ax.legend(loc="upper right", frameon=False, fontsize=7,
+              handlelength=1.2)
+    _label_panel(ax, "c")
 
     # Spike desync: sync index vs cathodic block amplitude, one curve per IFR
     ax = axes[1, 1]
@@ -231,14 +318,17 @@ def fig_phenomena():
     ax.axhline(1.0, color="grey", lw=0.6, ls="--", alpha=0.5)
     ax.set_xlabel("cathodic perturbation amplitude (mA)")
     ax.set_ylabel("sync index  (1 = locked, 0 = no spikes)")
-    ax.set_title(f"Spike desynchronisation (MRG $D={d['diameter_um']}\\,\\mu$m, "
-                 f"{d['n_ref_spikes']} reference spikes)")
-    ax.legend(loc="lower left", frameon=False, fontsize=8)
+    ax.set_title(f"Spike desync.\\  (MRG $D={d['diameter_um']:g}\\,\\mu$m, "
+                 f"{d['n_ref_spikes']} ref. spikes)",
+                 fontsize=10, pad=6)
+    ax.legend(loc="lower left", frameon=False, fontsize=7,
+              handlelength=1.2)
     ax.set_ylim(-0.05, 1.1)
+    _label_panel(ax, "d")
 
-    plt.suptitle("Propagation phenomena reproduced under jaxon (lines) "
-                 "vs NEURON (dashed)", fontsize=11, fontweight="bold")
-    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    fig.suptitle("Propagation phenomena reproduced under jaxon (solid) "
+                 "vs NEURON (dashed)",
+                 fontsize=12, fontweight="bold", y=0.985)
     out = FIGDIR / "fig_phenomena.png"
     fig.savefig(out)
     plt.close(fig)

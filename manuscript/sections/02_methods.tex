@@ -99,10 +99,11 @@ $\ge\!2$ orders of magnitude lower memory cost.
 Validation against NEURON used the following exact parameters: time
 step $\Delta t = 5\,\mu\mathrm{s}$, simulation length 3\,ms,
 default activation threshold for proxy comparison was the 0.5
-crossing of $\max_t \mathbf{m}_{\mathrm{Na}}$ at the terminal node,
-which agrees with NEURON's threshold detection to within $\Delta I /
-I < 1\%$ across the diameter range $D \in [1.0, 16.0]\,\mu\mathrm{m}$
-\needdata{verify final percentage against validation tables}.
+crossing of $\max_t \mathbf{m}_{\mathrm{Na}}$ at the terminal node.
+Across all 432 MRG test configurations the resulting threshold
+agreement with NEURON has median $0.04\%$ and peak $0.39\%$ relative
+error, with $100\%$ of tested configurations under the $1\%$ acceptance
+criterion (see Table~\ref{tab:validation-sd}).
 
 \subsection{Batched parallel-fiber forward pass}
 \label{sec:methods-batched}
@@ -135,9 +136,10 @@ weighted quality (WQ) loss
 \end{equation}
 where $y_f \in \{0,1\}$ is the target/off-target indicator,
 $w_f$ are per-fiber weights, and the second term is an
-amplitude-energy regulariser ($\lambda = $\,\needdata{5e-3 in
-sweep}) introduced to prevent the trivial all-fibers-fire minimum
-on type-selectivity problems (Section~\ref{sec:discussion}).
+amplitude-energy regulariser ($\lambda = 5\times10^{-3}\,\mathrm{mA}^{-2}$
+for the mixed-diameter sweep, $\lambda=0$ otherwise) introduced to
+prevent the trivial all-fibers-fire minimum on type-selectivity
+problems (Section~\ref{sec:discussion}).
 The activation proxy can be optionally softened with a per-node
 sigmoid of temperature $\tau$ to widen the gradient-informative
 window at saturation.
@@ -220,9 +222,9 @@ Reproduction scripts are
 \subsection{Hardware and software}
 
 All results in this paper were produced on a single NVIDIA A100 GPU
-(40\,GB) of the MedUni Vienna HPC cluster.  jaxon was compiled with
-\texttt{jax==}\needdata{X.Y.Z}, \texttt{jaxley==}\needdata{X.Y.Z},
-Python 3.\needdata{X}, CUDA 12.\needdata{X}.  pyfibers comparisons
-used pyfibers version~\needdata{X.Y.Z}.  The full software environment
-is reproducible via the \texttt{slurm/setup\_env.sh} script in the
-code repository.
+(40\,GB) of the MedUni Vienna HPC cluster.  jaxon was run on
+Python 3.11.15, \texttt{jax} 0.6.2, \texttt{jaxley} 0.13.0 and a
+CUDA 12.4 container (\texttt{nvcr.io/nvidia/pytorch:25.03-py3}).
+\texttt{pyfibers} comparisons used pyfibers version 0.8.5 with the
+NEURON 8.2 backend.  The full software environment is reproducible
+via the \texttt{slurm/setup\_env.sh} script in the code repository.

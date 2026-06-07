@@ -1,15 +1,25 @@
-"""Copy locked figures from ../outputs/ into manuscript/figures/.
+"""Sync figures into manuscript/figures/.
 
-Portable replacement for the Unix `cp -u` calls that don't work under
-plain Windows cmd.exe.  Missing source files are a warning, not an
-error, so the build proceeds with `\figmaybe` placeholders for figures
-that don't yet exist (e.g. Phase 3 sweep still running on the cluster).
+Two-step pipeline:
+
+  1. Run make_figures.py to (re)generate the composite multi-panel
+     figures that compose data from multiple outputs/*/data_*.json
+     files.  These are the figures the manuscript actually cites.
+
+  2. Copy any single-source figures (e.g. selectivity cross-section
+     PNGs that aren't composed but are referenced as-is) from
+     ../outputs/ into figures/.
+
+Missing source files are a warning, not an error, so the build
+proceeds with \figmaybe placeholders for figures that don't yet exist
+(e.g. while Phase 3 sweep is still running on the cluster).
 
 Usage:
     python copy_figs.py
 """
 from __future__ import annotations
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -18,25 +28,29 @@ OUTROOT = HERE.parent / "outputs"
 FIGDIR = HERE / "figures"
 
 FIGURES = {
-    # Scaling benchmark.
-    OUTROOT / "scaling" / "fig_scaling.png":
-        FIGDIR / "fig_scaling.png",
-    # NEURON-validation analysis panels (one per model).
-    OUTROOT / "mrg_validation" / "fig_mrg_analysis.png":
-        FIGDIR / "fig_mrg_analysis.png",
-    OUTROOT / "sundt_validation" / "fig_sundt_analysis.png":
-        FIGDIR / "fig_sundt_analysis.png",
-    OUTROOT / "sweeney_validation" / "fig_sweeney_analysis.png":
-        FIGDIR / "fig_sweeney_analysis.png",
-    OUTROOT / "rattay_validation" / "fig_rattay_analysis.png":
-        FIGDIR / "fig_rattay_analysis.png",
-    # Selectivity exemplar (seed 0 rect cross-section).
+    # Selectivity exemplar (seed 0 rect cross-section).  This figure is
+    # referenced as-is rather than composed from JSON, so it lives in
+    # the copy step, not in make_figures.py.
     OUTROOT / "selectivity_sweep_phase3_manuscript" / "fig_seed_0000_rect_xsection.png":
         FIGDIR / "fig_seed_0000_rect_xsection.png",
 }
 
-def main() -> int:
-    FIGDIR.mkdir(exist_ok=True)
+def _run_make_figures() -> int:
+    """Step 1: regenerate composite multi-panel figures from JSON sources."""
+    print("[figs] step 1: building composite figures via make_figures.py")
+    script = HERE / "make_figures.py"
+    if not script.exists():
+        print(f"[figs] WARN: {script} not found, skipping composite build")
+        return 0
+    rc = subprocess.call([sys.executable, str(script)])
+    if rc != 0:
+        print(f"[figs] make_figures.py exited {rc} -- continuing anyway")
+    return rc
+
+
+def _copy_single_source() -> tuple[int, int]:
+    """Step 2: copy single-source figures from outputs/ into figures/."""
+    print("[figs] step 2: copying single-source figures")
     copied = missing = 0
     for src, dst in FIGURES.items():
         if not src.exists():
@@ -48,7 +62,14 @@ def main() -> int:
         shutil.copy2(src, dst)
         print(f"[figs] copied {src.name}")
         copied += 1
-    print(f"[figs] done: {copied} copied, {missing} missing")
+    return copied, missing
+
+
+def main() -> int:
+    FIGDIR.mkdir(exist_ok=True)
+    _run_make_figures()
+    copied, missing = _copy_single_source()
+    print(f"[figs] done: {copied} single-source copied, {missing} missing")
     return 0  # missing files are not an error
 
 if __name__ == "__main__":

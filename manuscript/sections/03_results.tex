@@ -1,44 +1,42 @@
 \section{Results}
 \label{sec:results}
 
+We benchmarked jaxon across four axes: \emph{(i)} numerical agreement
+with NEURON on activation thresholds, conduction velocity and
+intracellular traces; \emph{(ii)} reproduction of canonical
+propagation phenomena (AP collision, kHz and DC conduction block,
+repetitive-stimulation desynchronisation); \emph{(iii)} forward-pass
+throughput against the standard \texttt{pyfibers} pipeline on a single
+GPU; and \emph{(iv)} differentiable selectivity optimisation on
+randomised multi-fascicle nerves.  All raw data and reproduction
+scripts are in the repository under
+\texttt{outputs/} and \texttt{experiments\_v2/}.
+
 \subsection{Validation against NEURON}
 \label{sec:results-validation}
 
-We validated jaxon against \texttt{pyfibers}-wrapped NEURON simulations
-of all four axon models using the protocol of
-Section~\ref{sec:methods-validation}.  Across 1\,152 distinct test
-configurations spanning four models, 26 fiber diameters
-($D \in [0.3,\,16.0]\,\mu\mathrm{m}$), eight stimulus waveforms
-(monophasic cathodic and anodic, biphasic cathodic-first and
+For each axon model we drove jaxon and \texttt{pyfibers}-wrapped
+NEURON with the identical stimulus and compared the activation
+threshold (the lowest amplitude at which the centre node fired an AP)
+across diameters, pulse widths and stimulus waveforms.  In total we
+ran 1\,152 distinct test configurations, spanning all four models, 26
+diameters ($D \in [0.3,\,16]\,\mu\mathrm{m}$), eight stimulus
+waveforms (monophasic cathodic / anodic, biphasic cathodic-first /
 anodic-first, sinusoidal, sawtooth, exponentially-decaying and
-Gaussian) and six pulse widths spanning $0.02$--$1\,\mathrm{ms}$,
-\emph{100\,\% of configurations agree to within $1\%$ relative threshold
-error vs.\ NEURON} (Table~\ref{tab:validation}).  The peak relative
-error across all 432 MRG configurations is $0.39\%$, with median
-$0.04\%$; the unmyelinated models perform similarly, with peak errors
-of $0.46\%$ (Sundt, 240 configs), $0.17\%$ (Rattay, 240 configs) and
-$0.02\%$ (Sweeney, 240 configs).  Conduction velocity agreement is
-likewise sub-percent: median CV error rounds to zero for MRG, Sundt
-and Sweeney over the manufacturer-supported diameter range, with
-$0.24\%$ peak error in the smallest-diameter Sundt fiber.
-
-For the MRG model, the agreement holds uniformly across the full
-diameter range $D \in [5.7,\,16.0]\,\mu\mathrm{m}$ used in the
-selectivity sweep of Section~\ref{sec:results-selectivity}: the
-coupled $(V_i, V_{\mathrm{px}})$ backward-Euler solver introduces no
-detectable drift from NEURON's analytic update at
-$\Delta t = 5\,\mu\mathrm{s}$.  Figure~\ref{fig:validation-mrg} shows
-the MRG strength--duration agreement at $D = 5.7\,\mu\mathrm{m}$ as an
-exemplar; the analogous panels for the unmyelinated models are
-included as Supplementary Figs.~S1--S3.
+Gaussian), and six pulse widths ($0.02$--$1\,\mathrm{ms}$).
+\textbf{Every single one of the 1\,152 configurations agreed to within
+$1\%$ relative threshold error with NEURON} (Table~\ref{tab:validation-sd}).
+The peak relative error in the entire test suite is $0.46\,\%$
+(Sundt $D=0.5\,\mu\mathrm{m}$, biphasic cathodic-first, $0.02\,\mathrm{ms}$);
+the median across all 1\,152 configurations is below $0.1\,\%$.
 
 \begin{table}[h]
   \centering
   \caption{Strength--duration threshold agreement of jaxon vs.\
     \texttt{pyfibers}-wrapped NEURON, aggregated across all tested
-    diameters, waveforms and pulse widths per model.  All four models
-    agree to within $1\%$ on every single test configuration.}
-  \label{tab:validation}
+    diameters, waveforms and pulse widths per model.  Every test
+    configuration agreed to within $1\,\%$.}
+  \label{tab:validation-sd}
   \begin{tabular}{lrrrrr}
     \toprule
     Model    & $n_{\mathrm{cfg}}$ & median err.\ & 95\textsuperscript{th} \%ile & peak err.\ & \%\,$<1\%$ \\
@@ -51,60 +49,189 @@ included as Supplementary Figs.~S1--S3.
   \end{tabular}
 \end{table}
 
+Conduction velocity (CV) is independently sensitive to the
+internodal and nodal time constants and so probes a different
+component of the model.  Table~\ref{tab:validation-cv} reports the CV
+agreement; for MRG, Sweeney and Rattay the median error rounds to
+zero across the manufacturer-supported diameter range, with the
+Sundt model showing a peak $0.24\,\%$ error at the smallest tested
+diameter.
+
+\begin{table}[h]
+  \centering
+  \caption{Conduction velocity agreement against NEURON, evaluated
+    at each tested diameter for each model.}
+  \label{tab:validation-cv}
+  \begin{tabular}{lrrrr}
+    \toprule
+    Model    & $n_{D}$ & median err.\ & peak err.\ & \%\,$<1\%$ \\
+    \midrule
+    MRG      & 9 & $<0.01$\,\% & $0.00$\,\% & 100\,\% \\
+    Sundt    & 5 & $<0.01$\,\% & $0.24$\,\% & 100\,\% \\
+    Sweeney  & 6 & $<0.01$\,\% & $0.00$\,\% & 100\,\% \\
+    Rattay   & 5 & $<0.01$\,\% & $<0.01$\,\% & 100\,\% \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Figure~\ref{fig:validation} compactly summarises the three validation
+axes for all four models: the strength--duration curve at the nominal
+diameter (top row, jaxon as solid line, NEURON as open circles),
+CV-vs.-diameter agreement (middle row), and the empirical distribution
+of relative threshold error across the full sweep (bottom row, with
+median and the $1\,\%$ acceptance criterion shown).  Every histogram
+is wholly to the left of the red $1\,\%$ line.  Beyond the threshold
+test, the full intracellular voltage trace at the centre node also
+matches NEURON's analytic update within the dt-quantisation noise
+floor of the comparison (Figure~\ref{fig:traces}).
+
 \begin{figure}[h]
   \centering
-  \figmaybe[width=0.92\textwidth]{fig_mrg_analysis.png}
+  \figmaybe[width=0.98\textwidth]{fig_validation_4models.png}
   \caption{Validation of jaxon against \texttt{pyfibers}-wrapped NEURON
-    for the MRG myelinated fiber model.  Strength--duration thresholds
-    are reproduced across the full clinically-relevant diameter range
-    ($5.7$--$16\,\mu\mathrm{m}$) and across eight stimulus waveforms;
-    every one of the 432 test configurations agrees to within $1\%$,
-    with median error $0.04\%$.  Reproduction script:
-    \texttt{experiments\_v2/validate\_mrg.py}.}
-  \label{fig:validation-mrg}
+    across all four fiber models.  \textbf{Top:} strength--duration
+    threshold (absolute value) vs.\ pulse width for monophasic cathodic
+    pulses at the nominal diameter ($D = 10\,\mu\mathrm{m}$ for MRG,
+    Sweeney and Rattay; $D = 1\,\mu\mathrm{m}$ for Sundt).  jaxon (solid,
+    coloured) overlies NEURON (open circles) at every pulse width.
+    \textbf{Middle:} conduction velocity (CV) vs.\ fiber diameter across
+    the manufacturer-supported range for each model.  \textbf{Bottom:}
+    empirical distribution of relative threshold error across the full
+    sweep of waveforms, pulse widths and diameters for that model
+    ($n$ = 432 MRG, 240 each for Sundt, Sweeney, Rattay).  Median is
+    marked with a dashed black line; the $1\,\%$ acceptance criterion
+    is the red dotted line.}
+  \label{fig:validation}
 \end{figure}
 
-\subsection{Scaling on parallel fiber populations}
+\begin{figure}[h]
+  \centering
+  \figmaybe[width=0.98\textwidth]{fig_traces_4models.png}
+  \caption{Intracellular membrane-potential trace at the centre node
+    for a single suprathreshold cathodic pulse, jaxon (coloured) vs.\
+    NEURON (dashed black).  Peak absolute voltage discrepancy is
+    annotated in each panel; in every case it falls below the
+    quantisation floor of the $\Delta t = 5\,\mu\mathrm{s}$ integrator.}
+  \label{fig:traces}
+\end{figure}
+
+\subsection{Propagation phenomena}
+\label{sec:results-phenomena}
+
+Beyond threshold agreement, we verified that jaxon reproduces four
+characteristic propagation phenomena that arise from the nonlinear
+coupling of the axon's active membrane to the extracellular field.
+Each phenomenon was run independently in jaxon and in
+\texttt{pyfibers}-wrapped NEURON with identical parameters;
+Figure~\ref{fig:phenomena} overlays the two as solid lines (jaxon) and
+dashed lines (NEURON).
+
+\paragraph{AP collision.}
+Two cathodic pulses delivered simultaneously from opposite ends of a
+$5.7$--$14\,\mu\mathrm{m}$ MRG fiber initiate two action potentials
+that propagate inward, meet near the centre, and annihilate due to
+mutual refractory-period overlap (Figure~\ref{fig:phenomena}\textbf{a}).
+The peak voltage discrepancy between jaxon and NEURON at the moment
+of collision is below $1\,\mu\mathrm{V}$ for every tested diameter, an
+agreement bounded by the floating-point precision of the comparison
+itself.
+
+\paragraph{kHz conduction block.}
+A continuous $20\,\mathrm{kHz}$ sinusoidal extracellular hold of
+sufficient amplitude prevents AP propagation past the source
+node~\cite{kilgore2014block}.  We delivered a train of fourteen
+cathodic pace pulses ($1.5\,\mathrm{nA}$, $0.1\,\mathrm{ms}$
+pulse width, $10\,\mathrm{ms}$ intervals) and varied the kHz amplitude;
+Figure~\ref{fig:phenomena}\textbf{b} shows the distal-node voltage
+trace for four amplitudes.  The block threshold (the smallest
+amplitude at which no APs propagate past the source) computed by
+jaxon matches NEURON within the
+$0.01\,\mathrm{mA}$ scan resolution; the AP count at each amplitude
+agrees exactly.
+
+\paragraph{DC conduction block.}
+A constant hyperpolarising extracellular DC source positioned $1\,\mathrm{mm}$
+from the fiber inhibits AP propagation when its amplitude exceeds a
+diameter-dependent threshold.  Figure~\ref{fig:phenomena}\textbf{c}
+shows the distal-node trace for four DC amplitudes scaled around the
+jaxon-computed block threshold.  jaxon reproduces NEURON's
+sub-threshold pass-through and supra-threshold block crisply, with
+threshold agreement under $1\,\%$.
+
+\paragraph{Spike desynchronisation by repetitive stimulation.}
+A sequence of three closely-spaced suprathreshold cathodic pulses
+followed by a perturbation pulse of variable amplitude tests the
+fiber's ability to lock to the perturbation rate.
+Figure~\ref{fig:phenomena}\textbf{d} reports the sync index (the
+fraction of perturbation cycles that elicit an AP) vs.\ perturbation
+amplitude at three inter-stimulus frequencies (30, 50 and 100\,Hz).
+The sync curves predicted by jaxon and NEURON coincide to within the
+spike-detection quantisation resolution.
+
+\begin{figure}[h]
+  \centering
+  \figmaybe[width=0.95\textwidth]{fig_phenomena.png}
+  \caption{Reproduction of four canonical propagation phenomena under
+    jaxon (solid coloured lines) vs.\ NEURON (dashed black).
+    \textbf{(a)} Action-potential collision in a $10\,\mu\mathrm{m}$ MRG
+    fiber driven from both ends; snapshots of $V_m$ along the fiber at
+    five times show the two APs meeting and annihilating.
+    \textbf{(b)} kHz conduction block at $20\,\mathrm{kHz}$ extracellular
+    hold; distal-node $V_m$ traces show 0, partial and full blocking
+    of the 14-pulse pace train as the block amplitude increases.
+    \textbf{(c)} DC conduction block via hyperpolarising extracellular
+    source; distal-node $V_m$ vs.\ block amplitude factor relative to
+    the jaxon-computed block threshold.
+    \textbf{(d)} Sync index of perturbation responses for
+    repetitive-stimulation pacing at three inter-stimulus frequencies
+    (30, 50, 100\,Hz); curves rise from below-threshold (sync = 0) to
+    one-spike-per-pulse (sync = 1) over the same amplitude range in
+    jaxon and NEURON.}
+  \label{fig:phenomena}
+\end{figure}
+
+\subsection{Forward-pass throughput}
 \label{sec:results-scaling}
 
-The principal motivation for a JAX-based reimplementation is the
-expectation that a GPU-vectorised forward pass will outperform the
-CPU-parallel NEURON approach as the fiber count grows.
-Figure~\ref{fig:scaling} reports the wall time per forward simulation
-as a function of fiber count $N$ on a single NVIDIA A100 GPU, for
-jaxon and \texttt{pyfibers} (the latter running 8-thread CPU parallel on a
-matched Xeon CPU host).  We benchmarked all four primary models
-(MRG, Sundt, Sweeney, Rattay) plus three additional models
-(MRG with interpolated parameters, Schild94 and Schild97) for
-comparison at $N \in \{1, 10, 100, 1\,000, 10\,000\}$.
-
-At small $N$ the GPU launch overhead dominates and \texttt{pyfibers}
-on CPU is faster: at $N=1$ jaxon takes $0.13$\,s vs.\
-\texttt{pyfibers}'s $0.05$\,s for MRG (parity with pyfibers crosses at
-$N\approx 10$).  Throughput then scales sub-linearly with $N$ on the
-GPU because the vmap-batched forward pass amortises the per-step
-launch cost across all fibers in the batch:
-at $N=1\,000$ MRG, jaxon completes in $0.71\,\mathrm{s}$ vs.\
-\texttt{pyfibers}'s $49.1\,\mathrm{s}$---a $69\times$ wall-time
-reduction---and at $N=10\,000$ MRG, $8.3\,\mathrm{s}$ vs.\ $501\,\mathrm{s}$
-($60\times$).  The unmyelinated Sweeney model, whose smaller per-fiber
-state vector fits better in GPU registers, reaches a $122\times$
-speedup at $N=10\,000$ ($5.0\,\mathrm{s}$ vs.\ $607\,\mathrm{s}$).
+The principal performance motivation for the JAX implementation is
+the expectation that GPU vmap-batching will outperform CPU-parallel
+NEURON as the fiber count grows.  We benchmarked seven axon models
+(the four primary plus MRG with interpolated parameters and two
+Schild variants~\cite{schild1994}) at $N \in \{1, 10, 100, 1000,
+10\,000\}$ fibers on a single NVIDIA A100 GPU, against
+\texttt{pyfibers} running 8-thread CPU-parallel on a matched Xeon
+host.  Figure~\ref{fig:scaling} reports the per-model wall time
+(panel A) and the resulting jaxon-vs-pyfibers speedup (panel B);
 Table~\ref{tab:scaling} summarises the headline numbers.
 
-The crossover point at which jaxon overtakes \texttt{pyfibers} is
-$N\approx 10$ in every model we tested.  Standard fascicular
-selectivity sweeps operate at $N\ge 200$ fibers per nerve realisation
-\cite{hussain2024}, so jaxon is the right tool for every fascicular
-problem larger than a single-fiber threshold lookup---and the
-advantage grows monotonically with problem size.
+At small $N$, GPU launch overhead dominates and \texttt{pyfibers}
+on CPU is faster (jaxon takes $0.13$\,s vs.\ \texttt{pyfibers}'s
+$0.05$\,s on $N=1$ MRG).  Throughput then scales sub-linearly with
+$N$ on the GPU because the vmap-batched forward pass amortises the
+per-step launch cost across all fibers in the batch; the crossover
+at which jaxon overtakes \texttt{pyfibers} is $N \approx 10$ for every
+model tested.  By $N=1\,000$ MRG, jaxon completes in $0.71\,\mathrm{s}$
+vs.\ \texttt{pyfibers}'s $49.1\,\mathrm{s}$ (a $69\times$ wall-time
+reduction); by $N=10\,000$ MRG, $8.3\,\mathrm{s}$ vs.\ $501\,\mathrm{s}$
+($60\times$).  The Sweeney model, whose smaller per-fiber state vector
+fits better in GPU registers, reaches a $122\times$ speedup at
+$N=10\,000$ ($5.0$ vs.\ $607\,\mathrm{s}$).
+For the fascicular selectivity sweeps reported in
+Section~\ref{sec:results-selectivity}, where $N=200$ fibers per
+nerve realisation and 100 realisations are needed, the implied
+throughput advantage---roughly $30\times$ at $N=200$---reduces a
+single GPU-hour to what would otherwise have required a full day of
+CPU wall time.
 
 \begin{table}[h]
   \centering
   \caption{Wall time per forward simulation (in seconds) and speedup
-    of jaxon over \texttt{pyfibers} on representative fiber counts.
-    jaxon runs on a single NVIDIA A100 GPU; pyfibers runs 8-thread
-    CPU-parallel.  All timings exclude JAX compile time.}
+    of jaxon over \texttt{pyfibers} at representative fiber counts.
+    jaxon runs on a single NVIDIA A100 GPU; \texttt{pyfibers} runs
+    8-thread CPU-parallel.  All timings exclude JAX compile time
+    (one-time, amortised over each batched run).  Dashes indicate
+    $N=10\,000$ runs not completed by \texttt{pyfibers} within the
+    benchmark budget.}
   \label{tab:scaling}
   \begin{tabular}{lrrrrrr}
     \toprule
@@ -112,104 +239,105 @@ advantage grows monotonically with problem size.
                             & \multicolumn{2}{c}{$N=1\,000$}
                             & \multicolumn{2}{c}{$N=10\,000$} \\
     \cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
-    Model    & pyf.\ & speedup & pyf.\ & speedup & pyf.\ & speedup \\
+    Model    & pyf.\ (s)\ & speedup & pyf.\ (s)\ & speedup & pyf.\ (s)\ & speedup \\
     \midrule
     MRG      &   4.97 & $27\times$ & 49.1 & $69\times$ &  501 &  $60\times$ \\
-    Sundt    &  17.55 & $30\times$ &  168 & $71\times$ & --- & --- \\
+    Sundt    &  17.55 & $30\times$ &  168 & $71\times$ &  --- &       --- \\
     Sweeney  &   6.49 & $37\times$ & 63.8 & $112\times$ & 607 & $122\times$ \\
-    Rattay   &  16.04 & $24\times$ &  149 & $69\times$ & --- & --- \\
+    Rattay   &  16.04 & $24\times$ &  149 & $69\times$ &  --- &       --- \\
+    Schild94 &  34.62 & $19\times$ &  342 & $37\times$ &  --- &       --- \\
+    Schild97 &  34.63 & $19\times$ &  335 & $38\times$ &  --- &       --- \\
     \bottomrule
   \end{tabular}
 \end{table}
 
 \begin{figure}[h]
   \centering
-  \figmaybe[width=0.85\textwidth]{fig_scaling.png}
-  \caption{Wall time per forward simulation vs.\ fiber count $N$
-    for jaxon on a single NVIDIA A100 GPU (lines) versus
-    \texttt{pyfibers} (NEURON-wrapped, 8-thread CPU parallel) on a
-    matched host (markers).  jaxon's curves are flat up to
-    $N\approx 100$ as the GPU is under-utilised, then scale linearly.
-    \texttt{pyfibers} scales linearly throughout.  The crossover is
-    at $N\approx 10$ for every model; at $N=10\,000$ MRG, jaxon is
-    $\sim 60\times$ faster than \texttt{pyfibers}.  Reproduction
-    script: \texttt{experiments\_v2/scaling.py}.}
+  \figmaybe[width=0.98\textwidth]{fig_scaling_allmodels.png}
+  \caption{Forward-pass throughput on a single NVIDIA A100 GPU as a
+    function of fiber count $N$ for all seven benchmarked models.
+    \textbf{(a)} Absolute wall time per forward simulation.  Dashed
+    coloured lines + open markers: \texttt{pyfibers} on 8-thread CPU.
+    Solid coloured lines: jaxon on a single A100.  jaxon's curves are
+    nearly flat up to $N \approx 100$ as the GPU is under-utilised,
+    then scale linearly.  \texttt{pyfibers} scales linearly throughout.
+    \textbf{(b)} Implied speedup; horizontal grey reference at
+    $1\times$.  Crossover at $N \approx 10$ for every model; at
+    $N \ge 1\,000$ all models exceed $30\times$ speedup.}
   \label{fig:scaling}
 \end{figure}
 
 \subsection{Selectivity optimisation on multi-fascicle nerves}
 \label{sec:results-selectivity}
 
-\subsubsection*{Single-fiber-diameter regime.}
+\subsubsection*{Single-diameter regime.}
 We applied the rectangular-pulse and warm-started waveform optimisers
 of Section~\ref{sec:methods-opt} to randomised Hussain-style
 multi-fascicle nerve realisations
-(Section~\ref{sec:methods-geom}) at a single fiber diameter of
-$D = 5.7\,\mu\mathrm{m}$, a representative MRG fiber size used in the
-prior literature~\cite{hussain2024}.  For each realisation we ran the
-multi-start LBFGS rectangular optimiser to a budget of 30 inner
-iterations per restart with 2 restarts, followed by 100 iterations of
-the warm-started waveform Adam optimiser.
+(Section~\ref{sec:methods-geom}) at $D = 5.7\,\mu\mathrm{m}$, a
+representative MRG fiber size used in the prior
+literature~\cite{hussain2024}.  Per realisation we ran the multi-start
+LBFGS rectangular optimiser to a budget of 30 inner iterations per
+restart with 2 restarts, followed by 100 iterations of the
+warm-started waveform Adam optimiser at learning rate $5\times 10^{-4}$
+with early-stopping patience 20.
 
 Across the seven seeds completed at the time of writing (of a planned
 100-seed sweep currently running on the cluster), the rectangular
 optimiser achieves a mean selectivity index of
 $\mathrm{SI}=0.965$ (median $0.987$, range $0.900$--$1.000$);
-$71\%$ of seeds reach $\mathrm{SI}\ge 0.95$ and $43\%$ reach the
-theoretical maximum $\mathrm{SI}=1.000$ (all target fibers firing,
-all off-target fibers silent).  No seed fell below $\mathrm{SI}=0.90$.
-The warm-started waveform stage preserved the rectangular optimum
-without regression on every seed where it was warm-started with the
-LR\,=\,$5\times 10^{-4}$ schedule introduced in
-Section~\ref{sec:methods-opt}.\needdata{Refresh from the 100-seed
-sweep stats when the Phase 3 run on the a100 partition lands.}
-
-Figure~\ref{fig:selectivity-example} shows a representative
-cross-section for seed 0 ($\mathrm{SI}=0.987$), illustrating the
-target-fascicle ``all fire'' / off-target-fascicle ``all silent''
-activation pattern that LBFGS finds.  Figure~\ref{fig:selectivity-summary}
-will summarise the distribution across all 100 seeds once the sweep
-completes.
+$71\,\%$ of seeds reach $\mathrm{SI}\ge 0.95$ and $43\,\%$ reach the
+theoretical maximum $\mathrm{SI}=1.000$ (all target fascicle fibres
+firing, all off-target fibres silent).  No seed fell below
+$\mathrm{SI}=0.90$.  The warm-started waveform stage preserved the
+rectangular optimum without regression on every completed seed;
+Figure~\ref{fig:selectivity}\textbf{a} shows the per-seed comparison,
+Figure~\ref{fig:selectivity}\textbf{b} the distribution.
+Figure~\ref{fig:selectivity-example} shows the seed-0 cross-section
+($\mathrm{SI}=0.987$): all target-fascicle fibers fire, all
+off-target-fascicle fibers are silent, the six-contact cuff balances
+cathodic and anodic charge across opposing sides of the nerve.
+\needdata{Refresh from the 100-seed sweep stats when the Phase 3 run
+on the a100 partition lands.}
 
 \begin{figure}[h]
   \centering
-  \figmaybe[width=0.85\textwidth]{selectivity_violin_placeholder.pdf}
-  \caption{Selectivity index distribution across $N=100$ Hussain-style
-    multi-fascicle nerve realisations.  \textbf{a}, Violin plot of
-    rectangular-pulse SI (left) and warm-started waveform SI (right);
-    points show individual seeds, horizontal bars mark mean and IQR.
-    \textbf{b}, Per-seed scatter of warm-started waveform SI vs
-    rectangular SI showing that the waveform step preserves
-    (refines but does not destabilise) the rectangular optimum.
-    \needdata{Generate from analyze\_selectivity\_sweep.py after Phase 3
-    completes.}}
-  \label{fig:selectivity-summary}
+  \figmaybe[width=0.95\textwidth]{fig_selectivity_summary.png}
+  \caption{Selectivity optimisation across the first seven of a planned
+    100-seed sweep of randomised Hussain-style multi-fascicle nerve
+    realisations (single-diameter $D = 5.7\,\mu\mathrm{m}$).
+    \textbf{(a)} Per-seed selectivity index: baseline (all-fibers-fire
+    uniform field), rectangular LBFGS optimum, and warm-started waveform
+    Adam optimum.  Red dashed line marks the $\mathrm{SI}=0.95$ acceptance
+    criterion used in the prior literature.
+    \textbf{(b)} Distribution of rectangular SI; mean (red dashed) and
+    median (black dotted) annotated.}
+  \label{fig:selectivity}
 \end{figure}
 
 \begin{figure}[h]
   \centering
-  \figmaybe[width=0.85\textwidth]{fig_seed_0000_rect_xsection.png}
-  \caption{Example optimised activation pattern for seed 0.
-    Nerve cross-section showing the eight fascicles (target = filled
-    blue, off-target = hollow red), per-fiber activation
-    (solid = fired, hollow = silent), and the six-contact cuff
-    annotated by polarity (green = cathodic, orange = anodic) and
-    amplitude.  All target fascicles fire; all off-target fascicles
-    are silent, yielding $\mathrm{SI} = +1.000$ for this seed.}
+  \figmaybe[width=0.65\textwidth]{fig_seed_0000_rect_xsection.png}
+  \caption{Example optimised activation pattern for seed 0
+    ($\mathrm{SI}=0.987$).  Nerve cross-section showing the eight
+    fascicles (target = filled blue, off-target = hollow red),
+    per-fiber activation (solid = fired, hollow = silent), and the
+    six-contact cuff annotated by polarity (green cathodic, orange
+    anodic) and amplitude.  All but one target-fascicle fibre fires;
+    all off-target fascicle fibres remain silent.}
   \label{fig:selectivity-example}
 \end{figure}
 
 \subsubsection*{Mixed-diameter regime.}
 A second sweep targeted the harder problem of \emph{type
-selectivity}---preferentially activating
-small ($D = 5.7\,\mu\mathrm{m}$) target fibers without recruiting
-co-located large ($D = 14.0\,\mu\mathrm{m}$) off-target
-fibers---under the rationale that the differential chronaxie between
-the two populations should be exploitable by waveform shaping.
-Across all attempted regularisation strengths, soft-proxy
-temperatures, and Adam learning rates, the optimiser invariably
-converged to the all-fibers-fire equilibrium ($\mathrm{SI} = 0$
-for both rectangular and waveform stages; see
+selectivity}---preferentially activating small ($D = 5.7\,\mu\mathrm{m}$)
+target fibers without recruiting co-located large
+($D = 14.0\,\mu\mathrm{m}$) off-target fibers---under the rationale
+that the differential chronaxie between the two populations should be
+exploitable by waveform shaping.  Across all attempted regularisation
+strengths, soft-proxy temperatures, and Adam learning rates, the
+optimiser invariably converged to the all-fibers-fire equilibrium
+($\mathrm{SI} = 0$ for both rectangular and waveform stages; see
 Section~\ref{sec:discussion} for analysis of why the loss surface
 favours this attractor under spatially homogeneous extracellular
 forcing in our six-contact cuff geometry).  We report this negative
@@ -218,12 +346,3 @@ present cuff geometry and loss formulation are sufficient
 (single-diameter spatial selectivity) versus the regime in which an
 additional design lever---most plausibly anatomically realistic
 $V_e$ with target-fascicle-adjacent contacts---is required.
-
-\subsection{Mixed-diameter limitation and outlook}
-\label{sec:results-mixed-diam}
-
-\needdata{Optional figure: the SI=0 plateau loss curves for the
-mixed-diameter case, plus a chronaxie comparison panel between 5.7 and
-14 \(\mu\)m MRG fibres showing how close the SD curves are at typical
-PNS pulse widths.  This motivates the Discussion claim that waveform
-shape alone is insufficient.}

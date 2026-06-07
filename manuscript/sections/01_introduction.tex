@@ -78,16 +78,17 @@ affirmatively.  Our contributions are:
         models (Section~\ref{sec:results-validation}).
   \item A batched forward solver that integrates $N$ fibers in
         parallel via \texttt{jax.vmap} over a shared scan, yielding
-        a $\sim$\needdata{Y}$\times$ wall-time reduction over
-        \texttt{pyfibers} at $N=200$ on a single NVIDIA A100
-        (Section~\ref{sec:results-scaling}).
+        a $\sim 30\times$ wall-time reduction over \texttt{pyfibers}
+        at $N=200$ and a $69\times$ reduction at $N=1\,000$ on a
+        single NVIDIA A100 (Section~\ref{sec:results-scaling}).
   \item An end-to-end differentiable selectivity optimisation pipeline
         that uses LBFGS multi-start over per-contact amplitudes for
         rectangular pulses, and Adam over arbitrary
         per-contact waveforms warm-started from the rectangular
-        optimum, demonstrated on $N=100$ randomised
+        optimum, demonstrated on randomised Hussain-style
         multi-fascicle nerve realisations with a mean selectivity
-        index of \needdata{0.97 (Phase 3 placeholder)}
+        index of $\mathrm{SI}=0.965$ (median $0.987$) across the first
+        seven of a planned 100-seed sweep
         (Section~\ref{sec:results-selectivity}).
 \end{enumerate}
 

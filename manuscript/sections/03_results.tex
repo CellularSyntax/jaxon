@@ -92,8 +92,10 @@ ultimately targets \emph{extracellular} stimulation (Section
 full extracellular-stimulation membrane-potential response at the
 centre node matches NEURON's analytic update within the
 $\Delta t$-quantisation noise floor of the comparison
-(Figure~\ref{fig:traces}); intracellular-injection agreement on the
-same fibres is comparable and is not shown.
+(Figure~\ref{fig:traces}, top two rows); intracellular
+current-injection responses are also reported on the same fibres
+(Figure~\ref{fig:traces}, bottom two rows) and show comparable
+agreement.
 
 \begin{figure}[h]
   \centering
@@ -118,19 +120,28 @@ same fibres is comparable and is not shown.
   \centering
   \figmaybe[width=0.98\textwidth]{fig_traces_4models.png}
   \caption{Membrane-potential response to a single extracellular
-    cathodic pulse, jaxon vs.\ NEURON, for all four fibre models.
-    \textbf{Top row:} the applied extracellular cathodic rectangular
-    pulse $I_e(t)$ delivered at $t = 1\,\mathrm{ms}$
+    cathodic stimulus (top two rows) and intracellular current
+    injection (bottom two rows), jaxon vs.\ NEURON, for all four
+    fibre models.
+    \textbf{Row~1 (extracellular stim):} the applied extracellular
+    cathodic rectangular pulse $I_e(t)$ delivered at $t = 1\,\mathrm{ms}$
     (PW $= 0.1\,\mathrm{ms}$ for MRG and Sweeney; $0.2\,\mathrm{ms}$
-    for the unmyelinated Sundt and Rattay models).  The grey dotted
-    line marks the model-specific activation threshold; the
-    suprathreshold stimulus amplitude actually applied is annotated
-    in each panel.  \textbf{Bottom row:} membrane potential $V_m$ at
-    the centre node of the fibre, jaxon (coloured solid) overlying
-    NEURON (dashed black).  Peak absolute voltage discrepancy
-    $|\Delta V_m^{\mathrm{peak}}|$ is annotated in each panel; in
-    every case it falls below the $\Delta t = 5\,\mu\mathrm{s}$
-    quantisation noise floor of the comparison.}
+    for Sundt and Rattay).  Grey dotted line: model-specific
+    activation threshold.  Annotated: suprathreshold amplitude actually
+    applied and threshold.
+    \textbf{Row~2 (extracellular $V_m$):} membrane potential at the
+    centre node, jaxon (coloured solid) over NEURON (dashed black).
+    Peak absolute voltage discrepancy $|\Delta V_m^{\mathrm{peak}}|$
+    annotated; in every case below the $\Delta t = 5\,\mu\mathrm{s}$
+    quantisation noise floor.
+    \textbf{Row~3 (intracellular stim):} the applied intracellular
+    current pulse $I_i(t)$ (1.0\,nA MRG, 3.0\,nA Sweeney,
+    0.5\,nA Sundt / Rattay; same delay and pulse-width convention).
+    \textbf{Row~4 (intracellular $V_m$):} membrane response, same
+    overlay convention.  The two stimulation regimes test the
+    integrator independently — the extracellular case is the one
+    that matters for selectivity optimisation
+    (Section~\ref{sec:results-selectivity}).}
   \label{fig:traces}
 \end{figure}
 
@@ -301,36 +312,55 @@ restart with 2 restarts, followed by 100 iterations of the
 warm-started waveform Adam optimiser at learning rate $5\times 10^{-4}$
 with early-stopping patience 20.
 
-Across the seven seeds completed at the time of writing (of a planned
+Across the 26 seeds completed at the time of writing (of a planned
 100-seed sweep currently running on the cluster), the rectangular
 optimiser achieves a mean selectivity index of
-$\mathrm{SI}=0.965$ (median $0.987$, range $0.900$--$1.000$);
-$71\,\%$ of seeds reach $\mathrm{SI}\ge 0.95$ and $43\,\%$ reach the
+$\mathrm{SI}=0.973$ (median $1.000$, range $0.870$--$1.000$);
+$77\,\%$ of seeds reach $\mathrm{SI}\ge 0.95$, and $65\,\%$ reach the
 theoretical maximum $\mathrm{SI}=1.000$ (all target fascicle fibres
-firing, all off-target fibres silent).  No seed fell below
-$\mathrm{SI}=0.90$.  The warm-started waveform stage preserved the
-rectangular optimum without regression on every completed seed;
-Figure~\ref{fig:selectivity}\textbf{a} shows the per-seed comparison,
-Figure~\ref{fig:selectivity}\textbf{b} the distribution.
+firing, all off-target fibres silent).  The warm-started waveform
+stage preserves the rectangular optimum on most seeds (median wave SI
+$= 0.975$); on a small subset ($\sim 30\,\%$) Adam destabilises the
+warm-started solution despite the conservative learning-rate and
+early-stop settings, and the wave-stage report defaults to the
+best-iter SI which is at minimum the warm-start (rect) value.
+Figure~\ref{fig:selectivity}\textbf{a} shows the SI distribution across
+baseline, rect-LBFGS and warm-started wave-Adam stages;
+Figure~\ref{fig:selectivity}\textbf{b} compares the wave and rect
+outcome on each individual seed.
 Figure~\ref{fig:selectivity-example} shows the seed-0 cross-section
 ($\mathrm{SI}=0.987$): all target-fascicle fibers fire, all
 off-target-fascicle fibers are silent, the six-contact cuff balances
 cathodic and anodic charge across opposing sides of the nerve.
-\needdata{Refresh from the 100-seed sweep stats when the Phase 3 run
-on the a100 partition lands.}
+
+The single-diameter sweep reported here uses the MRG model at
+$D=5.7\,\mu\mathrm{m}$.  An across-model extension that runs the same
+pipeline for each implemented model (MRG at $D=10\,\mu\mathrm{m}$,
+Sweeney at $D=10\,\mu\mathrm{m}$, Sundt at $D=1\,\mu\mathrm{m}$,
+Rattay at $D=1\,\mu\mathrm{m}$) and reports the per-model SI
+distribution as a violin in a single figure is a natural next step,
+addressing the question of how the achievable selectivity depends on
+the fibre biophysics.\needdata{Run the per-model sweeps for Sundt,
+Sweeney and Rattay and refresh Fig.~\ref{fig:selectivity} as a
+4-model violin once the 100-seed MRG sweep completes.}
 
 \begin{figure}[h]
   \centering
   \figmaybe[width=0.95\textwidth]{fig_selectivity_summary.png}
-  \caption{Selectivity optimisation across the first seven of a planned
-    100-seed sweep of randomised Hussain-style multi-fascicle nerve
-    realisations (single-diameter $D = 5.7\,\mu\mathrm{m}$).
-    \textbf{(a)} Per-seed selectivity index: baseline (all-fibers-fire
-    uniform field), rectangular LBFGS optimum, and warm-started waveform
-    Adam optimum.  Red dashed line marks the $\mathrm{SI}=0.95$ acceptance
-    criterion used in the prior literature.
-    \textbf{(b)} Distribution of rectangular SI; mean (red dashed) and
-    median (black dotted) annotated.}
+  \caption{Selectivity optimisation across 26 of a planned 100-seed
+    sweep of randomised Hussain-style multi-fascicle nerve
+    realisations (MRG, $D = 5.7\,\mu\mathrm{m}$).
+    \textbf{(a)} Violin distribution of selectivity index across the
+    three optimisation stages: baseline (uniform-field cuff, all
+    fibres recruited indiscriminately), rectangular LBFGS optimum,
+    and warm-started waveform-Adam optimum.  Individual seeds shown
+    as jittered points; red bars mark per-stage medians.  Red dashed
+    line marks the $\mathrm{SI}=0.95$ acceptance criterion used in
+    the prior literature.
+    \textbf{(b)} Per-seed scatter of warm-started waveform SI vs.\
+    rectangular SI; points on the dotted diagonal are seeds where
+    the waveform stage preserved the rect optimum exactly, points
+    above the diagonal are improvements, points below are regressions.}
   \label{fig:selectivity}
 \end{figure}
 

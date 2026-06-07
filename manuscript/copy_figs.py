@@ -24,14 +24,26 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-OUTROOT = HERE.parent / "outputs"
+# Search both locations: manuscript-local outputs/ (fresh sweep data
+# downloaded from the cluster), and the repo outputs/ (older /
+# canonical artifacts).  Prefer the local copy when both exist.
+_LOCAL_OUTROOT = HERE / "outputs"
+_REPO_OUTROOT  = HERE.parent / "outputs"
+OUTROOT = _REPO_OUTROOT   # kept for back-compat
 FIGDIR = HERE / "figures"
+
+def _resolve(rel: str) -> Path:
+    """Resolve outputs/<rel>, preferring manuscript/outputs/ if present."""
+    local = _LOCAL_OUTROOT / rel
+    repo  = _REPO_OUTROOT  / rel
+    return local if local.exists() else repo
 
 FIGURES = {
     # Selectivity exemplar (seed 0 rect cross-section).  This figure is
     # referenced as-is rather than composed from JSON, so it lives in
-    # the copy step, not in make_figures.py.
-    OUTROOT / "selectivity_sweep_phase3_manuscript" / "fig_seed_0000_rect_xsection.png":
+    # the copy step, not in make_figures.py.  _resolve() picks the
+    # manuscript-local outputs/ copy if present, otherwise the repo's.
+    _resolve("selectivity_sweep_phase3_manuscript/fig_seed_0000_rect_xsection.png"):
         FIGDIR / "fig_seed_0000_rect_xsection.png",
 }
 

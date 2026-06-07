@@ -22,7 +22,19 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 HERE = Path(__file__).resolve().parent
-OUTROOT = HERE.parent / "outputs"
+# Output search path: when sweep data is refreshed from the cluster we
+# drop the new JSONs into manuscript/outputs/ so the manuscript figures
+# pick them up without overwriting the original repo outputs/.
+# Look in manuscript/outputs/<subdir>/ first; fall back to ../outputs/.
+_LOCAL_OUTROOT = HERE / "outputs"
+_REPO_OUTROOT  = HERE.parent / "outputs"
+def _outdir(subdir: str) -> Path:
+    """Resolve outputs subdir, preferring the manuscript-local copy."""
+    local = _LOCAL_OUTROOT / subdir
+    repo  = _REPO_OUTROOT  / subdir
+    return local if local.exists() else repo
+
+OUTROOT = _REPO_OUTROOT   # kept for back-compat with old call sites
 FIGDIR = HERE / "figures"
 FIGDIR.mkdir(exist_ok=True)
 
@@ -120,96 +132,142 @@ def fig_validation_4models():
     print(f"  -> {out.name}")
 
 
-# ─── 2. extracellular-stimulation traces: all 4 models, jax vs NEURON overlay ──
+# ─── 2. trace agreement: extracellular AND intracellular, all 4 models ────────
 def fig_traces_4models():
-    """2-row × 4-column: stimulus pulse (top) + Vm response (bottom).
+    """4-row × 4-column: stim + Vm for extracellular and intracellular.
 
-    Shows extracellular stimulation rather than direct intracellular
-    current injection, because the manuscript is about extracellular
-    PNS — that is the regime in which the model has to agree with
-    NEURON for the selectivity-optimisation result to be credible.
-    Each column = one fibre model; per-model pulse width matches the
-    validation scripts (MRG / Sweeney: 0.1 ms; Sundt / Rattay: 0.2 ms).
+    The manuscript ultimately targets extracellular PNS, so the
+    extracellular case is the validation that matters for the
+    selectivity-optimisation story.  We also show the intracellular
+    case to document that the integrator reproduces NEURON in the
+    simpler regime where there is no extracellular forcing.
+
+    Layout per column (= one fibre model):
+      Row 0:  extracellular cathodic stimulus I_e(t) [mA]
+      Row 1:  V_m response to extracellular stim, jaxon vs NEURON
+      Row 2:  intracellular current injection I_i(t) [nA]
+      Row 3:  V_m response to intracellular injection, jaxon vs NEURON
+
+    Per-model pulse widths and amplitudes match validate_*.py.
     """
-    # Per-model extracellular pulse parameters (from validate_*.py)
     DELAY_MS = 1.0
-    PW_MS = {"mrg": 0.1, "sweeney": 0.1, "sundt": 0.2, "rattay": 0.2}
+    # Extracellular pulse widths
+    PW_E_MS = {"mrg": 0.1, "sweeney": 0.1, "sundt": 0.2, "rattay": 0.2}
+    # Intracellular: pulse widths + amplitudes (nA)
+    PW_I_MS = {"mrg": 0.1, "sweeney": 0.1, "sundt": 0.2, "rattay": 0.2}
+    AMP_I_NA = {"mrg": 1.0, "sweeney": 3.0, "sundt": 0.5, "rattay": 0.5}
 
     fig, axes = plt.subplots(
-        2, 4, figsize=(12, 4.2),
-        gridspec_kw={"height_ratios": [1, 3], "hspace": 0.15, "wspace": 0.28},
+        4, 4, figsize=(12, 8.0),
+        gridspec_kw={"height_ratios": [1, 3, 1, 3],
+                     "hspace": 0.18, "wspace": 0.30},
         sharex="col",
     )
 
     for col, model in enumerate(MODELS):
-        p = OUTROOT / f"{model}_validation/data_{model}_traces.json"
+        p = _outdir(f"{model}_validation") / f"data_{model}_traces.json"
         if not p.exists():
             continue
         tr = json.loads(p.read_text())
         clr = COLORS[model]
-
-        t_jax = np.array(tr["t_extra_jax"])
-        vm_jax = np.array(tr["vm_extra_jax"])
-        t_nrn = np.array(tr["t_extra_nrn"])
-        vm_nrn = np.array(tr["vm_extra_nrn"])
-        amp = float(tr["amp_extra_mA"])
-        thr = float(tr["threshold_extra_mA"])
         D = float(tr["diameter"])
 
-        # Centre-node trace
-        c = vm_jax.shape[1] // 2 if vm_jax.ndim > 1 else None
-        v_jax = vm_jax[:, c] if c is not None else vm_jax
-        c2 = vm_nrn.shape[1] // 2 if vm_nrn.ndim > 1 else None
-        v_nrn = vm_nrn[:, c2] if c2 is not None else vm_nrn
+        # ───── Extracellular block ────────────────────────────────────────────
+        t_jax_e  = np.array(tr["t_extra_jax"])
+        vm_jax_e = np.array(tr["vm_extra_jax"])
+        t_nrn_e  = np.array(tr["t_extra_nrn"])
+        vm_nrn_e = np.array(tr["vm_extra_nrn"])
+        amp_e = float(tr["amp_extra_mA"])
+        thr_e = float(tr["threshold_extra_mA"])
+        v_jax_e = vm_jax_e[:, vm_jax_e.shape[1] // 2] if vm_jax_e.ndim > 1 else vm_jax_e
+        v_nrn_e = vm_nrn_e[:, vm_nrn_e.shape[1] // 2] if vm_nrn_e.ndim > 1 else vm_nrn_e
 
-        # ── Top: rectangular cathodic stimulus ────────────────────────────────
-        ax_stim = axes[0, col]
-        pw = PW_MS[model]
-        t_stim = np.linspace(0, t_jax[-1], 2000)
-        stim_mA = np.where(
-            (t_stim >= DELAY_MS) & (t_stim < DELAY_MS + pw), amp, 0.0
-        )
-        ax_stim.fill_between(t_stim, 0, stim_mA, color=clr, alpha=0.75, lw=0)
-        ax_stim.axhline(0, color="black", lw=0.4, alpha=0.6)
-        ax_stim.axhline(thr, color="grey", lw=0.8, ls=":", alpha=0.8)
-        ax_stim.set_title(f"{MODEL_LABEL[model]}  $D={D:g}\\,\\mu$m", color=clr,
-                          fontsize=10, pad=4)
-        # Set ylim symmetric so the cathodic dip + threshold both visible
-        ymin = min(amp, thr) * 1.15
-        ax_stim.set_ylim(ymin, abs(ymin) * 0.12)
+        ax_s = axes[0, col]
+        pw_e = PW_E_MS[model]
+        t_stim_e = np.linspace(0, t_jax_e[-1], 2000)
+        stim_e = np.where((t_stim_e >= DELAY_MS) & (t_stim_e < DELAY_MS + pw_e),
+                          amp_e, 0.0)
+        ax_s.fill_between(t_stim_e, 0, stim_e, color=clr, alpha=0.75, lw=0)
+        ax_s.axhline(0,      color="black", lw=0.4, alpha=0.6)
+        ax_s.axhline(thr_e,  color="grey",  lw=0.8, ls=":", alpha=0.8)
+        ax_s.set_title(f"{MODEL_LABEL[model]}  $D={D:g}\\,\\mu$m",
+                       color=clr, fontsize=10, pad=4)
+        ymin = min(amp_e, thr_e) * 1.15
+        ax_s.set_ylim(ymin, abs(ymin) * 0.12)
         if col == 0:
-            ax_stim.set_ylabel("$I_e$ (mA)", fontsize=8)
-        ax_stim.tick_params(axis="y", labelsize=7)
-        # Annotate amp + threshold on the stimulus panel
-        ax_stim.text(0.97, 0.08,
-                     f"amp = {amp:.2f} mA\nthr = {thr:.2f} mA",
-                     transform=ax_stim.transAxes, ha="right", va="bottom",
-                     fontsize=6, family="DejaVu Sans Mono",
-                     bbox=dict(boxstyle="round,pad=0.18", fc="white",
-                               ec="grey", lw=0.4))
+            ax_s.set_ylabel("$I_e$ (mA)\nextracellular", fontsize=8)
+        ax_s.tick_params(axis="y", labelsize=7)
+        ax_s.text(0.97, 0.08,
+                  f"amp = {amp_e:.2f} mA\nthr = {thr_e:.2f} mA",
+                  transform=ax_s.transAxes, ha="right", va="bottom",
+                  fontsize=6, family="DejaVu Sans Mono",
+                  bbox=dict(boxstyle="round,pad=0.18", fc="white",
+                            ec="grey", lw=0.4))
 
-        # ── Bottom: Vm at centre node, jaxon vs NEURON overlay ────────────────
-        ax = axes[1, col]
-        ax.plot(t_nrn, v_nrn, "k--", lw=1.4, alpha=0.85, label="NEURON")
-        ax.plot(t_jax, v_jax, "-", color=clr, lw=1.4, label="jaxon")
-        ax.set_xlabel("time (ms)", fontsize=8)
+        ax_v = axes[1, col]
+        ax_v.plot(t_nrn_e, v_nrn_e, "k--", lw=1.4, alpha=0.85, label="NEURON")
+        ax_v.plot(t_jax_e, v_jax_e, "-",   color=clr, lw=1.4, label="jaxon")
         if col == 0:
-            ax.set_ylabel("$V_m$ at centre node (mV)", fontsize=8)
-        ax.tick_params(axis="both", labelsize=7)
-        ax.legend(loc="upper right", frameon=False, fontsize=7)
-        peak_diff_mV = float(
-            np.max(np.abs(np.interp(t_jax, t_nrn, v_nrn) - v_jax))
+            ax_v.set_ylabel("$V_m$ at centre node (mV)", fontsize=8)
+        ax_v.tick_params(axis="both", labelsize=7)
+        ax_v.legend(loc="upper right", frameon=False, fontsize=7)
+        peak_diff_e = float(
+            np.max(np.abs(np.interp(t_jax_e, t_nrn_e, v_nrn_e) - v_jax_e))
         )
-        ax.text(0.04, 0.05, f"$\\Delta V_m^{{peak}}={peak_diff_mV:.2f}$ mV",
-                transform=ax.transAxes, fontsize=7,
-                bbox=dict(boxstyle="round,pad=0.2", fc="white",
-                          ec="grey", lw=0.4))
+        ax_v.text(0.04, 0.05, f"$\\Delta V_m^{{peak}}={peak_diff_e:.2f}$ mV",
+                  transform=ax_v.transAxes, fontsize=7,
+                  bbox=dict(boxstyle="round,pad=0.2", fc="white",
+                            ec="grey", lw=0.4))
 
-    plt.suptitle(
-        "Response to a single extracellular cathodic pulse: jaxon vs NEURON",
-        fontsize=11, fontweight="bold", y=0.99,
+        # ───── Intracellular block ────────────────────────────────────────────
+        t_jax_i  = np.array(tr["t_intra_jax"])
+        vm_jax_i = np.array(tr["vm_intra_jax"])
+        t_nrn_i  = np.array(tr["t_intra_nrn"])
+        vm_nrn_i = np.array(tr["vm_intra_nrn"])
+        v_jax_i = vm_jax_i[:, vm_jax_i.shape[1] // 2] if vm_jax_i.ndim > 1 else vm_jax_i
+        v_nrn_i = vm_nrn_i[:, vm_nrn_i.shape[1] // 2] if vm_nrn_i.ndim > 1 else vm_nrn_i
+
+        ax_s2 = axes[2, col]
+        pw_i = PW_I_MS[model]
+        amp_i = AMP_I_NA[model]
+        t_stim_i = np.linspace(0, t_jax_i[-1], 2000)
+        stim_i = np.where((t_stim_i >= DELAY_MS) & (t_stim_i < DELAY_MS + pw_i),
+                          amp_i, 0.0)
+        ax_s2.fill_between(t_stim_i, 0, stim_i, color=clr, alpha=0.55, lw=0)
+        ax_s2.axhline(0, color="black", lw=0.4, alpha=0.6)
+        ax_s2.set_ylim(-amp_i * 0.12, amp_i * 1.15)
+        if col == 0:
+            ax_s2.set_ylabel("$I_i$ (nA)\nintracellular", fontsize=8)
+        ax_s2.tick_params(axis="y", labelsize=7)
+        ax_s2.text(0.97, 0.92,
+                   f"amp = {amp_i:.1f} nA",
+                   transform=ax_s2.transAxes, ha="right", va="top",
+                   fontsize=6, family="DejaVu Sans Mono",
+                   bbox=dict(boxstyle="round,pad=0.18", fc="white",
+                             ec="grey", lw=0.4))
+
+        ax_v2 = axes[3, col]
+        ax_v2.plot(t_nrn_i, v_nrn_i, "k--", lw=1.4, alpha=0.85, label="NEURON")
+        ax_v2.plot(t_jax_i, v_jax_i, "-",   color=clr, lw=1.4, label="jaxon")
+        ax_v2.set_xlabel("time (ms)", fontsize=8)
+        if col == 0:
+            ax_v2.set_ylabel("$V_m$ at centre node (mV)", fontsize=8)
+        ax_v2.tick_params(axis="both", labelsize=7)
+        ax_v2.legend(loc="upper right", frameon=False, fontsize=7)
+        peak_diff_i = float(
+            np.max(np.abs(np.interp(t_jax_i, t_nrn_i, v_nrn_i) - v_jax_i))
+        )
+        ax_v2.text(0.04, 0.05, f"$\\Delta V_m^{{peak}}={peak_diff_i:.2f}$ mV",
+                   transform=ax_v2.transAxes, fontsize=7,
+                   bbox=dict(boxstyle="round,pad=0.2", fc="white",
+                             ec="grey", lw=0.4))
+
+    fig.suptitle(
+        "Response to extracellular cathodic stimulation (rows 1–2) and "
+        "intracellular current injection (rows 3–4): jaxon vs NEURON",
+        fontsize=11, fontweight="bold", y=0.995,
     )
-    plt.tight_layout(rect=[0, 0, 1, 0.94])
+    plt.tight_layout(rect=[0, 0, 1, 0.97])
     out = FIGDIR / "fig_traces_4models.png"
     fig.savefig(out)
     plt.close(fig)
@@ -377,61 +435,99 @@ def fig_scaling_allmodels():
     print(f"  -> {out.name}")
 
 
-# ─── 5. selectivity: per-seed summary across all completed Phase 3 seeds ──────
+# ─── 5. selectivity: violin distribution across all completed Phase 3 seeds ───
 def fig_selectivity_summary():
-    """Per-seed SI bar chart from completed Phase 3 seeds."""
-    seeds = sorted((OUTROOT / "selectivity_sweep_phase3_manuscript").glob("data_seed_*.json"))
+    """SI distribution as violins (baseline / rect / wave), plus a
+    rect-vs-wave per-seed scatter that shows whether the warm-started
+    waveform stage refines or destabilises the rectangular optimum.
+
+    Reads from manuscript/outputs/.../data_seed_*.json (preferred) or
+    falls back to the original repo outputs/.  Currently sourced from
+    a single fibre model (MRG @ D=5.7 µm); the across-model violin —
+    one violin per implemented model — is a natural extension once the
+    matching sweeps for Sundt, Sweeney and Rattay are added.
+    """
+    sweep_dir = _outdir("selectivity_sweep_phase3_manuscript")
+    seeds = sorted(sweep_dir.glob("data_seed_*.json"))
     if not seeds:
         return
     data = []
     for p in seeds:
         d = json.loads(p.read_text())
         data.append({
-            "seed": d["seed"],
-            "si_baseline": d["si_baseline"],
-            "rect": d["rect"]["final_si"],
-            "wave": d["waveform"]["final_si"],
-            "loss": d["rect"]["final_loss"],
+            "seed":     d["seed"],
+            "baseline": d["si_baseline"],
+            "rect":     d["rect"]["final_si"],
+            "wave":     d["waveform"]["final_si"],
         })
     n = len(data)
-    fig, axes = plt.subplots(1, 2, figsize=(11, 3.8))
-    seeds = [r["seed"] for r in data]
-    rect = np.array([r["rect"] for r in data])
-    wave = np.array([r["wave"] for r in data])
-    base = np.array([r["si_baseline"] for r in data])
+    rect = np.array([r["rect"]     for r in data])
+    wave = np.array([r["wave"]     for r in data])
+    base = np.array([r["baseline"] for r in data])
 
-    # Panel A: per-seed bar comparison
-    x = np.arange(n)
-    w = 0.28
-    axes[0].bar(x - w, base, w, color="#cccccc", label=f"baseline (mean {base.mean():.2f})")
-    axes[0].bar(x,     rect, w, color="#1f77b4", label=f"rect LBFGS (mean {rect.mean():.3f})")
-    axes[0].bar(x + w, wave, w, color="#2ca02c", label=f"wave Adam (mean {wave.mean():.3f})")
-    axes[0].axhline(0.95, color="red", lw=0.8, ls="--", alpha=0.6, label="SI=0.95")
-    axes[0].set_xticks(x)
-    axes[0].set_xticklabels([f"s{s}" for s in seeds], fontsize=8)
-    axes[0].set_xlabel("Phase 3 seed")
-    axes[0].set_ylabel("selectivity index")
-    axes[0].set_title(f"Per-seed selectivity ({n}/100 completed)")
-    axes[0].set_ylim(0, 1.05)
-    axes[0].legend(loc="lower right", fontsize=7, frameon=False)
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4.2))
 
-    # Panel B: rect SI distribution + LBFGS loss trajectories
-    axes[1].hist(rect, bins=np.linspace(0.85, 1.02, 18), color="#1f77b4", alpha=0.85,
-                 edgecolor="black", lw=0.4)
-    axes[1].axvline(rect.mean(), color="red", lw=1.2, ls="--",
-                    label=f"mean {rect.mean():.3f}")
-    axes[1].axvline(np.median(rect), color="black", lw=1.0, ls=":",
-                    label=f"median {np.median(rect):.3f}")
-    axes[1].set_xlabel("rect SI (LBFGS multi-start)")
-    axes[1].set_ylabel("count")
-    axes[1].set_title(f"rect SI distribution (n={n} seeds)")
-    axes[1].legend(loc="upper left", fontsize=8, frameon=False)
-    axes[1].set_xlim(0.85, 1.02)
+    # ── Panel A: violin distribution of baseline / rect / wave SI ─────────────
+    ax = axes[0]
+    groups = [base, rect, wave]
+    labels = [
+        f"baseline\n(mean {base.mean():.2f})",
+        f"rect LBFGS\n(mean {rect.mean():.3f},\nmedian {np.median(rect):.3f})",
+        f"wave Adam\n(mean {wave.mean():.3f},\nmedian {np.median(wave):.3f})",
+    ]
+    pal = ["#cccccc", "#1f77b4", "#2ca02c"]
+    parts = ax.violinplot(groups, positions=[0, 1, 2], widths=0.85,
+                          showmeans=False, showmedians=False, showextrema=False)
+    for body, c in zip(parts["bodies"], pal):
+        body.set_facecolor(c)
+        body.set_edgecolor("black")
+        body.set_alpha(0.7)
+        body.set_linewidth(0.6)
+    # Overlay individual seed points (jitter) + median bars
+    rng = np.random.default_rng(0)
+    for i, (g, c) in enumerate(zip(groups, pal)):
+        ax.scatter(i + rng.uniform(-0.1, 0.1, size=len(g)), g,
+                   s=14, color="black", alpha=0.45, edgecolors="none", zorder=3)
+        med = float(np.median(g))
+        ax.hlines(med, i - 0.35, i + 0.35, color="red", lw=1.8, zorder=4)
+    ax.axhline(0.95, color="red", lw=0.8, ls="--", alpha=0.55,
+               label="acceptance criterion (SI = 0.95)")
+    ax.set_xticks([0, 1, 2])
+    ax.set_xticklabels(labels, fontsize=8)
+    ax.set_ylabel("selectivity index")
+    ax.set_ylim(-0.05, 1.10)
+    ax.set_title(f"SI distribution (n = {n} seeds, MRG $D=5.7$ $\\mu$m)",
+                 fontsize=10)
+    ax.legend(loc="lower right", fontsize=7, frameon=False)
 
-    plt.suptitle(f"Selectivity optimisation across {n} Hussain-style nerve "
-                 "realisations (single-diameter $D=5.7$ $\\mu$m)",
-                 fontsize=11, fontweight="bold")
-    plt.tight_layout(rect=[0, 0, 1, 0.93])
+    # ── Panel B: rect vs wave per-seed scatter (diagonal = no change) ─────────
+    ax2 = axes[1]
+    ax2.plot([0, 1.05], [0, 1.05], "k:", lw=0.8, alpha=0.5,
+             label="wave = rect (no change)")
+    n_improved = int(np.sum(wave > rect + 0.005))
+    n_preserved = int(np.sum(np.abs(wave - rect) <= 0.005))
+    n_regressed = int(np.sum(wave < rect - 0.005))
+    ax2.scatter(rect, wave, s=28, c="#2ca02c", edgecolors="black", lw=0.4,
+                alpha=0.85, zorder=3)
+    ax2.set_xlabel("rect LBFGS SI")
+    ax2.set_ylabel("warm-started wave Adam SI")
+    ax2.set_xlim(-0.05, 1.05)
+    ax2.set_ylim(-0.05, 1.10)
+    ax2.set_title(
+        f"wave vs rect per seed   "
+        f"(improved: {n_improved}, preserved: {n_preserved}, "
+        f"regressed: {n_regressed})",
+        fontsize=9,
+    )
+    ax2.legend(loc="upper left", fontsize=7, frameon=False)
+    ax2.set_aspect("equal", adjustable="box")
+
+    fig.suptitle(
+        f"Selectivity optimisation across {n} randomised Hussain-style "
+        "nerve realisations (MRG, $D=5.7$ $\\mu$m)",
+        fontsize=11, fontweight="bold", y=0.995,
+    )
+    plt.tight_layout(rect=[0, 0, 1, 0.94])
     out = FIGDIR / "fig_selectivity_summary.png"
     fig.savefig(out)
     plt.close(fig)

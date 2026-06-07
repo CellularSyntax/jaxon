@@ -77,7 +77,17 @@ from jaxfibers.optim.optimizer import (
 # of autodiff backward, so no remat planner pathology and no autodiff
 # memory blowup (compile drops from 25 min to ~2 min on A16).
 RECT_OPTIMIZER = os.environ.get("OPTIMIZER", "lbfgs").lower()
-from jaxfibers.fibers.mrg import section_centers_um
+
+# Fibre model dispatch.  Default 'mrg' uses the original (myelinated) pipeline;
+# 'sundt' / 'sweeney' / 'rattay' route through the generic batched solver in
+# jaxfibers.stim.batch_solve_generic.  When non-MRG, the optimiser's
+# batch_integrate_m_max{,_fd} are monkey-patched at startup (per-seed) so the
+# 7 call sites inside the optimiser don't need to know which model is running.
+FIBER_MODEL = os.environ.get("FIBER_MODEL", "mrg").lower()
+
+# Multichannel field's section_centers_um shim auto-dispatches on the geometry
+# class, so we don't need a model-specific import here any more.
+from jaxfibers.stim.multichannel_field import section_centers_um
 from experiments_v2.utils import ensure_dir, plot_seed_summary, plot_seed_cross_section
 
 # Output dir can be redirected per-phase by the manuscript sbatch via
@@ -217,22 +227,55 @@ def _build_seed_inputs(seed: int, verbose: bool = True) -> dict:
     )
 
     if verbose:
-        print(f"{label} Precomputing fields ...", flush=True)
+        print(f"{label} Precomputing fields (model={FIBER_MODEL}) ...", flush=True)
     Ve_unit, node_indices, geoms = precompute_ve_unit(
-        nerve_geom=nerve, n_nodes=N_NODES, contact_xyz_um=contact_xyz
+        nerve_geom=nerve, n_nodes=N_NODES, contact_xyz_um=contact_xyz,
+        model=FIBER_MODEL,
     )
     # Center cuff z at fiber midpoint
     mid_comp = node_indices[0, len(node_indices[0]) // 2]
     mid_z    = float(np.array(section_centers_um(geoms[0]))[mid_comp])
     contact_xyz[:, 2] = mid_z
     Ve_unit, node_indices, geoms = precompute_ve_unit(
-        nerve_geom=nerve, n_nodes=N_NODES, contact_xyz_um=contact_xyz
+        nerve_geom=nerve, n_nodes=N_NODES, contact_xyz_um=contact_xyz,
+        model=FIBER_MODEL,
     )
 
     if verbose:
         print(f"{label} Building solver statics ...", flush=True)
-    fs_batch = stack_fiber_statics(geoms, DT)
-    s0_batch = initial_states_batch(geoms)
+    if FIBER_MODEL == "mrg":
+        fs_batch = stack_fiber_statics(geoms, DT)
+        s0_batch = initial_states_batch(geoms)
+    else:
+        # Non-MRG path: monkey-patch the optimiser's integrators so its 7
+        # call sites get dispatched to the generic per-model solvers.  The
+        # opaque fs_batch / s0_batch placeholders below satisfy the
+        # optimiser's _tile_fiber_statics / _tile_states helpers; the
+        # patched integrators ignore them and use the per-fibre closures
+        # captured at registration time.
+        from jaxfibers.stim import batch_solve_generic as _bsg
+        from jaxfibers.stim.batch_solve import FiberStatics
+        import jaxfibers.optim.optimizer as _opt
+        _opt.batch_integrate_m_max = _bsg.make_batch_integrate_m_max_factory(
+            FIBER_MODEL, geoms, DT,
+        )
+        _opt.batch_integrate_m_max_fd = _bsg.make_batch_integrate_m_max_fd_factory(
+            FIBER_MODEL, geoms, DT,
+        )
+        n_comp = geoms[0].n_comp
+        # Tilable-compatible dummy: same shape per field as the MRG one
+        # would have, just filled with zeros (or False for is_node).
+        _z   = jnp.zeros((N_FIBERS, n_comp), dtype=jnp.float64)
+        _z_b = jnp.zeros((N_FIBERS, n_comp), dtype=jnp.bool_)
+        _z2  = jnp.zeros((N_FIBERS, n_comp, 2, 2), dtype=jnp.float64)
+        fs_batch = FiberStatics(
+            Cm_dt=_z, Cmy_dt=_z, gmy=_z, A_in_cm2=_z,
+            is_node=_z_b,
+            Gi_diag=_z, Gp_diag=_z,
+            Up=_z2, Low=_z2,
+            g_pas=_z,
+        )
+        s0_batch = (_z, _z, _z, _z)   # (M, H, MP, S) shape — content unused
 
     N_STEPS = int(T_STOP / DT)
     t_grid  = (np.arange(N_STEPS) + 1) * DT

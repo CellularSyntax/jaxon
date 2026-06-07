@@ -15,8 +15,41 @@ import jax
 import jax.numpy as jnp
 
 from jaxfibers.stim.extracellular import point_source_potentials_mV, point_source_potentials_mV_jax
-from jaxfibers.fibers.mrg import section_centers_um, _mrg_geometry, _mrg_interp_geometry
+from jaxfibers.fibers.mrg     import section_centers_um as _mrg_centers
+from jaxfibers.fibers.mrg     import _mrg_geometry, _mrg_interp_geometry
+from jaxfibers.fibers.sundt   import section_centers_um as _sundt_centers
+from jaxfibers.fibers.sundt   import _sundt_geometry
+from jaxfibers.fibers.sweeney import section_centers_um as _sweeney_centers
+from jaxfibers.fibers.sweeney import _sweeney_geometry
+from jaxfibers.fibers.rattay  import section_centers_um as _rattay_centers
+from jaxfibers.fibers.rattay  import _rattay_geometry
 from jaxfibers.nerve.geometry import NerveGeometry
+
+
+# Model dispatch for cross-model selectivity sweeps. Each entry maps
+# the model name (lowercase) to (geometry_factory, centers_fn). The
+# geometry factory takes (diameter, n_nodes) and returns a *Geometry
+# dataclass; centers_fn(geom) returns the per-compartment z positions
+# in µm. Use the same `section_centers_um` name everywhere so the
+# call sites here don't have to dispatch on model.
+_MODEL_FACTORIES = {
+    "mrg":     (lambda d, n: _mrg_geometry(d, n),       _mrg_centers),
+    "mrg_interp": (lambda d, n: _mrg_interp_geometry(d, n), _mrg_centers),
+    "sundt":   (lambda d, n: _sundt_geometry(d, n, 8.333), _sundt_centers),
+    "sweeney": (lambda d, n: _sweeney_geometry(d, n),  _sweeney_centers),
+    "rattay":  (lambda d, n: _rattay_geometry(d, n, 8.333), _rattay_centers),
+}
+
+# Default for back-compat: callers that don't pass `model=` get MRG.
+def section_centers_um(geom):
+    """Back-compat shim: returns the per-comp z centers for any
+    supported model.  Dispatches on the geometry's class name."""
+    cls = type(geom).__name__
+    if cls == "MrgGeometry":      return _mrg_centers(geom)
+    if cls == "SundtGeometry":    return _sundt_centers(geom)
+    if cls == "SweeneyGeometry":  return _sweeney_centers(geom)
+    if cls == "RattayGeometry":   return _rattay_centers(geom)
+    raise TypeError(f"section_centers_um: unknown geom class {cls!r}")
 
 
 def make_ring_cuff_positions(
@@ -45,6 +78,7 @@ def precompute_ve_unit(
     contact_xyz_um: np.ndarray,
     sigma_S_m: float = 0.3,
     use_interp: bool = False,
+    model: str = "mrg",
 ) -> tuple[np.ndarray, np.ndarray, list]:
     """Pre-compute unit extracellular potential for every (contact, fiber, compartment).
 
@@ -77,17 +111,25 @@ def precompute_ve_unit(
     K = len(contact_xyz_um)
     n_fibers = nerve_geom.n_fibers
 
+    # Resolve the per-model geometry factory.  use_interp=True forces the
+    # MRG interpolated variant regardless of `model`; otherwise model="mrg"
+    # uses the discrete MRG table.
+    key = "mrg_interp" if use_interp else model.lower()
+    if key not in _MODEL_FACTORIES:
+        raise ValueError(
+            f"precompute_ve_unit: unknown model {model!r}. "
+            f"Supported: {sorted(_MODEL_FACTORIES)}"
+        )
+    geom_factory, centers_fn = _MODEL_FACTORIES[key]
+
     geoms = []
     all_centers = []
     all_node_idx = []
     for f in range(n_fibers):
         d = float(nerve_geom.fiber_diam[f])
-        if use_interp:
-            geom = _mrg_interp_geometry(d, n_nodes)
-        else:
-            geom = _mrg_geometry(d, n_nodes)
+        geom = geom_factory(d, n_nodes)
         geoms.append(geom)
-        centers = np.array(section_centers_um(geom))
+        centers = np.array(centers_fn(geom))
         all_centers.append(centers)
         all_node_idx.append([i for i, isn in enumerate(geom.is_node) if isn])
 

@@ -198,7 +198,7 @@ the expectation that GPU vmap-batching will outperform CPU-parallel
 NEURON as the fiber count grows.  We benchmarked seven axon models
 (the four primary plus MRG with interpolated parameters and two
 Schild variants~\cite{schild1994}) at $N \in \{1, 10, 100, 1000,
-10\,000\}$ fibers on a single NVIDIA A100 GPU, against
+10\,000\}$ fibers on a single NVIDIA A16 GPU, against
 \texttt{pyfibers} running 8-thread CPU-parallel on a matched Xeon
 host.  Figure~\ref{fig:scaling} reports the per-model wall time
 (panel A) and the resulting jaxon-vs-pyfibers speedup (panel B);
@@ -227,7 +227,7 @@ CPU wall time.
   \centering
   \caption{Wall time per forward simulation (in seconds) and speedup
     of jaxon over \texttt{pyfibers} at representative fiber counts.
-    jaxon runs on a single NVIDIA A100 GPU; \texttt{pyfibers} runs
+    jaxon runs on a single NVIDIA A16 GPU; \texttt{pyfibers} runs
     8-thread CPU-parallel.  All timings exclude JAX compile time
     (one-time, amortised over each batched run).  Dashes indicate
     $N=10\,000$ runs not completed by \texttt{pyfibers} within the
@@ -254,11 +254,11 @@ CPU wall time.
 \begin{figure}[h]
   \centering
   \figmaybe[width=0.98\textwidth]{fig_scaling_allmodels.png}
-  \caption{Forward-pass throughput on a single NVIDIA A100 GPU as a
+  \caption{Forward-pass throughput on a single NVIDIA A16 GPU as a
     function of fiber count $N$ for all seven benchmarked models.
     \textbf{(a)} Absolute wall time per forward simulation.  Dashed
     coloured lines + open markers: \texttt{pyfibers} on 8-thread CPU.
-    Solid coloured lines: jaxon on a single A100.  jaxon's curves are
+    Solid coloured lines: jaxon on a single A16.  jaxon's curves are
     nearly flat up to $N \approx 100$ as the GPU is under-utilised,
     then scale linearly.  \texttt{pyfibers} scales linearly throughout.
     \textbf{(b)} Implied speedup; horizontal grey reference at

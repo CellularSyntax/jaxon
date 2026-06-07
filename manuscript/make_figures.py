@@ -278,7 +278,7 @@ def fig_scaling_allmodels():
     axes[1].set_ylabel("jaxon speedup vs pyfibers ($\\times$)")
     axes[1].set_title("Speedup")
     axes[1].legend(loc="upper left", fontsize=7, frameon=False)
-    plt.suptitle("Scaling on a single NVIDIA A100 GPU: jaxon vs pyfibers "
+    plt.suptitle("Scaling on a single NVIDIA A16 GPU: jaxon vs pyfibers "
                  "(8-thread CPU baseline)", fontsize=11, fontweight="bold")
     plt.tight_layout(rect=[0, 0, 1, 0.94])
     out = FIGDIR / "fig_scaling_allmodels.png"

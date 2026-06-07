@@ -49,8 +49,12 @@
 % emit a labelled placeholder box.  Lets the manuscript compile cleanly
 % before final figures have been generated (e.g. while Phase 3 sweep is
 % still running on the cluster).
+%
+% NOTE: \IfFileExists doesn't honour \graphicspath, so we look up the
+% file with the explicit figures/ prefix.  \includegraphics, in
+% contrast, DOES honour \graphicspath and is given the bare filename.
 \newcommand{\figmaybe}[2][width=0.85\textwidth]{%
-  \IfFileExists{#2}{\includegraphics[#1]{#2}}{%
+  \IfFileExists{figures/#2}{\includegraphics[#1]{#2}}{%
     \fbox{\parbox[c][5cm][c]{0.8\textwidth}{\centering\itshape
       Figure placeholder\\\texttt{\detokenize{#2}}\\(file not yet generated)}}%
   }%

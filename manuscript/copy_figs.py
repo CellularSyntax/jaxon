@@ -18,8 +18,19 @@ OUTROOT = HERE.parent / "outputs"
 FIGDIR = HERE / "figures"
 
 FIGURES = {
+    # Scaling benchmark.
     OUTROOT / "scaling" / "fig_scaling.png":
         FIGDIR / "fig_scaling.png",
+    # NEURON-validation analysis panels (one per model).
+    OUTROOT / "mrg_validation" / "fig_mrg_analysis.png":
+        FIGDIR / "fig_mrg_analysis.png",
+    OUTROOT / "sundt_validation" / "fig_sundt_analysis.png":
+        FIGDIR / "fig_sundt_analysis.png",
+    OUTROOT / "sweeney_validation" / "fig_sweeney_analysis.png":
+        FIGDIR / "fig_sweeney_analysis.png",
+    OUTROOT / "rattay_validation" / "fig_rattay_analysis.png":
+        FIGDIR / "fig_rattay_analysis.png",
+    # Selectivity exemplar (seed 0 rect cross-section).
     OUTROOT / "selectivity_sweep_phase3_manuscript" / "fig_seed_0000_rect_xsection.png":
         FIGDIR / "fig_seed_0000_rect_xsection.png",
 }

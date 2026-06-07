@@ -341,6 +341,15 @@ def task_sd_curves() -> dict:
 
 
 # ── Task 3: Conduction velocity ───────────────────────────────────────────────
+#
+# The Rattay unmyelinated AP peaks at ~-4 mV at the centre node (see
+# data_rattay_traces.json: vm_extra_jax range = [-75.9, -3.95]). The default
+# 0 mV crossing threshold used elsewhere in the validation suite is
+# therefore never met, so the CV detector returned NaN for every diameter
+# and Figure 1 showed an empty Rattay CV subplot. Use a lower crossing
+# threshold (CV_VTH_MV) that sits well above rest (~-77 mV) and well below
+# the AP peak (~-4 mV) so every diameter produces a valid arrival time.
+CV_VTH_MV = -30.0
 
 def _jax_cv(run_all, amp_mA, nodes, centers) -> float:
     pm = jnp.asarray(make_pulse_array("mono_c", 0.2, N_STEPS, DT, DELAY))
@@ -350,8 +359,8 @@ def _jax_cv(run_all, amp_mA, nodes, centers) -> float:
     onset   = int(DELAY / DT)
     k_ctr   = len(nodes) // 2
     k_end   = 2
-    t_ctr   = ap_arrival_time(Vm_all[:, nodes[k_ctr]], t_steps, 0.0, onset)
-    t_end   = ap_arrival_time(Vm_all[:, nodes[k_end]], t_steps, 0.0, onset)
+    t_ctr   = ap_arrival_time(Vm_all[:, nodes[k_ctr]], t_steps, CV_VTH_MV, onset)
+    t_end   = ap_arrival_time(Vm_all[:, nodes[k_end]], t_steps, CV_VTH_MV, onset)
     if not (np.isfinite(t_ctr) and np.isfinite(t_end)) or t_end == t_ctr:
         return float("nan")
     dist_um = abs(float(centers[nodes[k_ctr]]) - float(centers[nodes[k_end]]))
@@ -361,8 +370,8 @@ def _jax_cv(run_all, amp_mA, nodes, centers) -> float:
 def _pf_cv(nr, n_nodes, centers, nodes) -> float:
     onset = int(np.searchsorted(nr.t_ms, DELAY))
     k_ctr, k_end = n_nodes // 2, 2
-    t_ctr = ap_arrival_time(nr.vm_mV[k_ctr], nr.t_ms, 0.0, onset)
-    t_end = ap_arrival_time(nr.vm_mV[k_end], nr.t_ms, 0.0, onset)
+    t_ctr = ap_arrival_time(nr.vm_mV[k_ctr], nr.t_ms, CV_VTH_MV, onset)
+    t_end = ap_arrival_time(nr.vm_mV[k_end], nr.t_ms, CV_VTH_MV, onset)
     if not (np.isfinite(t_ctr) and np.isfinite(t_end)) or t_end == t_ctr:
         return float("nan")
     dist = abs(float(centers[nodes[k_ctr]]) - float(centers[nodes[k_end]]))

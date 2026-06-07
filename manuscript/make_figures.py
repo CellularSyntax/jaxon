@@ -98,10 +98,26 @@ def fig_validation_4models():
         D_arr = np.array([float(D) for D in D_cv])
         jax_cv = np.array([d_cv[D]["jax"] for D in D_cv])
         pyf_cv = np.array([d_cv[D]["pyfibers"] for D in D_cv])
-        ax.plot(D_arr, jax_cv, "-o", color=clr, lw=1.5, mfc=clr, mec=clr, ms=5, label="jaxon")
-        ax.plot(D_arr, pyf_cv, "s", mfc="none", mec="k", mew=1.0, ms=6, label="pyfibers (NEURON)")
-        ax.set_xlabel("diameter ($\\mu$m)"); ax.set_ylabel("CV (m/s)")
-        ax.set_title("conduction velocity")
+        valid = np.isfinite(jax_cv) | np.isfinite(pyf_cv)
+        if valid.any():
+            ax.plot(D_arr, jax_cv, "-o", color=clr, lw=1.5, mfc=clr, mec=clr,
+                    ms=5, label="jaxon")
+            ax.plot(D_arr, pyf_cv, "s", mfc="none", mec="k", mew=1.0, ms=6,
+                    label="pyfibers (NEURON)")
+            ax.set_xlabel("diameter ($\\mu$m)"); ax.set_ylabel("CV (m/s)")
+            ax.set_title("conduction velocity")
+        else:
+            # All-NaN: don't render an empty subplot; show a placeholder note.
+            ax.text(0.5, 0.5,
+                    "CV measurement\nunavailable\n(re-run validation)",
+                    ha="center", va="center", transform=ax.transAxes,
+                    fontsize=9, style="italic", color="grey",
+                    bbox=dict(boxstyle="round,pad=0.6", fc="white",
+                              ec="lightgrey", lw=0.6))
+            ax.set_xticks([]); ax.set_yticks([])
+            ax.set_title("conduction velocity")
+            for spine in ax.spines.values():
+                spine.set_visible(False)
 
         # Row 2: error histogram across ALL SD configs
         errs = []

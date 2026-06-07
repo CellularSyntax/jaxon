@@ -103,6 +103,12 @@ def run_rect_optimization(
     weights: np.ndarray | None = None,
     fd_eps: float = 5e-2,
     verbose: bool = True,
+    # Early-stopping knobs.  Adam-FD often reaches SI=1.0 within the first
+    # ~10 iters on the easy single-diameter problem, then runs another 90
+    # iters with no improvement — waste of cluster time.
+    early_stop_si:        float = 1.0,   # stop as soon as SI >= this value
+    early_stop_patience:  int   = 20,    # stop if best_loss hasn't moved for this many iters
+    early_stop_loss_tol:  float = 1e-5,  # "moved" means improved by > this
 ) -> dict:
     """Optimize per-contact rectangular pulse amplitudes via FD gradient.
 
@@ -218,6 +224,9 @@ def run_rect_optimization(
         print(f"  init amps=[{amp_init_str}] mA", flush=True)
         print("  [iter 0] XLA compile — first call only ...", flush=True)
 
+    stale_iters = 0
+    stopped_at  = n_steps
+    stop_reason = "max iters"
     for i in range(n_steps):
         t0 = time.time()
         (loss_val, acts_val), grads = _fd_step(amps)
@@ -225,26 +234,50 @@ def run_rect_optimization(
         amps = jnp.clip(optax.apply_updates(amps, updates), amp_clip[0], amp_clip[1])
 
         acts_np = np.array(acts_val)
+        si_now  = selectivity_index(acts_np, target_mask)
         history["loss"].append(float(loss_val))
         history["bce"].append(float(wbce(acts_val, tgt_j, w)))
-        history["si"].append(selectivity_index(acts_np, target_mask))
+        history["si"].append(si_now)
         history["amps"].append(np.array(amps))
         history["acts"].append(acts_np)
-        if float(loss_val) < best_loss:
+        if float(loss_val) < best_loss - early_stop_loss_tol:
             best_loss = float(loss_val)
             best_amps = np.array(amps)
+            stale_iters = 0
+        else:
+            stale_iters += 1
 
         if verbose and (i % max(1, n_steps // 20) == 0 or i == n_steps - 1):
             dt_ms   = (time.time() - t0) * 1000
             amp_str = "  ".join(f"{a:+.2f}" for a in np.array(amps))
             print(
                 f"  [{i:3d}/{n_steps}] loss={float(loss_val):.4f}  "
-                f"SI={history['si'][-1]:+.3f}  "
+                f"SI={si_now:+.3f}  "
                 f"amps=[{amp_str}] mA  dt={dt_ms:.0f}ms",
                 flush=True,
             )
 
-    return {"amps": best_amps, "history": history}
+        # Early-stop checks (after the iter is recorded).
+        if si_now >= early_stop_si:
+            stopped_at = i + 1
+            stop_reason = f"SI >= {early_stop_si:.3f}"
+            if verbose:
+                print(f"  [early stop @ iter {i}] {stop_reason}", flush=True)
+            break
+        if early_stop_patience > 0 and stale_iters >= early_stop_patience:
+            stopped_at = i + 1
+            stop_reason = f"no loss improvement for {stale_iters} iters"
+            if verbose:
+                print(f"  [early stop @ iter {i}] {stop_reason} "
+                      f"(best_loss={best_loss:.4f})", flush=True)
+            break
+
+    return {
+        "amps":        best_amps,
+        "history":     history,
+        "stopped_at":  stopped_at,
+        "stop_reason": stop_reason,
+    }
 
 
 # ─────────────────────────────────── LBFGS + multi-restart rect optimization ─

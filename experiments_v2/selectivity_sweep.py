@@ -134,6 +134,16 @@ DIVIDER_ANGLE_DEG  = _env_flt("DIVIDER_ANGLE_DEG", 0.0)
                                 # off-target by a straight line at
                                 # DIVIDER_ANGLE_DEG through the centre.
                                 # 0° = horizontal line, target = top half.
+                                # Only used when RANDOMIZE_DIVIDER=0.
+RANDOMIZE_DIVIDER  = _env_int("RANDOMIZE_DIVIDER", 1)
+                                # When 1 (default), the divider line angle
+                                # is drawn uniformly from [0, 180)° per seed
+                                # so the on/off-target split rotates randomly
+                                # across the sweep — covering every possible
+                                # cardiac-vs-non-cardiac fascicle layout
+                                # rather than baking in the 0° (top vs
+                                # bottom) split.  Set RANDOMIZE_DIVIDER=0 to
+                                # pin the divider at DIVIDER_ANGLE_DEG.
 
 # Mixed-diameter mode: when both are set (non-zero), target fascicles use
 # TARGET_DIAMETER_UM, off-target fascicles use OFFTARGET_DIAMETER_UM.
@@ -196,11 +206,20 @@ def _build_seed_inputs(seed: int, verbose: bool = True) -> dict:
     # H1-H6 human: random semicircle split).
     n_per_fasc = max(1, N_FIBERS // N_FASCICLES)
     mixed_diam = TARGET_DIAMETER_UM > 0 and OFFTARGET_DIAMETER_UM > 0
+    # Per-seed divider angle.  When RANDOMIZE_DIVIDER=1 (default), draw
+    # uniformly from [0, 180)° using the seed itself as RNG so the
+    # randomisation is reproducible.  Range stops at 180° because the
+    # divider line is symmetric (angle and angle+180° produce the same
+    # cut, swapping which half is "target").
+    if RANDOMIZE_DIVIDER:
+        divider_deg = float(np.random.default_rng(seed + 1_000_003).uniform(0.0, 180.0))
+    else:
+        divider_deg = DIVIDER_ANGLE_DEG
     nerve = make_hussain_style_nerve(
         n_fascicles=N_FASCICLES,
         n_fibers_per_fascicle=n_per_fasc,
         nerve_radius_um=NERVE_RADIUS_UM,
-        divider_angle_deg=DIVIDER_ANGLE_DEG,
+        divider_angle_deg=divider_deg,
         diameters=[FIBER_DIAMETER_UM],
         target_diameter_um=TARGET_DIAMETER_UM if mixed_diam else None,
         offtarget_diameter_um=OFFTARGET_DIAMETER_UM if mixed_diam else None,
@@ -219,7 +238,8 @@ def _build_seed_inputs(seed: int, verbose: bool = True) -> dict:
         print(f"{label} Nerve: {n_total} fibres in {len(nerve.fascicles)} "
               f"fascicles ({n_tgt_fasc} target / {n_off_fasc} off-target, "
               f"{n_per_fasc} fibres/fasc)  targets={n_tgt}/{n_total}  "
-              f"{diam_str}  divider={DIVIDER_ANGLE_DEG}°",
+              f"{diam_str}  divider={divider_deg:.1f}°"
+              f"{' (rand)' if RANDOMIZE_DIVIDER else ' (fixed)'}",
               flush=True)
 
     contact_xyz = make_ring_cuff_positions(

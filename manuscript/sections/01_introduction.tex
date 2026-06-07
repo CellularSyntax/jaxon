@@ -1,0 +1,100 @@
+\section{Introduction}
+\label{sec:intro}
+
+Peripheral nerve stimulation (PNS) underpins clinical therapies for a
+growing range of indications including drug-resistant epilepsy,
+treatment-resistant depression, rheumatoid arthritis, heart failure
+and chronic pain~\cite{howland2014vns,koopman2016vns,bonaz2017vagus}.
+Because peripheral nerves carry mixed populations of motor, sensory
+and autonomic fibers organised into anatomically distinct fascicles,
+the therapeutic question is rarely \emph{whether} to stimulate but
+\emph{which subset} of fibers to engage---a problem of
+\emph{selectivity}~\cite{aristovich2021,musselman2023}.  Two design
+levers drive selectivity: (i) the spatial distribution of cathodic
+and anodic charge across multi-contact cuff electrodes, and (ii) the
+temporal shape of the stimulus waveform, both of which couple
+nonlinearly to fiber threshold via the extracellular
+field and the active membrane dynamics of each
+fiber~\cite{rattay1989analysis,grill1995stimulus,wongsarnpigoon2010energy}.
+
+Computational evaluation of candidate stimulation patterns has
+become a standard component of PNS device development.  The dominant
+workflow links a finite-element solve for the extracellular potential
+$V_e(\mathbf{x})$ in a realistic nerve geometry to compartmental
+NEURON~\cite{hines1997neuron} simulations of canonical axon models---
+typically the McIntyre--Richardson--Grill (MRG) double-cable model for
+myelinated fibers~\cite{mcintyre2002} and the unmyelinated Sundt or
+Sweeney models for C-fibers~\cite{sweeney1987,sundt2015}---with
+parameter scanning to map activation thresholds across fascicles.
+Open-source pipelines such as ASCENT~\cite{musselman2021ascent} and
+pyfibers~\cite{hussain2024} have made this workflow accessible, but
+they share a fundamental cost: every candidate design requires
+\emph{thousands} of independent NEURON forward simulations, run
+serially over CPU cores, with no mechanism to compute the gradient of
+a selectivity objective with respect to design variables.  Optimisation
+over the resulting cost landscape is consequently restricted to
+gradient-free methods---grid sweeps, finite-difference
+approximations~\cite{hussain2024} or evolutionary
+search~\cite{aristovich2021}---scaling poorly to the high-dimensional
+spaces opened up by waveform shaping or many-contact cuffs.
+
+Recent work in differentiable simulation suggests an alternative.
+Frameworks such as \texttt{jaxley}~\cite{deistler2024} have shown that
+the Hodgkin--Huxley membrane equations and multi-compartment cable
+dynamics can be expressed in JAX~\cite{jax2018} so that gradients
+of arbitrary scalar functions of the membrane trajectory are
+available via reverse-mode automatic differentiation, all within a
+single GPU-vectorised forward pass.  In the central nervous system
+context, this has enabled gradient-based inference of channel
+densities and morphological parameters at unprecedented scale.
+For peripheral nerve fiber models, however, the differentiable
+implementation does not yet exist: the MRG double-cable model
+requires a coupled $(V_i, V_{\mathrm{px}})$ backward-Euler integration
+that is not provided out-of-the-box, the unmyelinated fiber models
+(Sundt, Sweeney, Rattay) each carry calibration-sensitive constants
+that must match NEURON's analytic solver to bench-marking
+accuracy~\cite{musselman2023}, and selectivity optimisation requires a
+batched-fiber forward solver that vectorises across hundreds of fibers
+on a single device.  Building the differentiable peripheral nerve
+forward solver therefore reduces to three engineering questions:
+(i) can the coupled MRG cable equations be expressed in JAX with
+sufficient numerical accuracy that the resulting simulator passes the
+same NEURON-comparison validation suite that ASCENT and pyfibers use;
+(ii) is the resulting solver competitive with NEURON on throughput
+when batched across hundreds of fibers; and (iii) does the
+differentiability enable selectivity optimisation strategies that
+the gradient-free pipelines cannot perform?
+
+In this paper we present \textbf{jaxon}, a JAX-based differentiable
+peripheral nerve fiber simulator that answers these three questions
+affirmatively.  Our contributions are:
+
+\begin{enumerate}
+  \item A JAX implementation of the MRG double-cable axon and the
+        Sundt, Sweeney and Rattay unmyelinated fiber models using a
+        coupled $(V_i, V_{\mathrm{px}})$ backward-Euler integrator,
+        validated against NEURON on strength--duration, conduction
+        velocity and intracellular-trace benchmarks for all four
+        models (Section~\ref{sec:results-validation}).
+  \item A batched forward solver that integrates $N$ fibers in
+        parallel via \texttt{jax.vmap} over a shared scan, yielding
+        a $\sim$\needdata{Y}$\times$ wall-time reduction over
+        \texttt{pyfibers} at $N=200$ on a single NVIDIA A100
+        (Section~\ref{sec:results-scaling}).
+  \item An end-to-end differentiable selectivity optimisation pipeline
+        that uses LBFGS multi-start over per-contact amplitudes for
+        rectangular pulses, and Adam over arbitrary
+        per-contact waveforms warm-started from the rectangular
+        optimum, demonstrated on $N=100$ randomised
+        multi-fascicle nerve realisations with a mean selectivity
+        index of \needdata{0.97 (Phase 3 placeholder)}
+        (Section~\ref{sec:results-selectivity}).
+\end{enumerate}
+
+We discuss the limits of the current implementation---most notably the
+plateau encountered when target and off-target fiber populations have
+very different diameters, where chronaxie-based waveform discrimination
+alone is insufficient to break the all-fibers-fire attractor---and
+outline the natural extensions to anatomically realistic FEM-derived
+$V_e$ fields and joint amplitude--position
+optimisation (Section~\ref{sec:discussion}).

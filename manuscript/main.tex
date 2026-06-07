@@ -1,0 +1,71 @@
+% ============================================================
+% jaxon — JNE manuscript master file
+% Class: iopart (Journal of Neural Engineering, IOP Publishing)
+% Build: latexmk -pdf main.tex   (or `make`)
+% ============================================================
+\documentclass[12pt]{iopart}
+
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{siunitx}
+\usepackage[hidelinks]{hyperref}
+\usepackage{xcolor}
+\usepackage[textsize=footnotesize,colorinlistoftodos]{todonotes}
+
+% Custom \todoyellow / \needdata for stubbing sections that block on
+% in-flight cluster runs (Phase 3 sweep results).  Strip all todonotes
+% with \listoftodos commented out + \presentationmode.
+\newcommand{\needdata}[1]{\todo[inline,color=yellow!40]{#1}}
+
+\graphicspath{{figures/}}
+
+\begin{document}
+
+\title{jaxon: differentiable peripheral nerve fiber simulation in JAX
+       for scalable selectivity optimisation}
+
+\author{Max Haberbusch}
+\address{Center for Medical Physics and Biomedical Engineering, Medical
+         University of Vienna, Vienna, Austria}
+\ead{max.haberbusch@meduniwien.ac.at}
+
+\begin{abstract}
+\input{abstract}
+\end{abstract}
+
+% J Neural Eng keywords: 3–5 words
+\noindent\textit{Keywords:} peripheral nerve stimulation, differentiable
+simulation, JAX, axon model, selectivity optimisation, neural engineering
+
+\submitto{\JNE}
+
+% ─── Body ──────────────────────────────────────────────────────────
+\input{sections/01_introduction}
+\input{sections/02_methods}
+\input{sections/03_results}
+\input{sections/04_discussion}
+
+% ─── Back matter ───────────────────────────────────────────────────
+\section*{Data and code availability}
+The full \texttt{jaxon} source code, validation harness, and
+reproduction scripts for every figure in this paper are available at
+\url{https://gitlab.meduniwien.ac.at/zmpbmt/cvd/jaxfibers} under the
+MIT licence.  All results in this paper were produced by the
+\texttt{experiments\_v2/} scripts in that repository at git tag
+\texttt{jne-submission} (to be assigned at submission).
+
+\section*{Acknowledgements}
+\needdata{Funding sources, compute infrastructure attribution (MedUni
+Vienna HPC, a100 / a16 partitions), collaborator acknowledgements.}
+
+\section*{ORCID iDs}
+\needdata{Insert ORCID.}
+
+\bibliographystyle{iopart-num}
+\bibliography{refs}
+
+% Comment out for camera-ready
+\listoftodos
+
+\end{document}

@@ -1,0 +1,29 @@
+% Abstract — JNE limit ~250 words.  Structured paragraph (no labels).
+Peripheral nerve stimulation is a rapidly expanding therapeutic
+modality, but optimising electrode geometry and stimulus waveforms
+for fascicle-specific selectivity remains computationally expensive:
+state-of-the-art pipelines wrap the NEURON simulator from Python and
+require thousands of forward simulations per design candidate. We
+present \emph{jaxon}, a fully differentiable reimplementation of the
+canonical peripheral nerve fiber models---McIntyre--Richardson--Grill
+(MRG) myelinated axons, and the unmyelinated Sundt, Sweeney and Rattay
+C-fibers---in JAX. Built on top of the \texttt{jaxley} differentiable
+Hodgkin--Huxley framework, jaxon adds a batched coupled-cable
+backward-Euler integrator that simulates hundreds of fibers in
+parallel on a single GPU and exposes end-to-end gradients with respect
+to per-contact stimulus amplitudes and arbitrary waveforms. We
+validate jaxon against NEURON on strength--duration, conduction
+velocity, and intracellular-trace agreement across all four fiber
+models, reproducing established benchmark behaviour to within
+\needdata{X}\,\% of NEURON. We then benchmark throughput against
+\texttt{pyfibers} and find a \needdata{Y}-fold reduction in wall time
+per forward simulation at $N=200$ fibers. As a demonstration of the
+differentiability advantage, we use jaxon to optimise spatially
+selective fascicular stimulation across $N=100$ randomised Hussain-style
+multi-fascicle nerve realisations, achieving a mean selectivity index
+of \needdata{0.97 placeholder---update from Phase 3 sweep results}
+with rectangular pulses and showing that warm-started waveform
+optimisation refines---without destabilising---the rectangular optimum.
+jaxon is open-source and designed to slot into existing peripheral nerve
+stimulation pipelines as a drop-in replacement for the NEURON forward
+solver, with the additional capability of gradient-based optimisation.

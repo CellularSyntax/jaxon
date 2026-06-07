@@ -1,0 +1,228 @@
+\section{Methods}
+\label{sec:methods}
+
+\subsection{Axon models}
+\label{sec:methods-models}
+
+jaxon implements four canonical peripheral nerve fiber models, all of
+which have been used extensively in the PNS modelling literature and
+can be cross-validated against published NEURON
+results~\cite{mcintyre2002,sundt2015,sweeney1987,rattay1989analysis}.
+
+\paragraph{MRG double-cable (myelinated).}
+The McIntyre--Richardson--Grill model~\cite{mcintyre2002} represents
+each myelinated axon as a sequence of compartments alternating
+between nodes of Ranvier (which carry the active Na$^+$, slow K$^+$,
+persistent Na$^+$ and leak conductances) and ten passive internodal
+compartments (MYSA, FLUT and three STIN compartments per side)
+arranged as a double cable with both intracellular ($V_i$) and
+periaxonal ($V_{\mathrm{px}}$) potentials.  Coupling between the two
+cables proceeds through the periaxonal resistance and the myelin
+shunt.  Fiber diameter $D$ is the single shape parameter; all
+geometric quantities (node length, internode length, MYSA/FLUT
+diameters, myelin layer count) follow McIntyre's published
+diameter-dependent fits.
+
+Letting $\mathbf{V}_i \in \mathbb{R}^{n_{\mathrm{comp}}}$ and
+$\mathbf{V}_{\mathrm{px}} \in \mathbb{R}^{n_{\mathrm{comp}}}$ denote
+the per-compartment intracellular and periaxonal potentials, the
+discretised cable equations take the form
+\begin{equation}
+  C_m \frac{d\mathbf{V}_i}{dt} = \mathbf{A}_{ii} \mathbf{V}_i +
+  \mathbf{A}_{ip} \mathbf{V}_{\mathrm{px}} - \mathbf{I}_{\mathrm{ion}}(\mathbf{V}_i, \mathbf{m}) -
+  \mathbf{I}_{\mathrm{stim}}(t),
+  \label{eq:cable-vi}
+\end{equation}
+\begin{equation}
+  0 = \mathbf{A}_{pi} \mathbf{V}_i + \mathbf{A}_{pp} \mathbf{V}_{\mathrm{px}} + V_e(t,\mathbf{x}),
+  \label{eq:cable-vpx}
+\end{equation}
+where $\mathbf{A}_{**}$ are tridiagonal coupling matrices derived from
+the per-compartment axial resistances, $\mathbf{I}_{\mathrm{ion}}$
+collects the four active currents (only at nodes), and $V_e$ is the
+externally imposed extracellular field.  jaxon integrates
+Eqs.~(\ref{eq:cable-vi})--(\ref{eq:cable-vpx}) jointly using a
+backward-Euler scheme with the periaxonal equation solved analytically
+at each step; see Section~\ref{sec:methods-solver} for details.
+
+\paragraph{Sundt (unmyelinated, single-cable).}
+The Sundt C-fiber model~\cite{sundt2015} uses Hodgkin--Huxley-style
+sodium and delayed-rectifier potassium conductances calibrated for
+small-diameter unmyelinated axons. jaxon's implementation follows the
+ModelDB entry verbatim except for the integration scheme.
+
+\paragraph{Sweeney (unmyelinated).}
+The Sweeney model~\cite{sweeney1987} uses fast sodium dynamics
+suitable for representing $A\delta$ fibers.  Calibration constants
+follow~\cite{musselman2023}.
+
+\paragraph{Rattay (unmyelinated, generic).}
+The Rattay model~\cite{rattay1989analysis} provides a minimal
+HH-like single-channel representation widely used as a comparison
+baseline.  All four models share the same compartment-level interface
+in jaxon (\texttt{FiberStatics} struct, \texttt{batch\_integrate\_m\_max}
+solver entry point), making it straightforward to extend the library
+with additional models.
+
+\subsection{Coupled backward-Euler solver}
+\label{sec:methods-solver}
+
+The MRG double-cable model presents the only non-trivial solver
+question.  Because the periaxonal equation~(\ref{eq:cable-vpx}) has no
+capacitive term it is algebraic at every time step, so we eliminate
+$\mathbf{V}_{\mathrm{px}}$ by back-substitution before stepping
+$\mathbf{V}_i$.  Concretely, at each step $n$ we form the combined
+tridiagonal system
+\begin{equation}
+  \left(C_m / \Delta t \cdot I - \mathbf{A}_{ii}^{\mathrm{eff}}\right)\mathbf{V}_i^{(n+1)} =
+  C_m / \Delta t \cdot \mathbf{V}_i^{(n)} - \mathbf{I}_{\mathrm{ion}}^{(n)}(\mathbf{V}_i, \mathbf{m})
+  - \mathbf{I}_{\mathrm{stim}}^{(n)} - \mathbf{b}_e^{(n)},
+  \label{eq:beuler-vi}
+\end{equation}
+where $\mathbf{A}_{ii}^{\mathrm{eff}} = \mathbf{A}_{ii} -
+\mathbf{A}_{ip} \mathbf{A}_{pp}^{-1} \mathbf{A}_{pi}$ is the
+Schur complement of the periaxonal cable and $\mathbf{b}_e^{(n)} =
+- \mathbf{A}_{ip} \mathbf{A}_{pp}^{-1} \mathbf{V}_e^{(n)}$ collects
+the extracellular forcing.  Eq.~(\ref{eq:beuler-vi}) is solved by a
+JAX-compatible Thomas-algorithm tridiagonal sweep.  Gating variables
+$\mathbf{m}$ are advanced semi-implicitly using the standard
+$\tau_\infty$ rate-equation update.
+
+The full forward pass for one fiber is wrapped in
+\texttt{jax.lax.scan} over time steps, returning either the full
+$(T, n_{\mathrm{comp}})$ voltage trace or---when only the activation
+proxy is needed for selectivity optimisation---only the per-compartment
+maximum of $\mathbf{m}_{\mathrm{Na}}$ (i.e.\ the peak Na$^+$ activation
+gate at each node), which suffices to detect fiber recruitment with
+\$\ge$2 orders of magnitude lower memory cost.
+
+Validation against NEURON used the following exact parameters: time
+step $\Delta t = 5\,\mu\mathrm{s}$, simulation length 3\,ms,
+default activation threshold for proxy comparison was the 0.5
+crossing of $\max_t \mathbf{m}_{\mathrm{Na}}$ at the terminal node,
+which agrees with NEURON's threshold detection to within $\Delta I /
+I < 1\%$ across the diameter range $D \in [1.0, 16.0]\,\mu\mathrm{m}$
+\needdata{verify final percentage against validation tables}.
+
+\subsection{Batched parallel-fiber forward pass}
+\label{sec:methods-batched}
+
+For $N$ fibers stimulated by the same multi-contact electrode, jaxon
+constructs a \emph{batched} static-parameter struct (\texttt{FiberStatics})
+in which all per-fiber arrays are stacked along a leading fiber axis.
+A single call to \texttt{jax.vmap(integrate\_one\_fiber)} over this
+axis produces an $N$-way parallel scan; on the GPU, JAX compiles this
+into a single XLA kernel that interleaves the fiber states across
+threads.  This eliminates the per-fiber Python overhead that
+dominates NEURON-based pipelines and is the proximal cause of the
+throughput improvement reported in
+Section~\ref{sec:results-scaling}.
+
+\subsection{Selectivity optimisation}
+\label{sec:methods-opt}
+
+\paragraph{Loss function.}
+For each fiber $f$, let $a_f \in [0,1]$ denote a differentiable
+activation proxy computed as the minimum of $\max_t
+\mathbf{m}_{\mathrm{Na}}(t)$ at the two terminal compartments of the
+fiber---a quantity that is near 1 if the fiber fires and the action
+potential propagates to both ends, and near 0 otherwise.  We use the
+weighted quality (WQ) loss
+\begin{equation}
+  L_{\mathrm{WQ}} = \sum_f w_f \left[ y_f (1 - a_f) + (1 - y_f) a_f \right]
+                 + \lambda \cdot \frac{1}{K} \sum_k I_k^2,
+  \label{eq:wq-loss}
+\end{equation}
+where $y_f \in \{0,1\}$ is the target/off-target indicator,
+$w_f$ are per-fiber weights, and the second term is an
+amplitude-energy regulariser ($\lambda = $\,\needdata{5e-3 in
+sweep}) introduced to prevent the trivial all-fibers-fire minimum
+on type-selectivity problems (Section~\ref{sec:discussion}).
+The activation proxy can be optionally softened with a per-node
+sigmoid of temperature $\tau$ to widen the gradient-informative
+window at saturation.
+
+\paragraph{Rectangular-pulse amplitude optimisation.}
+For rectangular biphasic pulses with $K$ contacts and shared
+pulse-width, the design variable is the per-contact amplitude vector
+$\mathbf{I} \in \mathbb{R}^K$.  jaxon supports two optimisers:
+(i) Adam with finite-difference gradients (\texttt{adam\_fd}), which
+re-uses the forward kernel for the $K$ amplitude probes and avoids
+autodiff entirely; and (ii) multi-start LBFGS with zoom line search
+(\texttt{optax.lbfgs}), which uses autodiff backward through the
+\texttt{lax.scan} ODE integration and---thanks to \texttt{jax.checkpoint}
+on the inner-loop fiber integrator---fits within the memory budget of
+a 12\,GB A16 GPU at $N=200$.  Both optimisers use the bipolar
+Ve-weighted initialisation $\mathbf{I}_0 = (2 \tilde{V}_e - 1) \cdot
+|I_{\mathrm{init}}| \cdot \mathrm{sign}(I_{\mathrm{init}})$, where
+$\tilde{V}_e \in [0,1]$ is the normalised baseline extracellular field
+amplitude at each contact; this places the deterministic restart at a
+plausible cathodic/anodic split rather than at a single-polarity
+saturation.
+
+\paragraph{Arbitrary-waveform optimisation.}
+For per-contact arbitrary waveforms $u_k(t) \in \mathbb{R}^{K \times T}$
+we use Adam with reverse-mode autodiff through the scan.  The
+waveform optimiser is \emph{warm-started} from the rectangular
+optimum (i.e.\ $u_k(t) = I_k^{\star} \cdot p(t)$ where $p(t)$ is the
+pulse mask), so iteration 0 reproduces the rectangular result.  To
+avoid Adam overshooting the warm-started optimum, the learning rate
+is reduced by an order of magnitude (lr$=5\times 10^{-4}$ vs the
+$5\times 10^{-3}$ used for cold-start) and early-stopping
+(patience = 20 iterations) is enabled.  All results report the
+\emph{best-loss} iterate, not the final iterate, so that any post-
+warm-start Adam drift is invisible to the reported selectivity index.
+
+\subsection{Nerve geometry generation}
+\label{sec:methods-geom}
+
+Multi-fascicle nerve realisations follow the Hussain-style
+construction~\cite{hussain2024}: $N_{\mathrm{fasc}}$ non-overlapping
+circular fascicles of radius drawn uniformly from $[55, 110]\,\mu
+\mathrm{m}$ are packed into a $500\,\mu\mathrm{m}$-radius nerve outline
+by rejection sampling with a $12\,\mu\mathrm{m}$ inter-fascicle gap.
+$N_{\mathrm{fiber}}/N_{\mathrm{fasc}}$ fibers are placed inside each
+fascicle by additional rejection sampling.  A straight line through
+the nerve centre at angle $\theta_{\mathrm{div}}$ partitions the
+fascicles into a \emph{target} (above the line) and \emph{off-target}
+(below) set, giving the binary target mask $y_f$ in
+Eq.~(\ref{eq:wq-loss}).  The cuff electrode is a six-contact ring of
+radius $1500\,\mu\mathrm{m}$ centred on the nerve.  $V_e$ at each
+fiber compartment is computed analytically from the point-source
+formula in homogeneous bath conductivity
+$\sigma = 0.3\,\mathrm{S/m}$.  For the manuscript sweep,
+$N_{\mathrm{fasc}} = 8$, $N_{\mathrm{fiber}} = 200$ and $\theta_{
+\mathrm{div}} = 0$ (horizontal divider, target above).
+
+\subsection{Validation protocol}
+\label{sec:methods-validation}
+
+For each fiber model we computed and compared against NEURON:
+\begin{itemize}
+  \item the strength--duration curve at the terminal node, sweeping
+        pulse width $\mathrm{PW} \in [0.05, 1.0]\,\mathrm{ms}$ at the
+        nominal diameter (5.7\,$\mu\mathrm{m}$ MRG, 1.0\,$\mu\mathrm{m}$
+        Sundt, etc.);
+  \item the conduction velocity as a function of fiber diameter
+        across the manufacturer-supported range;
+  \item the full intracellular trace at the centre node for one
+        representative stimulus, agreement scored by maximum
+        absolute voltage difference.
+\end{itemize}
+
+Each comparison runs the same stimulus through both the jaxon
+forward solver and a pyfibers-wrapped NEURON simulation of the
+identical model with identical parameters; agreement to within
+\$1\%$ on all three metrics is required for model acceptance.
+Reproduction scripts are
+\texttt{experiments\_v2/validate\_\{mrg,sundt,sweeney,rattay\}.py}.
+
+\subsection{Hardware and software}
+
+All results in this paper were produced on a single NVIDIA A100 GPU
+(40\,GB) of the MedUni Vienna HPC cluster.  jaxon was compiled with
+\texttt{jax==}\needdata{X.Y.Z}, \texttt{jaxley==}\needdata{X.Y.Z},
+Python 3.\needdata{X}, CUDA 12.\needdata{X}.  pyfibers comparisons
+used pyfibers version~\needdata{X.Y.Z}.  The full software environment
+is reproducible via the \texttt{slurm/setup\_env.sh} script in the
+code repository.

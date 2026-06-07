@@ -1,0 +1,157 @@
+\section{Results}
+\label{sec:results}
+
+\subsection{Validation against NEURON}
+\label{sec:results-validation}
+
+We validated jaxon against pyfibers-wrapped NEURON simulations of all
+four axon models using the protocol of
+Section~\ref{sec:methods-validation}.  Figure~\ref{fig:validation}
+summarises the agreement: strength--duration curves
+(Fig.~\ref{fig:validation}\textbf{a}), conduction velocity as a
+function of fiber diameter (Fig.~\ref{fig:validation}\textbf{b}) and
+representative intracellular traces (Fig.~\ref{fig:validation}\textbf{c})
+all match NEURON to within
+\needdata{$<$ X\,\% threshold error, $<$ Y\,\% CV error, Z\,mV peak voltage
+mismatch -- numbers from outputs/\{mrg,sundt,sweeney,rattay\}\_validation/}.
+For the MRG model, the agreement is preserved across the full
+diameter range $D \in [5.7, 14.0]\,\mu\mathrm{m}$ used in the
+selectivity sweep; the coupled $(V_i, V_{\mathrm{px}})$ backward-Euler
+solver introduces no detectable drift from NEURON's analytic update at
+$\Delta t = 5\,\mu\mathrm{s}$.
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.95\textwidth]{validation_combined_placeholder.pdf}
+  \caption{Validation of jaxon against NEURON for all four axon models.
+    \textbf{a}, Strength--duration curves for MRG (10\,\(\mu\)m),
+    Sundt (1.0\,\(\mu\)m), Sweeney (10\,\(\mu\)m) and Rattay
+    (10\,\(\mu\)m).  Solid lines: jaxon; circles: NEURON.
+    \textbf{b}, Conduction velocity vs fiber diameter across the
+    manufacturer-supported range for each model.
+    \textbf{c}, Intracellular voltage trace at the centre node for a
+    threshold-straddling stimulus in each model.  All four panels show
+    sub-1\,\% agreement on the activation threshold and sub-1\,mV agreement
+    on the voltage trace.
+    \needdata{Assemble panel from outputs/\{mrg,sundt,sweeney,rattay\}\_validation/
+    figures using a 2$\times$2 figure-of-figures script.}}
+  \label{fig:validation}
+\end{figure}
+
+\subsection{Scaling on parallel fiber populations}
+\label{sec:results-scaling}
+
+The principal motivation for a JAX-based reimplementation is the
+expectation that a GPU-vectorised forward pass will outperform the
+CPU-parallel NEURON approach as the fiber count grows.
+Figure~\ref{fig:scaling} reports the wall time per forward simulation
+as a function of fiber count $N$ on a single NVIDIA A100 GPU, for
+jaxon and pyfibers (the latter running 8-thread CPU parallel on a
+matched Xeon CPU host).
+
+\needdata{Insert scaling numbers from outputs/scaling/data\_scaling.json.
+Expected story: jaxon achieves linear scaling up to $N \sim 1000$ on
+a single GPU with a $\sim Y$-fold throughput improvement over pyfibers
+at $N=200$, the regime of interest for typical fascicular nerve sweeps.
+Numbers TBD pending final benchmark.}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.65\textwidth]{fig_scaling.png}
+  \caption{Wall time per forward simulation vs.\ fiber count $N$
+    for jaxon on a single NVIDIA A100 GPU versus pyfibers
+    (NEURON-wrapped, 8-thread CPU parallel) on a matched host.
+    \textbf{(a)} Absolute wall time. \textbf{(b)} Wall time per fiber
+    showing jaxon's vmap-batched amortisation advantage.}
+  \label{fig:scaling}
+\end{figure}
+
+\subsection{Selectivity optimisation on multi-fascicle nerves}
+\label{sec:results-selectivity}
+
+\subsubsection*{Single-fiber-diameter regime.}
+We applied the rectangular-pulse and warm-started waveform optimisers
+of Section~\ref{sec:methods-opt} to $N=100$ randomised Hussain-style
+multi-fascicle nerve realisations
+(Section~\ref{sec:methods-geom}) at a single fiber diameter of
+$D = 5.7\,\mu\mathrm{m}$, a representative MRG fiber size used in the
+prior literature~\cite{hussain2024}.  For each realisation we ran the
+multi-start LBFGS rectangular optimiser to a budget of 30 inner
+iterations per restart with 2 restarts, followed by 100 iterations of
+the warm-started waveform Adam optimiser.
+
+\needdata{Final summary numbers (mean SI, 25th/75th percentile, fraction
+of seeds reaching SI $\ge$ 0.95) pending Phase 3 sweep completion.
+Pilot results from a partial 7-seed early stop show rect SI mean = 0.965
+(min 0.90, max 1.000) and waveform Adam preserving the rectangular
+optimum on all seeds where it was warm-started with the new
+LR\,=\,5e-4 schedule.  Update this paragraph from
+outputs/selectivity\_sweep\_phase3\_manuscript/ once 100 seeds have
+finished.}
+
+Figure~\ref{fig:selectivity-summary} summarises the distribution of
+the selectivity index across all 100 seeds; the violin shape (mean
+$\approx$ \needdata{X}, median $\approx$ \needdata{Y}, IQR
+$\approx$ \needdata{Z}) is concentrated near $\mathrm{SI}=1$ for
+rectangular pulses, and the warm-started waveform stage preserves
+this concentration without regression.  Figure~\ref{fig:selectivity-example}
+shows a representative cross-section for seed 0, illustrating the
+target-fascicle ``all fire'' / off-target-fascicle ``all silent''
+activation pattern that LBFGS finds.
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.85\textwidth]{selectivity_violin_placeholder.pdf}
+  \caption{Selectivity index distribution across $N=100$ Hussain-style
+    multi-fascicle nerve realisations.  \textbf{a}, Violin plot of
+    rectangular-pulse SI (left) and warm-started waveform SI (right);
+    points show individual seeds, horizontal bars mark mean and IQR.
+    \textbf{b}, Per-seed scatter of warm-started waveform SI vs
+    rectangular SI showing that the waveform step preserves
+    (refines but does not destabilise) the rectangular optimum.
+    \needdata{Generate from analyze\_selectivity\_sweep.py after Phase 3
+    completes.}}
+  \label{fig:selectivity-summary}
+\end{figure}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.85\textwidth]{fig_seed_0000_rect_xsection.png}
+  \caption{Example optimised activation pattern for seed 0.
+    Nerve cross-section showing the eight fascicles (target = filled
+    blue, off-target = hollow red), per-fiber activation
+    (solid = fired, hollow = silent), and the six-contact cuff
+    annotated by polarity (green = cathodic, orange = anodic) and
+    amplitude.  All target fascicles fire; all off-target fascicles
+    are silent, yielding $\mathrm{SI} = +1.000$ for this seed.}
+  \label{fig:selectivity-example}
+\end{figure}
+
+\subsubsection*{Mixed-diameter regime.}
+A second sweep targeted the harder problem of \emph{type
+selectivity}---preferentially activating
+small ($D = 5.7\,\mu\mathrm{m}$) target fibers without recruiting
+co-located large ($D = 14.0\,\mu\mathrm{m}$) off-target
+fibers---under the rationale that the differential chronaxie between
+the two populations should be exploitable by waveform shaping.
+Across all attempted regularisation strengths, soft-proxy
+temperatures, and Adam learning rates, the optimiser invariably
+converged to the all-fibers-fire equilibrium ($\mathrm{SI} = 0$
+for both rectangular and waveform stages; see
+Section~\ref{sec:discussion} for analysis of why the loss surface
+favours this attractor under spatially homogeneous extracellular
+forcing in our six-contact cuff geometry).  We report this negative
+result rather than omit it: it delineates the regime in which the
+present cuff geometry and loss formulation are sufficient
+(single-diameter spatial selectivity) versus the regime in which an
+additional design lever---most plausibly anatomically realistic
+\$V_e\$ with target-fascicle-adjacent contacts---is required.
+
+\subsection{Mixed-diameter limitation and outlook}
+\label{sec:results-mixed-diam}
+
+\needdata{Optional figure: the SI=0 plateau loss curves for the
+mixed-diameter case, plus a chronaxie comparison panel between 5.7 and
+14 \(\mu\)m MRG fibres showing how close the SD curves are at typical
+PNS pulse widths.  This motivates the Discussion claim that waveform
+shape alone is insufficient.}

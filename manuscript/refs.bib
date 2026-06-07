@@ -1,0 +1,208 @@
+% ===================================================================
+% refs.bib — jaxon JNE manuscript
+% Style: iopart-num (numeric, JNE preferred).
+% Conventions: lowercase BibTeX keys, key = lastnameYEAR or
+% lastnameYEARtopic when needed.  Add new entries at the bottom and
+% re-sort alphabetically before submission.
+% ===================================================================
+
+% ── Axon models ─────────────────────────────────────────────────────
+@article{mcintyre2002,
+  author  = {McIntyre, Cameron C. and Richardson, Andrew G. and
+             Grill, Warren M.},
+  title   = {Modeling the excitability of mammalian nerve fibers:
+             Influence of afterpotentials on the recovery cycle},
+  journal = {Journal of Neurophysiology},
+  year    = 2002,
+  volume  = 87,
+  number  = 2,
+  pages   = {995--1006},
+  doi     = {10.1152/jn.00353.2001},
+}
+
+@article{sundt2015,
+  author  = {Sundt, D. and Gamper, N. and Jaffe, D. B.},
+  title   = {Spike propagation through the dorsal root ganglia in an
+             unmyelinated sensory neuron: A modeling study},
+  journal = {Journal of Neurophysiology},
+  year    = 2015,
+  volume  = 114,
+  number  = 6,
+  pages   = {3140--3153},
+  doi     = {10.1152/jn.00226.2015},
+}
+
+@article{sweeney1987,
+  author  = {Sweeney, J. D. and Mortimer, J. T. and Durand, D.},
+  title   = {Modeling of mammalian myelinated nerve for functional
+             neuromuscular stimulation},
+  journal = {IEEE 9th Annual Conference of the Engineering in Medicine
+             and Biology Society},
+  year    = 1987,
+  pages   = {1577--1578},
+}
+
+@article{rattay1989analysis,
+  author  = {Rattay, Frank},
+  title   = {Analysis of models for extracellular fiber stimulation},
+  journal = {IEEE Transactions on Biomedical Engineering},
+  year    = 1989,
+  volume  = 36,
+  number  = 7,
+  pages   = {676--682},
+  doi     = {10.1109/10.32099},
+}
+
+% ── Existing PNS modelling pipelines ────────────────────────────────
+@article{hussain2024,
+  author  = {Hussain, Minhaj A. and Grill, Warren M. and Pelot, Nicole A.},
+  title   = {pyfibers: a Python library for simulating peripheral
+             nerve fiber responses to electrical stimulation},
+  journal = {Journal of Neural Engineering},
+  year    = 2024,
+  note    = {placeholder citation -- update with final volume/pages
+             on submission},
+}
+
+@article{musselman2021ascent,
+  author  = {Musselman, Eric D. and Cariello, Jake E. and Grill,
+             Warren M. and Pelot, Nicole A.},
+  title   = {ASCENT (Automated Simulations to Characterize Electrical
+             Nerve Thresholds): a pipeline for sample-specific
+             computational modeling of electrical stimulation of
+             peripheral nerves},
+  journal = {PLoS Computational Biology},
+  year    = 2021,
+  volume  = 17,
+  number  = 9,
+  pages   = {e1009285},
+  doi     = {10.1371/journal.pcbi.1009285},
+}
+
+@article{musselman2023,
+  author  = {Musselman, Eric D. and Pelot, Nicole A. and Grill,
+             Warren M.},
+  title   = {Empirically based guidelines for selecting vagus nerve
+             stimulation parameters in epilepsy and heart failure},
+  journal = {Cold Spring Harbor Perspectives in Medicine},
+  year    = 2023,
+  note    = {placeholder -- verify citation details},
+}
+
+@article{aristovich2021,
+  author  = {Aristovich, Kirill and Donegá, Matteo and Fjordbakk, Cathrine
+             and others},
+  title   = {Model-based geometric optimisation of neural electrodes
+             for selective stimulation},
+  journal = {Journal of Neural Engineering},
+  year    = 2021,
+  note    = {placeholder -- verify final},
+}
+
+% ── Differentiable simulation, JAX ──────────────────────────────────
+@article{deistler2024,
+  author  = {Deistler, Michael and Macke, Jakob H. and others},
+  title   = {Differentiable simulation enables large-scale training
+             of detailed biophysical models of neural dynamics},
+  journal = {Preprint},
+  year    = 2024,
+  note    = {placeholder -- update with final venue and DOI for
+             jaxley.  Possibly Nat Methods 2024/2025.},
+}
+
+@misc{jax2018,
+  author  = {Bradbury, James and Frostig, Roy and Hawkins, Peter and
+             Johnson, Matthew James and Leary, Chris and Maclaurin,
+             Dougal and Necula, George and Paszke, Adam and
+             VanderPlas, Jake and Wanderman-Milne, Skye and Zhang,
+             Qiao},
+  title   = {{JAX}: composable transformations of {P}ython+{N}um{P}y
+             programs},
+  year    = 2018,
+  url     = {http://github.com/google/jax},
+}
+
+% ── NEURON ──────────────────────────────────────────────────────────
+@article{hines1997neuron,
+  author  = {Hines, Michael L. and Carnevale, N. Ted},
+  title   = {The {NEURON} simulation environment},
+  journal = {Neural Computation},
+  year    = 1997,
+  volume  = 9,
+  number  = 6,
+  pages   = {1179--1209},
+  doi     = {10.1162/neco.1997.9.6.1179},
+}
+
+% ── PNS therapeutics and selectivity ────────────────────────────────
+@article{howland2014vns,
+  author  = {Howland, Robert H.},
+  title   = {Vagus nerve stimulation},
+  journal = {Current Behavioral Neuroscience Reports},
+  year    = 2014,
+  volume  = 1,
+  number  = 2,
+  pages   = {64--73},
+  doi     = {10.1007/s40473-014-0010-5},
+}
+
+@article{koopman2016vns,
+  author  = {Koopman, Frieda A. and Chavan, Sangeeta S. and Miljko,
+             Sanda and others},
+  title   = {Vagus nerve stimulation inhibits cytokine production and
+             attenuates disease severity in rheumatoid arthritis},
+  journal = {Proceedings of the National Academy of Sciences},
+  year    = 2016,
+  volume  = 113,
+  number  = 29,
+  pages   = {8284--8289},
+  doi     = {10.1073/pnas.1605635113},
+}
+
+@article{bonaz2017vagus,
+  author  = {Bonaz, Bruno and Sinniger, Valérie and Pellissier,
+             Sonia},
+  title   = {The vagus nerve in the neuro-immune axis: Implications
+             in the pathology of the gastrointestinal tract},
+  journal = {Frontiers in Immunology},
+  year    = 2017,
+  volume  = 8,
+  pages   = {1452},
+  doi     = {10.3389/fimmu.2017.01452},
+}
+
+% ── Waveform shaping, energy ────────────────────────────────────────
+@article{grill1995stimulus,
+  author  = {Grill, Warren M. and Mortimer, J. Thomas},
+  title   = {Stimulus waveforms for selective neural stimulation},
+  journal = {IEEE Engineering in Medicine and Biology Magazine},
+  year    = 1995,
+  volume  = 14,
+  number  = 4,
+  pages   = {375--385},
+  doi     = {10.1109/51.395310},
+}
+
+@article{wongsarnpigoon2010energy,
+  author  = {Wongsarnpigoon, Amorn and Grill, Warren M.},
+  title   = {Energy-efficient waveform shapes for neural stimulation
+             revealed with a genetic algorithm},
+  journal = {Journal of Neural Engineering},
+  year    = 2010,
+  volume  = 7,
+  number  = 4,
+  pages   = {046009},
+  doi     = {10.1088/1741-2560/7/4/046009},
+}
+
+@article{kilgore2014block,
+  author  = {Kilgore, Kevin L. and Bhadra, Niloy},
+  title   = {Reversible nerve conduction block using kilohertz
+             frequency alternating current},
+  journal = {Neuromodulation: Technology at the Neural Interface},
+  year    = 2014,
+  volume  = 17,
+  number  = 3,
+  pages   = {242--255},
+  doi     = {10.1111/ner.12100},
+}

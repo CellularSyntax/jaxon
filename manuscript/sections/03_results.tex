@@ -328,10 +328,14 @@ Figure~\ref{fig:selectivity}\textbf{a} shows the SI distribution across
 baseline, rect-LBFGS and warm-started wave-Adam stages;
 Figure~\ref{fig:selectivity}\textbf{b} compares the wave and rect
 outcome on each individual seed.
-Figure~\ref{fig:selectivity-example} shows the seed-0 cross-section
-($\mathrm{SI}=0.987$): all target-fascicle fibers fire, all
-off-target-fascicle fibers are silent, the six-contact cuff balances
-cathodic and anodic charge across opposing sides of the nerve.
+Figure~\ref{fig:selectivity-gallery} shows a representative cross-section
+per model and per seed: the divider angle is randomised per seed, so
+each panel corresponds to a different target/off-target fascicle layout
+and the optimised cuff configuration (per-contact polarities + amplitudes)
+adapts accordingly.  Target-fascicle fibers fire and off-target-fascicle
+fibers remain silent in every panel where $\mathrm{SI}\ge 0.95$, with the
+six-contact cuff balancing cathodic and anodic charge across opposing
+sides of the nerve.
 
 The single-diameter sweep reported here uses the MRG model at
 $D=5.7\,\mu\mathrm{m}$.  An across-model extension that runs the same
@@ -366,15 +370,23 @@ Sweeney and Rattay and refresh Fig.~\ref{fig:selectivity} as a
 
 \begin{figure}[h]
   \centering
-  \figmaybe[width=0.65\textwidth]{fig_seed_0000_rect_xsection.png}
-  \caption{Example optimised activation pattern for seed 0
-    ($\mathrm{SI}=0.987$).  Nerve cross-section showing the eight
-    fascicles (target = filled blue, off-target = hollow red),
-    per-fiber activation (solid = fired, hollow = silent), and the
-    six-contact cuff annotated by polarity (green cathodic, orange
-    anodic) and amplitude.  All but one target-fascicle fibre fires;
-    all off-target fascicle fibres remain silent.}
-  \label{fig:selectivity-example}
+  \figmaybe[width=0.98\textwidth]{fig_selectivity_xsections.png}
+  \caption{Cross-section activation patterns at the rectangular LBFGS
+    optimum, four representative seeds per fibre model.  The divider
+    line that splits target (filled blue) from off-target (hollow red)
+    fascicles is randomised per seed (uniform on
+    $[0,\,180)$°), so each panel corresponds to a different
+    target/off-target orientation.  Per-fibre activation is shown as
+    solid (fired) vs hollow (silent); the six-contact cuff is
+    annotated by per-contact polarity (green cathodic, orange anodic)
+    and amplitude.  Selectivity index for each seed is given in the
+    panel title.  The optimised cuff configuration adapts to the
+    randomised anatomy and recovers $\mathrm{SI}\ge 0.95$ for most
+    panels; the few exceptions correspond to seeds where the
+    target/off-target geometry is intrinsically harder (e.g.\ a
+    target fascicle landing near the nerve centre with off-target
+    fascicles fully surrounding it).}
+  \label{fig:selectivity-gallery}
 \end{figure}
 
 \subsubsection*{Mixed-diameter regime.}

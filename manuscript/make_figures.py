@@ -586,13 +586,97 @@ def fig_selectivity_summary():
     print(f"  -> {out.name}")
 
 
+# ─── 6. cross-section activation gallery ──────────────────────────────────────
+def fig_selectivity_xsections():
+    """Gallery of per-seed cross-section activation plots.
+
+    For each per-model sweep directory, picks the first ``n_seeds`` of
+    its completed seeds and arranges the corresponding
+    ``fig_seed_XXXX_rect_xsection.png`` (pre-rendered by the sweep
+    pipeline) into a (n_models × n_seeds) grid.  Different seeds use
+    different random divider angles, so the gallery shows how the
+    optimised cuff adapts to different on/off-target fascicle layouts.
+    """
+    import matplotlib.image as mpimg
+
+    # Reuse the same model-display ordering as fig_selectivity_summary.
+    MODEL_DISPLAY = [
+        ("selectivity_sweep_phase3_manuscript",   "MRG  5.7 µm"),
+        ("selectivity_sweep_phase3_mrg10um",      "MRG  10 µm"),
+        ("selectivity_sweep_phase3_sweeney_10um", "Sweeney  10 µm"),
+        ("selectivity_sweep_phase3_sundt_1um",    "Sundt  1 µm"),
+        ("selectivity_sweep_phase3_rattay_1um",   "Rattay  1 µm"),
+    ]
+    n_seeds_per_model = 4   # how many cross-sections per row
+
+    # Collect (label, [(seed_num, png_path, json_path), ...]) per model
+    # that has at least one seed.
+    rows = []
+    for subdir, label in MODEL_DISPLAY:
+        sweep_dir = _outdir(subdir)
+        seed_jsons = sorted(sweep_dir.glob("data_seed_*.json"))
+        if not seed_jsons:
+            continue
+        entries = []
+        for j in seed_jsons[:n_seeds_per_model]:
+            # Filename pattern: data_seed_NNNN.json → seed number NNNN
+            seed_num = int(j.stem.split("_")[-1])
+            png = sweep_dir / f"fig_seed_{seed_num:04d}_rect_xsection.png"
+            if png.exists():
+                entries.append((seed_num, png, j))
+        if entries:
+            rows.append((label, entries))
+
+    if not rows:
+        return
+
+    n_rows = len(rows)
+    n_cols = max(len(r[1]) for r in rows)
+    fig, axes = plt.subplots(
+        n_rows, n_cols,
+        figsize=(2.6 * n_cols, 2.6 * n_rows),
+        squeeze=False,
+    )
+    for r, (label, entries) in enumerate(rows):
+        for c in range(n_cols):
+            ax = axes[r, c]
+            ax.set_xticks([]); ax.set_yticks([])
+            for spine in ax.spines.values():
+                spine.set_visible(False)
+            if c >= len(entries):
+                continue
+            seed_num, png, json_path = entries[c]
+            ax.imshow(mpimg.imread(png))
+            # Per-panel SI annotation from the JSON.
+            try:
+                d = json.loads(json_path.read_text())
+                rect_si = float(d["rect"]["final_si"])
+                ax.set_title(f"seed {seed_num}  SI={rect_si:+.2f}",
+                             fontsize=8, pad=2)
+            except Exception:
+                ax.set_title(f"seed {seed_num}", fontsize=8, pad=2)
+        # Row label on the left
+        axes[r, 0].set_ylabel(label, fontsize=10, fontweight="bold",
+                              rotation=90, labelpad=10)
+
+    fig.suptitle("Cross-section activation pattern at the rect-LBFGS optimum, "
+                 "per model × seed   (random divider angle per seed)",
+                 fontsize=11, fontweight="bold", y=0.998)
+    plt.tight_layout(rect=[0, 0, 1, 0.97])
+    out = FIGDIR / "fig_selectivity_xsections.png"
+    fig.savefig(out)
+    plt.close(fig)
+    print(f"  -> {out.name}")
+
+
 # ─── orchestration ────────────────────────────────────────────────────────────
 ALL = {
-    "validation": fig_validation_4models,
-    "traces":     fig_traces_4models,
-    "phenomena":  fig_phenomena,
-    "scaling":    fig_scaling_allmodels,
-    "selectivity": fig_selectivity_summary,
+    "validation":   fig_validation_4models,
+    "traces":       fig_traces_4models,
+    "phenomena":    fig_phenomena,
+    "scaling":      fig_scaling_allmodels,
+    "selectivity":  fig_selectivity_summary,
+    "xsections":    fig_selectivity_xsections,
 }
 
 def main(argv: list[str]) -> int:

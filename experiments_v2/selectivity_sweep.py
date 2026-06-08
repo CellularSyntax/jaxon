@@ -415,32 +415,54 @@ def _run_seed_chunk(seeds: list[int], verbose: bool = True) -> list[dict]:
     # ── Rect (LBFGS + multi-restart, batched over seeds when len > 1) ─────────
     pulse_mask = seed_inputs[0]["pulse_mask"]    # same across seeds
     rect_t0 = time.time()
-    # Per-model amp_init / amp_clip.  Activation threshold scales with the
-    # fibre channel and the cuff-to-fibre distance; values below come from
-    # the validation traces (data_<model>_traces.json: amp_extra_mA,
-    # threshold_extra_mA at SRC_H=1 mm) scaled by ~2x for our 1.5 mm cuff
-    # radius.  Without per-model scaling, the unmyelinated sweeps saturate
-    # at the MRG-scale ±3 mA clip and never fire — the rect loss stays
-    # frozen at the no-activation baseline and SI sits pinned at 0.
-    _AMP_BY_MODEL = {
-        # MRG D=5.7 µm: threshold ~-0.3 mA at 1 mm; init at 5x threshold
-        # so the gradient has signal from iter 0.
-        "mrg":      dict(init=-1.5, clip=(-3.0,   3.0)),
-        # Sweeney D=10 µm: threshold ~-0.21 mA; same regime as MRG.
-        "sweeney":  dict(init=-1.5, clip=(-3.0,   3.0)),
-        # Sundt D=0.8 µm: threshold ~-22 mA at 1 mm; ~-50 mA at 1.5 mm cuff.
-        "sundt":    dict(init=-40.0, clip=(-80.0, 80.0)),
-        # Rattay D=0.8 µm: threshold ~-16 mA at 1 mm; ~-35 mA at 1.5 mm cuff.
-        "rattay":   dict(init=-30.0, clip=(-60.0, 60.0)),
+    # Per-model rect-optimiser hyperparams.  Each entry sets four numbers
+    # that have to scale together with the activation-threshold magnitude:
+    #
+    #   init     bipolar Ve-weighted init magnitude (mA).  Set well ABOVE
+    #            the single-contact extracellular threshold so the activation
+    #            proxy is already in the gradient-informative regime at iter 0;
+    #            ~2-3x threshold is the sweet spot.
+    #   clip     symmetric amplitude clamp (mA).  Gives the optimiser
+    #            headroom to drive solid activation from any starting point.
+    #   lr       Adam learning rate (mA/step).  Set so step sizes are a few
+    #            percent of clip range: 30-100 iters should be able to
+    #            traverse the full clip range if needed.
+    #   fd_eps   finite-difference probe magnitude (mA).  Set to a fraction
+    #            of single-contact threshold so the FD gradient sees real
+    #            activation differences, not noise.
+    #
+    # Single-contact extracellular thresholds at the 1.5 mm cuff (from the
+    # validation traces × roughly 2× for our cuff radius):
+    #
+    #   MRG  D=5.7 µm:    ~  0.3 mA
+    #   Sweeney D=10 µm:  ~  0.2 mA
+    #   Rattay D=1.0 µm:  ~ 30   mA       <-- 100× MRG
+    #   Sundt D=1.0 µm:   ~ 50   mA       <-- 200× MRG
+    #
+    # User-side overrides via AMP_INIT_MA / AMP_CLIP_LO / AMP_CLIP_HI /
+    # ADAM_LR_MA / FD_EPS_MA env vars.
+    _PARAMS_BY_MODEL = {
+        "mrg":      dict(init= -1.5, clip=(-3.0,   3.0),
+                         lr=0.08, fd_eps=0.05),
+        "sweeney":  dict(init= -1.5, clip=(-3.0,   3.0),
+                         lr=0.08, fd_eps=0.05),
+        "sundt":    dict(init=-80.0, clip=(-200.0, 200.0),
+                         lr=5.0,  fd_eps=2.0),
+        "rattay":   dict(init=-50.0, clip=(-150.0, 150.0),
+                         lr=3.0,  fd_eps=1.0),
     }
-    _amp_default = _AMP_BY_MODEL.get(FIBER_MODEL, _AMP_BY_MODEL["mrg"])
-    AMP_INIT_MA = _env_flt("AMP_INIT_MA", _amp_default["init"])
-    _clip_lo    = _env_flt("AMP_CLIP_LO", _amp_default["clip"][0])
-    _clip_hi    = _env_flt("AMP_CLIP_HI", _amp_default["clip"][1])
+    _p = _PARAMS_BY_MODEL.get(FIBER_MODEL, _PARAMS_BY_MODEL["mrg"])
+    AMP_INIT_MA = _env_flt("AMP_INIT_MA", _p["init"])
+    _clip_lo    = _env_flt("AMP_CLIP_LO", _p["clip"][0])
+    _clip_hi    = _env_flt("AMP_CLIP_HI", _p["clip"][1])
     AMP_CLIP    = (_clip_lo, _clip_hi)
+    ADAM_LR_MA  = _env_flt("ADAM_LR_MA",  _p["lr"])
+    FD_EPS_MA   = _env_flt("FD_EPS_MA",   _p["fd_eps"])
     if verbose:
-        print(f"[chunk] amp init={AMP_INIT_MA:.1f} mA, clip=[{_clip_lo:.1f}, "
-              f"{_clip_hi:.1f}] mA for model={FIBER_MODEL}", flush=True)
+        print(f"[chunk] model={FIBER_MODEL}: init={AMP_INIT_MA:.1f} mA, "
+              f"clip=[{_clip_lo:.1f}, {_clip_hi:.1f}] mA, "
+              f"adam_lr={ADAM_LR_MA:.3f}, fd_eps={FD_EPS_MA:.3f} mA",
+              flush=True)
 
     if len(seeds) == 1 and RECT_OPTIMIZER == "adam_fd":
         # Adam-FD smoketest path: pure forward + finite-difference gradient.
@@ -461,6 +483,7 @@ def _run_seed_chunk(seeds: list[int], verbose: bool = True) -> list[dict]:
             target_mask=s_in["nerve"].target_mask,
             dt=DT, n_steps=max(N_OPT_RECT * 3, 30),  # Adam needs more iters
             amp_init_mA=AMP_INIT_MA, amp_clip=AMP_CLIP,
+            lr=ADAM_LR_MA, fd_eps=FD_EPS_MA,
             verbose=verbose,
         )
         # Convert Adam-FD result into the LBFGS-result dict shape that

@@ -180,10 +180,30 @@ MODEL_REGISTRY: dict[str, ModelConfig] = {
 
 # ── PyFibers serial timing ────────────────────────────────────────────────────
 
-def time_pyfibers(cfg: ModelConfig, n: int) -> float:
+def time_pyfibers(cfg: ModelConfig, n: int, progress_every: int | None = None) -> float:
+    """Time n serial pyfibers single-fibre runs.
+
+    Prints periodic progress so long runs (e.g. n=10,000 on slow C-fibre
+    models) show heartbeat / ETA in the SLURM log rather than going dark
+    for an hour at a time.  ``progress_every`` defaults to max(1, n//20)
+    so you get ~20 progress lines per N regardless of how big N is.
+    """
+    if progress_every is None:
+        progress_every = max(1, n // 20)
     t0 = time.time()
-    for _ in range(n):
+    for i in range(n):
         cfg.pf_run_fn(**cfg.pf_kwargs)
+        # Print after the iter so i=0 doesn't fire (avoid printing before
+        # any iter ran).  Always print the last iter as a sanity flush.
+        if (i + 1) % progress_every == 0 or (i + 1) == n:
+            elapsed = time.time() - t0
+            done    = i + 1
+            rate    = done / elapsed if elapsed > 0 else 0
+            remaining = (n - done) / rate if rate > 0 else float("inf")
+            print(f"      [pyfibers] {done:6d}/{n}  "
+                  f"elapsed={elapsed:7.1f}s  rate={rate:6.1f}/s  "
+                  f"ETA={remaining:6.0f}s",
+                  flush=True)
     return time.time() - t0
 
 
@@ -272,55 +292,84 @@ def run_model(model_key: str) -> dict:
     }
 
     # ── PyFibers serial ───────────────────────────────────────────────────────
-    print("\n--- PyFibers (CPU, serial) ---")
+    print("\n--- PyFibers (CPU, serial) ---", flush=True)
     cumulative = 0.0
     for n in N_FIBERS:
         if cumulative > PYFIBERS_BUDGET_S:
-            print(f"  n = {n} ... (budget exceeded, extrapolated)")
+            print(f"  n = {n} ... (budget exceeded, extrapolated)", flush=True)
             break
+        print(f"  n = {n:6d} starting (cumulative {cumulative:.0f}s of "
+              f"{PYFIBERS_BUDGET_S:.0f}s budget) ...", flush=True)
         t = time_pyfibers(cfg, n)
         cumulative += t
         results["pyfibers"][n] = t
-        print(f"  n = {n:6d} ... {t:.2f} s")
+        print(f"  n = {n:6d} ... {t:.2f} s  (cumulative {cumulative:.0f}s)",
+              flush=True)
+        _checkpoint_save(model_key, results)
 
     # ── Jaxley CPU ────────────────────────────────────────────────────────────
-    print("\n--- Jaxley (CPU, vmap) ---")
+    print("\n--- Jaxley (CPU, vmap) ---", flush=True)
     for n in N_FIBERS:
+        print(f"  n = {n:6d} starting (jaxley CPU) ...", flush=True)
         try:
             compile_s, run_s = time_jaxley(cfg, n, "cpu")
         except Exception as e:
             msg = str(e).splitlines()[0] if str(e) else type(e).__name__
-            print(f"  n = {n:6d} ... FAILED: {msg}")
+            print(f"  n = {n:6d} ... FAILED: {msg}", flush=True)
             results["jaxley_cpu"]["compile"][n] = None
             results["jaxley_cpu"]["run"][n]     = None
+            _checkpoint_save(model_key, results)
             if JAX_OOM_FALLBACK:
                 continue
             raise
         results["jaxley_cpu"]["compile"][n] = compile_s
         results["jaxley_cpu"]["run"][n]     = run_s
-        print(f"  n = {n:6d} ... compile={compile_s:.2f} s | run={run_s:.3f} s")
+        print(f"  n = {n:6d} ... compile={compile_s:.2f} s | run={run_s:.3f} s",
+              flush=True)
+        _checkpoint_save(model_key, results)
 
     # ── Jaxley GPU ────────────────────────────────────────────────────────────
     if has_gpu:
-        print("\n--- Jaxley (GPU, vmap) ---")
+        print("\n--- Jaxley (GPU, vmap) ---", flush=True)
         for n in N_FIBERS:
+            print(f"  n = {n:6d} starting (jaxley GPU) ...", flush=True)
             try:
                 compile_s, run_s = time_jaxley(cfg, n, "gpu")
             except Exception as e:
                 msg = str(e).splitlines()[0] if str(e) else type(e).__name__
-                print(f"  n = {n:6d} ... FAILED: {msg}")
+                print(f"  n = {n:6d} ... FAILED: {msg}", flush=True)
                 results["jaxley_gpu"]["compile"][n] = None
                 results["jaxley_gpu"]["run"][n]     = None
+                _checkpoint_save(model_key, results)
                 if JAX_OOM_FALLBACK:
                     continue
                 raise
             results["jaxley_gpu"]["compile"][n] = compile_s
             results["jaxley_gpu"]["run"][n]     = run_s
-            print(f"  n = {n:6d} ... compile={compile_s:.2f} s | run={run_s:.3f} s")
+            print(f"  n = {n:6d} ... compile={compile_s:.2f} s | run={run_s:.3f} s",
+                  flush=True)
+            _checkpoint_save(model_key, results)
     else:
-        print("\n[GPU not visible to JAX — skipping GPU timing]")
+        print("\n[GPU not visible to JAX — skipping GPU timing]", flush=True)
 
     return results
+
+
+def _checkpoint_save(model_key: str, results: dict) -> None:
+    """Write partial results for one model to disk so a job kill
+    (walltime, OOM, drain) doesn't lose everything done so far.
+
+    Drops a model-specific shard alongside the final aggregated JSON.
+    The shard at outputs/scaling/data_scaling.<model>.partial.json is
+    overwritten after every (N, method) tuple completes.  When the
+    full run finishes successfully we still write data_scaling.json
+    in the usual place; the partial shards are kept as audit trail.
+    """
+    try:
+        path = OUT / f"data_scaling.{model_key}.partial.json"
+        save_json(results, path)
+    except Exception as e:
+        print(f"  [checkpoint save failed: {e}]", flush=True)
 
 
 # ── Figure ────────────────────────────────────────────────────────────────────
@@ -382,7 +431,13 @@ if __name__ == "__main__":
     for key in MODEL_REGISTRY:
         res = run_model(key)
         all_results.append(res)
+        # Incremental write of the aggregated dataset after every model
+        # so an interrupted run still leaves a usable data_scaling.json
+        # behind for whatever has been completed.
+        save_json({"models": all_results}, OUT / "data_scaling.json")
+        print(f"\n  [checkpoint] data_scaling.json updated "
+              f"({len(all_results)}/{len(MODEL_REGISTRY)} models)",
+              flush=True)
 
-    save_json({"models": all_results}, OUT / "data_scaling.json")
     make_figure(all_results)
-    print("\nDone.")
+    print("\nDone.", flush=True)

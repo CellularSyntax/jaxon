@@ -58,12 +58,17 @@ export N_OPT_RECT="${N_OPT_RECT:-30}"
 export N_OPT_WAVE="${N_OPT_WAVE:-100}"
 export WAVE_LR="${WAVE_LR:-5e-4}"
 export WAVE_PATIENCE="${WAVE_PATIENCE:-20}"
-# Duke-specific amp scaling (FEM Ve ≈ 5× larger than synthetic).
-export AMP_INIT_MA="${AMP_INIT_MA:--0.30}"
-export AMP_CLIP_LO="${AMP_CLIP_LO:--0.60}"
-export AMP_CLIP_HI="${AMP_CLIP_HI:-0.60}"
-export ADAM_LR_MA="${ADAM_LR_MA:-0.015}"
-export FD_EPS_MA="${FD_EPS_MA:-0.010}"
+# Duke-specific amp scaling.  FEM Ve peaks at ~870 mV/mA on this
+# bundle (~5× the synthetic point-source); single-contact thresholds
+# are correspondingly ~5× smaller.  Defaults below were tuned on a
+# 100-fibre CPU smoketest: at ±0.30 mA / lr 0.015 the optimiser
+# overshot a good warm-start and landed at the all-fire attractor.
+# All env-overrideable on submission.
+export AMP_INIT_MA="${AMP_INIT_MA:--0.10}"
+export AMP_CLIP_LO="${AMP_CLIP_LO:--0.20}"
+export AMP_CLIP_HI="${AMP_CLIP_HI:-0.20}"
+export ADAM_LR_MA="${ADAM_LR_MA:-0.005}"
+export FD_EPS_MA="${FD_EPS_MA:-0.003}"
 
 # Where the Duke FEM bundles live.  Override on resubmit to point at a
 # different staging directory if the data moves.

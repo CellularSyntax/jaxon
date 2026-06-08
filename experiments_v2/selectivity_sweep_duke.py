@@ -38,8 +38,15 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import sys
 import time
 from pathlib import Path
+
+# Make sibling jaxfibers/ importable when this script is launched directly
+# (e.g. on the cluster where PYTHONPATH may not include the project root).
+# Mirrors the synthetic-sweep selectivity_sweep.py.
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
 
 import numpy as np
 import jax
@@ -60,8 +67,6 @@ from experiments_v2.utils import ensure_dir, save_json
 from experiments_v2.duke_loader import (
     load_duke_sample, divider_split_target_mask,
 )
-
-ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 # ─────────────────────────────────────────────── sample location ──────────────
 DUKE_SAMPLE_DIR = os.environ.get("DUKE_SAMPLE_DIR", "").strip()
@@ -106,16 +111,19 @@ WAVE_LR         = _env_flt("WAVE_LR", 5e-4)
 WAVE_PATIENCE   = _env_int("WAVE_PATIENCE", 20)
 RECT_OPTIMIZER  = os.environ.get("RECT_OPTIMIZER", "adam_fd")  # adam_fd | lbfgs
 
-# Per-Duke amplitude knobs.  Defaults below assume MRG 5.7 µm and the
-# magnitudes are scaled relative to the synthetic-sweep defaults
-# (-1.5 / ±3.0 / 0.08 / 0.05 mA) by the ratio of single-contact
-# extracellular thresholds (~5× smaller for the Duke geometry).
-AMP_INIT_MA = _env_flt("AMP_INIT_MA", -0.30)
-_AMP_CLIP_LO = _env_flt("AMP_CLIP_LO", -0.60)
-_AMP_CLIP_HI = _env_flt("AMP_CLIP_HI",  0.60)
+# Per-Duke amplitude knobs.  Defaults below are tuned for MRG 5.7 µm
+# against the FEM Ve scale of the sub-10_sam-1 bundle (peak Ve ≈ 870
+# mV/mA, ~5× the synthetic point-source).  Iter-0 of the smoketest at
+# ±0.30 mA already drove 72 % of off-target fibres → super-threshold;
+# we back off to ±0.10 mA init / ±0.20 mA clip / smaller lr so the
+# optimiser stays in the gradient-informative regime instead of
+# landing at the all-fire attractor.  All env-overrideable.
+AMP_INIT_MA = _env_flt("AMP_INIT_MA", -0.10)
+_AMP_CLIP_LO = _env_flt("AMP_CLIP_LO", -0.20)
+_AMP_CLIP_HI = _env_flt("AMP_CLIP_HI",  0.20)
 AMP_CLIP    = (_AMP_CLIP_LO, _AMP_CLIP_HI)
-ADAM_LR_MA  = _env_flt("ADAM_LR_MA",  0.015)
-FD_EPS_MA   = _env_flt("FD_EPS_MA",   0.010)
+ADAM_LR_MA  = _env_flt("ADAM_LR_MA",  0.005)
+FD_EPS_MA   = _env_flt("FD_EPS_MA",   0.003)
 
 
 def _build_seed(duke: dict, seed: int, verbose: bool = True) -> dict:
@@ -196,12 +204,19 @@ def _run_one_seed(seed_in: dict, verbose: bool = True) -> dict:
             verbose=verbose,
         )
         loss_hist = np.asarray(adam_res["history"]["loss"])
+        # Adam-FD can overshoot a good warm-start (mid-trajectory loss
+        # 0.17, last-iter loss 0.55 was observed on the Duke smoketest).
+        # Return the BEST-loss iter's amps + acts, not the last iter.
+        best_iter = int(np.argmin(loss_hist))
+        best_amps = np.asarray(adam_res["history"]["amps"][best_iter])
+        best_acts = np.asarray(adam_res["history"]["acts"][best_iter])
         rect_res = {
             "optimizer":     "Adam-FD",
-            "amps":          np.asarray(adam_res["amps"]),
+            "amps":          best_amps,
             "loss_history":  loss_hist,
-            "final_loss":    float(loss_hist.min()),
-            "final_acts":    np.asarray(adam_res["history"]["acts"][-1]),
+            "final_loss":    float(loss_hist[best_iter]),
+            "final_acts":    best_acts,
+            "best_iter":     best_iter,
             "best_restart":  0,
             "n_restarts":    1,
             "n_steps":       n_iters,

@@ -42,8 +42,13 @@ precision (Figure~\ref{fig:traces}, bottom rows).
   \centering
   \caption{Strength--duration threshold agreement of jaxon vs.\
     \texttt{pyfibers}-wrapped NEURON, aggregated across all tested
-    diameters, waveforms and pulse widths per model.  Sweeney is
-    evaluated at $D=10\,\mu\mathrm{m}$ only because Sweeney's
+    diameters, waveforms and pulse widths per model.
+    Diameters tested ($\mu$m):
+    MRG = \{5.7, 7.3, 8.7, 10.0, 11.5, 12.8, 14.0, 15.0, 16.0\};
+    Sundt = \{0.3, 0.5, 0.8, 1.0, 1.2\};
+    Sweeney = \{10\};
+    Rattay = \{0.3, 0.5, 0.8, 1.0, 1.5\}.
+    Sweeney is evaluated at $D=10\,\mu\mathrm{m}$ only because Sweeney's
     original parameterisation~\cite{sweeney1987} was derived and
     validated at $D=10\,\mu\mathrm{m}$ and the pyfibers reference
     implementation~\cite{hussain2024} follows the same convention;
@@ -51,7 +56,11 @@ precision (Figure~\ref{fig:traces}, bottom rows).
     NEURON \texttt{extracellular}-mechanism singular-solve failures
     under anodic-leading pulses, not jaxon errors (the jaxon values
     in those cells are themselves finite and consistent with the
-    surrounding cathodic results).}
+    surrounding cathodic results).
+    Waveforms tested: monophasic cathodic and anodic, biphasic
+    cathodic-first and anodic-first, sinusoidal, sawtooth,
+    exponentially-decaying, Gaussian (8 total).  Pulse widths tested:
+    \{0.02, 0.05, 0.1, 0.2, 0.5, 1.0\}\,ms (6 total).}
   \label{tab:validation-sd}
   \begin{tabular}{lrrrrr}
     \toprule
@@ -84,19 +93,20 @@ full diameter range.
 \begin{table}[h]
   \centering
   \caption{Conduction velocity agreement against NEURON, evaluated
-    at each tested diameter for each model.  Diameter ranges follow
-    those over which each fibre model has been parameterised in the
-    original publication.  The exact diameters tested are listed in
-    Methods (Section~\ref{sec:methods-validation}).}
+    at each tested diameter for each model.  Diameter sets follow
+    the parameterisation range published with each model.  Sweeney
+    is restricted to $D=10\,\mu\mathrm{m}$ by Sweeney 1987
+    convention (see Table~\ref{tab:validation-sd} caption).}
   \label{tab:validation-cv}
-  \begin{tabular}{lcrrr}
+  \small
+  \begin{tabular}{l p{6.0cm} rrr}
     \toprule
-    Model    & diameter range ($\mu$m) & median err.\ & peak err.\ & \%\,$<1\%$ \\
+    Model    & diameters tested ($\mu$m) & median err.\ & peak err.\ & \%\,$<1\%$ \\
     \midrule
-    MRG      & 5.7\,--\,16.0 ($n=9$) & $<0.01$\,\% & $<0.01$\,\% & 100\,\% \\
-    Sundt    & 0.3\,--\,1.2  ($n=5$) & $0.09$\,\%  & $0.24$\,\%  & 100\,\% \\
-    Sweeney  & $10$ ($n=1$ -- single-$D$ by Sweeney 1987 convention) & $<0.01$\,\% & $<0.01$\,\% & 100\,\% \\
-    Rattay   & 0.3\,--\,1.5  ($n=5$) & $0.05$\,\%  & $0.13$\,\%  & 100\,\% \\
+    MRG      & 5.7, 7.3, 8.7, 10.0, 11.5, 12.8, 14.0, 15.0, 16.0  & $<0.01$\,\% & $<0.01$\,\% & 100\,\% \\
+    Sundt    & 0.3, 0.5, 0.8, 1.0, 1.2                             & $0.09$\,\%  & $0.24$\,\%  & 100\,\% \\
+    Sweeney  & 10                                                  & $<0.01$\,\% & $<0.01$\,\% & 100\,\% \\
+    Rattay   & 0.3, 0.5, 0.8, 1.0, 1.5                             & $0.05$\,\%  & $0.13$\,\%  & 100\,\% \\
     \bottomrule
   \end{tabular}
 \end{table}

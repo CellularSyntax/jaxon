@@ -3,14 +3,21 @@
 #SBATCH -N 1
 #SBATCH -n 1
 #SBATCH -p gpu
-#SBATCH -q a16
-#SBATCH --gres=gpu:a16:1
+#SBATCH -q a100
+#SBATCH --gres=gpu:a100:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=96G
 #SBATCH -t 23:59:00
 #SBATCH --array=0-2
 #SBATCH -o logs/%x-%A_%a.out
 #SBATCH -e logs/%x-%A_%a.err
+
+# GPU partition default: A100.  The scaling benchmark + the
+# manuscript headline numbers are reported on A100 (see Section 3.3),
+# so the selectivity sweep should match.  Override on submission with
+# `sbatch --qos=a16 --gres=gpu:a16:1 ...` if A100 is saturated and
+# you need to fall back.  a16 partition was the original default but
+# is ~3-5x slower per Adam-FD iter on the 1000-fibre Duke geometries.
 
 # SLURM array: by default the sweep is split into 3 parallel shards
 # (--array=0-2) so each shard processes ~1/3 of the Duke sample
@@ -33,9 +40,9 @@
 # the figure code can find them.
 #
 # Memory: 997 fibres × 12 contacts × 221 comp × 600 t-steps is ~5×
-# the synthetic per-seed footprint.  --mem=96G + a16 (12 GB VRAM)
-# fits comfortably under Adam-FD; LBFGS will OOM on a16, override
-# --gres to a100/h100 if you really want LBFGS.
+# the synthetic per-seed footprint.  --mem=96G + a100 (40 GB VRAM)
+# fits comfortably under both Adam-FD and LBFGS.  On the a16 fallback
+# (12 GB VRAM) Adam-FD still fits but LBFGS will OOM.
 #
 # Resume-friendly: per-seed JSONs are written incrementally; re-submit
 # after walltime expiry picks up the missing seeds.

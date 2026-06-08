@@ -1,6 +1,51 @@
 \section{Methods}
 \label{sec:methods}
 
+\begin{figure}[h]
+  \centering
+  \figmaybe[width=0.98\textwidth]{fig_overview.png}
+  \caption{Overview of the jaxon forward pipeline and equivalent
+    circuits.  \textbf{(a)} Nerve cross-section with a six-contact
+    ring cuff (illustrative bipolar pattern, cathodic contacts blue,
+    anodic orange).  Fascicles are split into target (green, upper
+    half) and off-target (grey, lower half) by a divider line
+    through the nerve centre; the orientation of the divider is
+    randomised in the selectivity sweep
+    (Section~\ref{sec:results-selectivity}).
+    \textbf{(b)} Forward pipeline.  The cuff geometry and a chosen
+    extracellular medium yield the per-contact unit fields
+    $V_e^{(k)}(\mathbf{x})$.  Combined with the per-contact amplitude
+    design vector $\mathbf{I}\in\mathbb{R}^{K}$, these drive the
+    coupled-cable solver, which integrates the membrane dynamics of
+    every fibre in parallel and emits an activation proxy
+    $a_f \in [0, 1]$.  Aggregating the proxies into the selectivity
+    loss $\mathcal{L}(\mathbf{I})$ closes the loop; because the entire
+    pipeline is built on top of \texttt{jaxley}/JAX, the gradient
+    $\nabla_{\mathbf{I}}\mathcal{L}$ is available end-to-end via
+    reverse-mode autodiff (red arrow).
+    \textbf{(c)} Single-cable equivalent circuit underlying the
+    Sundt, Sweeney and Rattay unmyelinated fibre models.  Each axon
+    compartment carries a membrane resistance $R_m$ and capacitance
+    $C_m$ in parallel between the intracellular $V_i$ and bath $V_e$
+    rails; neighbouring compartments couple through an axial
+    resistance $R_a$.  The membrane resistance hides a multi-channel
+    Hodgkin--Huxley current (Na, K, leak) whose state variables are
+    integrated forward in time alongside $V_i$.
+    \textbf{(d)} Double-cable equivalent circuit underlying the MRG
+    myelinated fibre model.  A third rail $V_{\mathrm{px}}$
+    (periaxonal space) sits between the axon membrane and the myelin
+    sheath.  The membrane $R_m \parallel C_m$ now drops between $V_i$
+    and $V_{\mathrm{px}}$ rather than between $V_i$ and $V_e$, and a
+    myelin shunt $G_{\mathrm{my}} \parallel C_{\mathrm{my}}$ closes
+    the loop to bath.  Both the intracellular ($R_a$) and the
+    periaxonal ($R_{\mathrm{px}}$) layers carry their own axial
+    coupling.  The schematic shows one nodal and one internodal
+    compartment; the full MRG period is
+    node--MYSA--FLUT--STIN$\times 6$--FLUT--MYSA
+    (Section~\ref{sec:methods-models}).}
+  \label{fig:overview}
+\end{figure}
+
 \subsection{Axon models}
 \label{sec:methods-models}
 
@@ -8,6 +53,9 @@ jaxon implements four canonical peripheral nerve fiber models, all of
 which have been used extensively in the PNS modelling literature and
 can be cross-validated against published NEURON
 results~\cite{mcintyre2002,sundt2015,sweeney1987,rattay1989analysis}.
+Figure~\ref{fig:overview} summarises the forward pipeline (panel b)
+and the two equivalent-circuit families on which the fibre models
+are built (panels c and d).
 
 \paragraph{MRG double-cable (myelinated).}
 The McIntyre--Richardson--Grill model~\cite{mcintyre2002} represents
@@ -46,23 +94,63 @@ backward-Euler scheme with the periaxonal equation solved analytically
 at each step; see Section~\ref{sec:methods-solver} for details.
 
 \paragraph{Sundt (unmyelinated, single-cable).}
-The Sundt C-fiber model~\cite{sundt2015} uses Hodgkin--Huxley-style
-sodium and delayed-rectifier potassium conductances calibrated for
-small-diameter unmyelinated axons. jaxon's implementation follows the
-ModelDB entry verbatim except for the integration scheme.
+The Sundt C-fiber model~\cite{sundt2015} represents each axon as a
+uniform unmyelinated cable (Figure~\ref{fig:overview}c) with a
+transient Hodgkin--Huxley-style sodium current
+$I_{\mathrm{Na}}$ (NaV1.7/1.8 calibration via voltage shifts
+$\Delta_m = -6$\,mV, $\Delta_h = +6$\,mV at the m- and h-gates), a
+Borg-Graham delayed-rectifier potassium current
+$I_{\mathrm{Kdr}}$, and a passive leak $I_L$:
+\begin{equation}
+  C_m \frac{dV}{dt} = \mathbf{A}_{\mathrm{ax}}\mathbf{V} - I_{\mathrm{Na}}
+  - I_{\mathrm{Kdr}} - I_L - I_{\mathrm{stim}}.
+  \label{eq:cable-sundt}
+\end{equation}
+Resting potential $V_{\mathrm{rest}} = -60$\,mV, specific membrane
+capacitance $C_m = 1\,\mu$F\,cm$^{-2}$, axial resistivity
+$\rho_a = 100\,\Omega\,$cm; channel densities and gating kinetics in
+Appendix~\ref{sec:app-models}, Table~\ref{tab:app-sundt}.
 
-\paragraph{Sweeney (unmyelinated).}
-The Sweeney model~\cite{sweeney1987} uses fast sodium dynamics
-suitable for representing $A\delta$ fibers.  Calibration constants
-follow~\cite{musselman2023}.
+\paragraph{Sweeney (myelinated, single-cable).}
+The Sweeney model~\cite{sweeney1987} represents a myelinated motor
+axon by a single-cable equation at the node of Ranvier, with the
+internode treated as a passive insulating sleeve.  The nodal current
+consists of a single fast sodium current with $m^2 h$ kinetics and a
+leak~\cite{musselman2023}:
+\begin{equation}
+  C_m^{\mathrm{node}} \frac{dV}{dt} = \mathbf{A}_{\mathrm{ax}}\mathbf{V}
+  - g_{\mathrm{Na}}\, m^2 h\, (V - E_{\mathrm{Na}}) - g_L\,(V - E_L)
+  - I_{\mathrm{stim}}.
+  \label{eq:cable-sweeney}
+\end{equation}
+The model is calibrated for $T = 37$\,$^\circ$C (no Q$_{10}$
+correction) and assumes a fixed inner-to-outer diameter ratio
+$d_i = 0.6\,d$.  Resting potential $V_{\mathrm{rest}} = -80$\,mV,
+nodal capacitance $C_m^{\mathrm{node}} = 2.5\,\mu$F\,cm$^{-2}$,
+axial resistivity $\rho_a = 54.7\,\Omega\,$cm; constants in
+Table~\ref{tab:app-sweeney}.
 
-\paragraph{Rattay (unmyelinated, generic).}
-The Rattay model~\cite{rattay1989analysis} provides a minimal
-HH-like single-channel representation widely used as a comparison
-baseline.  All four models share the same compartment-level interface
-in jaxon (\texttt{FiberStatics} struct, \texttt{batch\_integrate\_m\_max}
-solver entry point), making it straightforward to extend the library
-with additional models.
+\paragraph{Rattay (unmyelinated, generic HH).}
+The Rattay model~\cite{rattay1989analysis} uses a textbook
+Hodgkin--Huxley parameterisation as a generic baseline for
+unmyelinated fibres.  The single compartment carries a fast sodium
+current $g_{\mathrm{Na}} m^3 h$, a delayed-rectifier potassium
+current $g_K n^4$, and a leak:
+\begin{equation}
+  C_m \frac{dV}{dt} = \mathbf{A}_{\mathrm{ax}}\mathbf{V}
+  - g_{\mathrm{Na}}\, m^3 h\, (V - E_{\mathrm{Na}})
+  - g_K\, n^4\, (V - E_K) - g_L\,(V - E_L) - I_{\mathrm{stim}}.
+  \label{eq:cable-rattay}
+\end{equation}
+The gate rate constants are the canonical squid-axon-derived
+expressions of~\cite{rattay1989analysis}, temperature-corrected via
+$Q_{10} = 2.247^{(T - 6.3)/10}$ for $T = 37$\,$^\circ$C.  Resting
+potential $V_{\mathrm{rest}} = -70$\,mV, capacitance
+$C_m = 1\,\mu$F\,cm$^{-2}$, axial resistivity $\rho_a = 100\,\Omega\,$cm;
+constants in Table~\ref{tab:app-rattay}.  All four models share the
+same compartment-level interface in jaxon (\texttt{FiberStatics}
+struct, \texttt{batch\_integrate\_m\_max} solver entry point), making
+it straightforward to extend the library with additional models.
 
 \subsection{Coupled backward-Euler solver}
 \label{sec:methods-solver}
@@ -148,9 +236,10 @@ window at saturation.
 For rectangular biphasic pulses with $K$ contacts and shared
 pulse-width, the design variable is the per-contact amplitude vector
 $\mathbf{I} \in \mathbb{R}^K$.  jaxon supports two optimisers:
-(i) Adam with finite-difference gradients (\texttt{adam\_fd}), which
-re-uses the forward kernel for the $K$ amplitude probes and avoids
-autodiff entirely; and (ii) multi-start LBFGS with zoom line search
+(i) Adam~\cite{kingma2015adam} with finite-difference gradients
+(\texttt{adam\_fd}), which re-uses the forward kernel for the $K$
+amplitude probes and avoids autodiff entirely; and (ii) multi-start
+L-BFGS~\cite{liu1989lbfgs} with zoom line search
 (\texttt{optax.lbfgs}), which uses autodiff backward through the
 \texttt{lax.scan} ODE integration and---thanks to \texttt{jax.checkpoint}
 on the inner-loop fiber integrator---fits within the memory budget of
@@ -183,8 +272,9 @@ the threshold magnitude.
   \caption{Per-model rectangular-pulse optimiser defaults.  All four
     knobs scale together with the single-contact extracellular
     activation threshold of each model.  Users can override any of
-    these via the \texttt{AMP\_INIT\_MA / AMP\_CLIP\_LO / AMP\_CLIP\_HI /
-    ADAM\_LR\_MA / FD\_EPS\_MA} environment variables.}
+    these via the \texttt{AMP\_INIT\_MA}, \texttt{AMP\_CLIP\_LO},
+    \texttt{AMP\_CLIP\_HI}, \texttt{ADAM\_LR\_MA} and
+    \texttt{FD\_EPS\_MA} environment variables.}
   \label{tab:opt-hparams}
   \begin{tabular}{lrrrr}
     \toprule

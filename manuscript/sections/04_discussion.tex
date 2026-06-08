@@ -46,9 +46,13 @@ matches NEURON's accuracy on the canonical benchmark suite, so the
 throughput and gradient gains do not come at the cost of model
 fidelity.
 
-The wider differentiable-simulation context for jaxon is set by
-\texttt{jaxley}~\cite{deistler2024}, which provides the underlying
-multi-compartment HH machinery used by jaxon's solver.  \texttt{jaxley}
+The wider differentiable-simulation context for jaxon spans both
+the JAX-ecosystem frameworks
+\texttt{jaxley}~\cite{deistler2024} and
+\texttt{JAX MD}~\cite{schoenholz2020jaxmd}, and the broader
+autodiff-through-ODE literature initiated by the Neural ODE
+work~\cite{chen2018neuralode}.  \texttt{jaxley} provides the
+underlying multi-compartment HH machinery used by jaxon's solver.  \texttt{jaxley}
 ships canonical CNS Hodgkin--Huxley channels and a generic cable
 solver but does not include the calibrated peripheral nerve fiber
 models that the PNS modelling literature relies on; jaxon's contribution
@@ -57,6 +61,18 @@ $(V_i, V_{\mathrm{px}})$ MRG solver, the four unmyelinated fiber
 models, the validation-against-NEURON harness, and the
 selectivity-optimisation pipeline are domain-specific and not provided
 out-of-the-box by \texttt{jaxley}.
+
+GPU-accelerated multi-compartment neuron simulation has a separate
+prior literature outside the autodiff context.
+\texttt{NeuroGPU}~\cite{benshalom2022neurogpu} ports NEURON
+biophysical models to CUDA and reports up to $200\times$ speedup over
+NEURON-MPI on a single GPU, and
+\texttt{Brian2GeNN}~\cite{stimberg2020brian2genn} accelerates Brian
+spiking-network simulations via the GeNN code generator with
+comparable throughput gains.  These pipelines accelerate the forward
+pass but, like pyfibers, expose no end-to-end gradients;
+gradient-based optimisation over design variables still requires the
+finite-difference detour the present work is designed to obviate.
 
 \subsection{Why the mixed-diameter case is hard}
 
@@ -87,17 +103,14 @@ the current cuff geometry and loss formulation suffice and where they
 do not, rather than as a limitation of jaxon itself.  In particular,
 the underlying differentiable forward solver is gradient-informative
 in all regimes; the failure to converge is a loss-landscape property,
-not a gradient-availability one.  Three plausible avenues to crack
+not a gradient-availability one.  Two plausible avenues to crack
 this regime are: (i) replacing the homogeneous bath
 $V_e$ with an anatomically realistic FEM-derived $V_e$ that breaks the
 symmetry between target and off-target fascicles~\cite{musselman2023};
-(ii) reformulating the objective as a constrained optimisation
+and (ii) reformulating the objective as a constrained optimisation
 (minimise $\sum I_k^2$ subject to all-target-firing as a hard
-constraint, using a primal-dual or augmented-Lagrangian method); and
-(iii) adding an additional design lever in the form of contact
-position, which jaxon already supports via the
-\texttt{run\_joint\_optimization} entry point but which we did not
-exercise here.  We leave these as the natural follow-up directions.
+constraint, using a primal-dual or augmented-Lagrangian method).
+We leave these as the natural follow-up directions.
 
 \subsection{Limitations}
 
@@ -146,13 +159,15 @@ block~\cite{kilgore2014block}.
 
 The combination of GPU throughput and end-to-end gradients positions
 jaxon for several natural next-step applications:
-(i) joint optimisation of contact position and amplitude for
-implantable cuff design;
+(i) selectivity optimisation on anatomically realistic FEM-derived
+$V_e$ fields, which break the homogeneous-bath symmetry that limits
+the current pipeline in the mixed-diameter regime and enable
+fascicle-specific cuff design on patient-specific anatomies;
 (ii) population-averaged designs that marginalise over realistic
 nerve-to-nerve variability via a single batched forward pass;
 (iii) inverse modelling of recorded extracellular field data to
 infer fiber recruitment from cuff-recorded compound action
-potentials; and
+potentials~\cite{vissamsetti2025cap}; and
 (iv) closed-loop adaptive stimulation policies trained by
 backpropagation through the forward model.  Each of these would
 require a gradient-free pipeline to perform thousands or millions

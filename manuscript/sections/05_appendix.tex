@@ -1,0 +1,189 @@
+% ====================================================================
+% Appendix A — Fibre model parameter tables
+% ====================================================================
+\appendix
+
+\section{Fibre-model parameter tables}
+\label{sec:app-models}
+
+The constants tabulated below are the values used inside jaxon
+(extracted directly from
+\texttt{jaxfibers/fibers/\{mrg,sundt,sweeney,rattay\}.py} and
+\texttt{jaxfibers/channels/\{mrg\_axnode,sundt\_channels,sweeney\_channels,rattay\_channels\}.py}).
+They reproduce the published NMODL parameterisations of the original
+papers~\cite{mcintyre2002,sundt2015,sweeney1987,rattay1989analysis}
+as packaged in \texttt{pyfibers}.
+
+% ─── Table A1 — MRG geometry vs diameter ────────────────────────────────────
+\begin{table}[h]
+  \centering
+  \caption{MRG geometric parameters as a function of the outer (myelinated)
+    fibre diameter $D$.  $\Delta z$ is the inter-nodal distance,
+    $L_{\mathrm{paranode2}}$ the FLUT paranodal length, $d_{\mathrm{axon}}$
+    the inner (axon) diameter, $d_{\mathrm{node}}$ the node-of-Ranvier
+    diameter and $n_l$ the number of myelin layers.  Values follow the
+    discrete table of~\cite{mcintyre2002} as packaged in
+    \texttt{pyfibers}; intermediate diameters are interpolated by jaxon
+    via second-order polynomials.}
+  \label{tab:app-mrg-geom}
+  \small
+  \begin{tabular}{rrrrrr}
+    \toprule
+    $D$ ($\mu$m) & $\Delta z$ ($\mu$m) & $L_{\mathrm{paranode2}}$ ($\mu$m)
+                 & $d_{\mathrm{axon}}$ ($\mu$m) & $d_{\mathrm{node}}$ ($\mu$m)
+                 & $n_l$ \\
+    \midrule
+    1.0  &  100 &  5 &  0.8 & 0.7 &  15 \\
+    2.0  &  200 & 10 &  1.6 & 1.4 &  30 \\
+    5.7  &  500 & 35 &  3.4 & 1.9 &  80 \\
+    7.3  &  750 & 38 &  4.6 & 2.4 & 100 \\
+    8.7  & 1000 & 40 &  5.8 & 2.8 & 110 \\
+    10.0 & 1150 & 46 &  6.9 & 3.3 & 120 \\
+    11.5 & 1250 & 50 &  8.1 & 3.7 & 130 \\
+    12.8 & 1350 & 54 &  9.2 & 4.2 & 135 \\
+    14.0 & 1400 & 56 & 10.4 & 4.7 & 140 \\
+    15.0 & 1450 & 58 & 11.5 & 5.0 & 145 \\
+    16.0 & 1500 & 60 & 12.7 & 5.5 & 150 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+% ─── Table A2 — MRG channel + bulk constants ────────────────────────────────
+\begin{table}[h]
+  \centering
+  \caption{MRG nodal channel and bulk constants used by jaxon.  Nodal
+    membrane carries fast sodium $g_{\mathrm{Naf}}\,m^{3}h$,
+    persistent sodium $g_{\mathrm{Nap}}\,m_p^{\,3}$, slow potassium
+    $g_{\mathrm{Ks}}\,s$ and leak $g_L$ in parallel.  Q$_{10}$
+    factors apply to the gate kinetics ($\alpha,\beta$), not to the
+    peak conductances.  Internodal compartments (MYSA, FLUT, STIN)
+    are passive; per-region passive conductances $g_{\mathrm{pas}}$
+    follow~\cite{mcintyre2002}.}
+  \label{tab:app-mrg}
+  \begin{tabular}{lrl}
+    \toprule
+    Parameter & Value & Notes \\
+    \midrule
+    $V_{\mathrm{rest}}$       & $-80$\,mV   & resting potential \\
+    $C_m^{\mathrm{axon}}$     & $2.0\,\mu$F\,cm$^{-2}$ & full axon-membrane capacitance \\
+    $\rho_a$                  & $70\,\Omega$\,cm        & axoplasmic resistivity \\
+    $C_{\mathrm{my}}$ per leaflet & $0.1\,\mu$F\,cm$^{-2}$ & myelin capacitance \\
+    $G_{\mathrm{my}}$ per leaflet & $1\times 10^{-3}$\,S\,cm$^{-2}$ & myelin conductance \\
+    $g_{\mathrm{Naf}}$        & $3.0$\,S\,cm$^{-2}$       & fast Na (m$^3$h) \\
+    $g_{\mathrm{Nap}}$        & $1\times 10^{-2}$\,S\,cm$^{-2}$ & persistent Na (m$_p^{\,3}$) \\
+    $g_{\mathrm{Ks}}$         & $8\times 10^{-2}$\,S\,cm$^{-2}$ & slow K (s) \\
+    $g_L$                     & $7\times 10^{-3}$\,S\,cm$^{-2}$ & leak \\
+    $E_{\mathrm{Na}}$         & $+50$\,mV   & sodium reversal \\
+    $E_K$                     & $-90$\,mV   & potassium reversal \\
+    $E_L$                     & $-90$\,mV   & leak reversal \\
+    $T$                       & $37\,^\circ$C & body temperature \\
+    $Q_{10}$ ($m,m_p$ gates)  & $2.2$        & temperature scaling \\
+    $Q_{10}$ ($h$ gate)       & $2.9$        & temperature scaling \\
+    $Q_{10}$ ($s$ gate)       & $3.0$        & temperature scaling \\
+    $g_{\mathrm{pas}}^{\mathrm{MYSA}}$ & $1\times 10^{-3}$\,S\,cm$^{-2}$ & MYSA passive \\
+    $g_{\mathrm{pas}}^{\mathrm{FLUT}}$ & $1\times 10^{-4}$\,S\,cm$^{-2}$ & FLUT passive \\
+    $g_{\mathrm{pas}}^{\mathrm{STIN}}$ & $1\times 10^{-4}$\,S\,cm$^{-2}$ & STIN passive \\
+    Node length $L_{\mathrm{node}}$    & $1.0\,\mu$m & geometric \\
+    MYSA length $L_{\mathrm{MYSA}}$    & $3.0\,\mu$m & geometric (paranodal\,1) \\
+    Periaxonal gap (node, MYSA)        & $0.002\,\mu$m & McIntyre convention \\
+    Periaxonal gap (FLUT, STIN)        & $0.004\,\mu$m & McIntyre convention \\
+    Sections per nodal period          & $11$         & node $+$ MYSA $+$ FLUT $+$ STIN $\times 6$ $+$ FLUT $+$ MYSA \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+% ─── Table A3 — Sundt ───────────────────────────────────────────────────────
+\begin{table}[h]
+  \centering
+  \caption{Sundt unmyelinated-fibre constants used by jaxon.  Membrane
+    currents: NaV1.7/1.8-like transient Na with $m^3 h$ kinetics
+    (voltage-shifted activation and inactivation), Borg-Graham
+    delayed-rectifier K with $n^{0.4} l$ kinetics and a passive leak.
+    The voltage shifts $\Delta_m,\Delta_h$ implement the NaV1.7/1.8
+    activation/inactivation offsets relative to the canonical nahh
+    template.  $Q_{10} = 3$ on Na gates only; the borgkdr K kinetics
+    are temperature-scaled by Frankenhaeuser--Huxley
+    $F\cdot R\cdot T$ via the gate rate functions.}
+  \label{tab:app-sundt}
+  \begin{tabular}{lrl}
+    \toprule
+    Parameter & Value & Notes \\
+    \midrule
+    $V_{\mathrm{rest}}$       & $-60$\,mV  & resting potential \\
+    $C_m$                     & $1.0\,\mu$F\,cm$^{-2}$ & specific capacitance \\
+    $\rho_a$                  & $100\,\Omega$\,cm       & axial resistivity \\
+    $\Delta z$ per compartment & $8.333\,\mu$m          & default \\
+    $g_{\mathrm{Na}}$         & $4\times 10^{-2}$\,S\,cm$^{-2}$ & nahh transient Na \\
+    $\Delta_m,\,\Delta_h$ (NaV shifts) & $-6$\,mV, $+6$\,mV & NaV1.7/1.8 calibration \\
+    $g_{\mathrm{Kdr}}$        & $4\times 10^{-2}$\,S\,cm$^{-2}$ & Borg-Graham K \\
+    $V_{1/2,n}$ (Kdr activation)   & $-32$\,mV & half-activation \\
+    $V_{1/2,l}$ (Kdr inactivation) & $-61$\,mV & half-inactivation \\
+    $a_{0,n}, a_{0,l}$        & $0.03$, $0.001$ ms$^{-1}$ & Kdr rate prefactors \\
+    $\zeta_n, \zeta_l$        & $-5.0$, $2.0$ & Kdr gating valences \\
+    $\gamma_n, \gamma_l$      & $0.4$, $1.0$  & Kdr gating fractions \\
+    $g_L$                     & $1\times 10^{-4}$\,S\,cm$^{-2}$ & passive leak \\
+    $E_{\mathrm{Na}}$         & $+50$\,mV   & sodium reversal \\
+    $E_K$                     & $-90$\,mV   & potassium reversal \\
+    $E_L$                     & $V_{\mathrm{rest}}$ & leak reversal $=V_{\mathrm{rest}}$ \\
+    $T$                       & $37\,^\circ$C & body temperature \\
+    $Q_{10}$ (Na gates)       & $3.0$         & temperature scaling \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+% ─── Table A4 — Sweeney ─────────────────────────────────────────────────────
+\begin{table}[h]
+  \centering
+  \caption{Sweeney nodal constants used by jaxon.  Single fast-sodium
+    current with $m^2 h$ kinetics plus a leak; no potassium channel
+    and no Q$_{10}$ correction (the original parameterisation is fixed
+    at $T = 37\,^\circ$C).  Inner-diameter ratio $d_i / d = 0.6$ is
+    the standard Sweeney convention adopted by~\cite{musselman2023}.}
+  \label{tab:app-sweeney}
+  \begin{tabular}{lrl}
+    \toprule
+    Parameter & Value & Notes \\
+    \midrule
+    $V_{\mathrm{rest}}$       & $-80$\,mV   & resting potential \\
+    $C_m^{\mathrm{node}}$     & $2.5\,\mu$F\,cm$^{-2}$ & nodal capacitance \\
+    $\rho_a$                  & $54.7\,\Omega$\,cm       & axial resistivity \\
+    Node length $L_{\mathrm{node}}$ & $1.5\,\mu$m & geometric \\
+    Inner / outer diameter ratio    & $0.6$       & $d_i = 0.6\,d$ \\
+    $g_{\mathrm{Na}}$         & $1.445$\,S\,cm$^{-2}$ & fast Na ($m^2 h$) \\
+    $g_L$                     & $0.128$\,S\,cm$^{-2}$   & leak \\
+    $E_{\mathrm{Na}}$         & $+35.64$\,mV & sodium reversal \\
+    $E_L$                     & $-80.01$\,mV  & leak reversal \\
+    $T$                       & $37\,^\circ$C  & fixed (no Q$_{10}$) \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+% ─── Table A5 — Rattay ──────────────────────────────────────────────────────
+\begin{table}[h]
+  \centering
+  \caption{Rattay (1993) unmyelinated-fibre constants used by jaxon.
+    Canonical Hodgkin--Huxley parameterisation with fast sodium
+    ($g_{\mathrm{Na}}\,m^3 h$), delayed-rectifier potassium
+    ($g_K\,n^4$) and a passive leak.  Q$_{10} = 2.2466$ is applied to
+    all gate $\alpha,\beta$ rates with reference temperature
+    $6.3\,^\circ$C; the manuscript uses $T = 37\,^\circ$C throughout.}
+  \label{tab:app-rattay}
+  \begin{tabular}{lrl}
+    \toprule
+    Parameter & Value & Notes \\
+    \midrule
+    $V_{\mathrm{rest}}$       & $-70$\,mV   & resting potential \\
+    $C_m$                     & $1.0\,\mu$F\,cm$^{-2}$ & specific capacitance \\
+    $\rho_a$                  & $100\,\Omega$\,cm       & axial resistivity \\
+    $\Delta z$ per compartment & $8.333\,\mu$m          & default \\
+    $g_{\mathrm{Na}}$         & $0.12$\,S\,cm$^{-2}$    & fast Na ($m^3 h$) \\
+    $g_K$                     & $0.036$\,S\,cm$^{-2}$   & delayed-rectifier K ($n^4$) \\
+    $g_L$                     & $3\times 10^{-4}$\,S\,cm$^{-2}$ & leak \\
+    $E_{\mathrm{Na}}$         & $+45$\,mV   & sodium reversal \\
+    $E_K$                     & $-82$\,mV   & potassium reversal \\
+    $E_L$                     & $-59.4$\,mV  & leak reversal \\
+    $T$                       & $37\,^\circ$C & body temperature \\
+    $Q_{10}$ (all gates)      & $2.2466$ at $T_{\mathrm{ref}}=6.3\,^\circ$C & temperature scaling \\
+    \bottomrule
+  \end{tabular}
+\end{table}

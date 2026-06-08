@@ -26,7 +26,11 @@ anodic-first, sinusoidal, sawtooth, exponentially-decaying and
 Gaussian), and six pulse widths ($0.02$--$1\,\mathrm{ms}$).
 \textbf{$99.6\,\%$ of the 943 configurations agree to within $1\,\%$
 relative threshold error with NEURON}
-(Table~\ref{tab:validation-sd}); only the Rattay model has
+(Table~\ref{tab:validation-sd}).  Across the same 943 configurations,
+the Pearson correlation between jaxon and NEURON thresholds is
+$r = 0.999998$ ($R^{2} = 0.999996$), with a mean signed bias of
+$+0.11\,\%$ (jaxon marginally high) and $95\,\%$ limits of agreement
+of $[-0.05\,\%, +0.41\,\%]$.  Only the Rattay model has
 configurations exceeding the $1\,\%$ acceptance criterion, and those
 exceptions are concentrated in a single edge regime
 (biphasic cathodic-first pulses at the shortest pulse width
@@ -62,19 +66,88 @@ precision (Figure~\ref{fig:traces}, bottom rows).
     exponentially-decaying, Gaussian (8 total).  Pulse widths tested:
     \{0.02, 0.05, 0.1, 0.2, 0.5, 1.0\}\,ms (6 total).}
   \label{tab:validation-sd}
-  \begin{tabular}{lrrrrr}
+  \begin{tabular}{lrcrr}
     \toprule
-    Model    & configs tested & median err.\ & 95\textsuperscript{th} \%ile & peak err.\ & \%\,$<1\%$ \\
+    Model    & configs tested & median err.\ [IQR] & 95\textsuperscript{th} \%ile & peak err.\ \\
     \midrule
-    MRG      &  432 & 0.04\,\% & 0.20\,\% & 0.39\,\% & 100\,\% \\
-    Sundt    &  240 & 0.34\,\% & 0.42\,\% & 0.46\,\% & 100\,\% \\
-    Sweeney  &   31 & 0.02\,\% & 0.06\,\% & 0.06\,\% & 100\,\% \\
-    Rattay   &  240 & 0.07\,\% & 0.15\,\% & 2.24\,\% &  98.3\,\% \\
+    MRG      &  432 & 0.04\,\% [0.02--0.09] & 0.20\,\% & 0.39\,\% \\
+    Sundt    &  240 & 0.34\,\% [0.28--0.39] & 0.42\,\% & 0.46\,\% \\
+    Sweeney  &   31 & 0.02\,\% [0.02--0.05] & 0.06\,\% & 0.06\,\% \\
+    Rattay   &  240 & 0.07\,\% [0.04--0.10] & 0.15\,\% & 2.24\,\% \\
     \midrule
-    \textbf{total} & \textbf{943} & --- & --- & 2.24\,\% & \textbf{99.6\,\%} \\
+    \textbf{total} & \textbf{943} & \textbf{0.08\,\% [0.03--0.20]} & \textbf{0.40\,\%} & \textbf{2.24\,\%} \\
     \bottomrule
   \end{tabular}
 \end{table}
+
+Table~\ref{tab:validation-sd} aggregates across all eight stimulus
+waveforms.  Because waveform shape couples nonlinearly into the
+strength--duration relationship and into the activation
+proxy~\cite{grill1995stimulus,wongsarnpigoon2010energy}, we also
+report the breakdown per waveform aggregated across all four fiber
+models (Table~\ref{tab:validation-sd-per-wf}).  Seven of the eight
+waveforms agree to within $1\,\%$ on \emph{every} configuration
+tested; the only exceptions are four biphasic cathodic-first
+configurations of the smallest Rattay diameters (already discussed
+above), and even there 96.5\,\% of the 115 biphasic-cath-first
+configurations remain below the $1\,\%$ tolerance.  The visual
+analogue is Figure~\ref{fig:validation-waveforms}, which overlays
+the strength--duration curves for all eight waveforms at a single
+representative diameter ($D=10\,\mu\mathrm{m}$ MRG) and reports the
+distribution of relative threshold errors per waveform aggregated
+across the full per-model sweep.
+
+\begin{table}[h]
+  \centering
+  \caption{Threshold error breakdown per stimulus waveform,
+    aggregated across all four fiber models and their published
+    diameter ranges (8 waveforms $\times$ ${\sim}120$ configurations
+    each).  All eight waveform shapes used in the sweep are reported
+    --- monophasic cathodic, monophasic anodic, biphasic
+    cathodic-first, biphasic anodic-first, sinusoidal, sawtooth,
+    exponentially-decaying and Gaussian (cf.\ Section~\ref{sec:methods-validation}).
+    Apart from a handful of biphasic cathodic-first configurations at
+    the four smallest Rattay diameters, every other waveform passes
+    the $1\,\%$ tolerance on every diameter tested.}
+  \label{tab:validation-sd-per-wf}
+  \begin{tabular}{lrccrr}
+    \toprule
+    Waveform & $n$ & median [IQR] err. & 95\textsuperscript{th} \%ile & peak err. & \%\,$<1\%$ \\
+    \midrule
+    Monophasic cathodic       & 120 & 0.08\,\% [0.04--0.23] & 0.40\,\% & 0.44\,\% & 100.0\,\% \\
+    Monophasic anodic         & 114 & 0.12\,\% [0.05--0.21] & 0.38\,\% & 0.41\,\% & 100.0\,\% \\
+    Biphasic cathodic-first   & 115 & 0.08\,\% [0.03--0.19] & 0.38\,\% & 2.24\,\% &  96.5\,\% \\
+    Biphasic anodic-first     & 114 & 0.08\,\% [0.03--0.17] & 0.39\,\% & 0.42\,\% & 100.0\,\% \\
+    Sinusoidal                & 120 & 0.05\,\% [0.03--0.23] & 0.39\,\% & 0.43\,\% & 100.0\,\% \\
+    Sawtooth                  & 120 & 0.07\,\% [0.04--0.27] & 0.41\,\% & 0.46\,\% & 100.0\,\% \\
+    Exponential decay         & 120 & 0.07\,\% [0.03--0.23] & 0.41\,\% & 0.44\,\% & 100.0\,\% \\
+    Gaussian                  & 120 & 0.05\,\% [0.03--0.25] & 0.37\,\% & 0.42\,\% & 100.0\,\% \\
+    \midrule
+    \textbf{total}           & \textbf{943} & \textbf{0.08\,\% [0.03--0.20]} & \textbf{0.40\,\%} & \textbf{2.24\,\%} & \textbf{99.6\,\%} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{figure}[h]
+  \centering
+  \figmaybe[width=0.98\textwidth]{fig_validation_waveforms.png}
+  \caption{Per-waveform validation against \texttt{pyfibers}-wrapped
+    NEURON.  \textbf{Top row:} strength--duration threshold (absolute
+    value) vs.\ pulse width for each of the eight stimulus waveforms,
+    at one representative diameter ($D=10\,\mu\mathrm{m}$ MRG): jaxon
+    (solid coloured line) overlays NEURON (open circles) at every
+    tested pulse width for every waveform.  \textbf{Bottom row:}
+    distribution of $|$relative threshold error$|$ for the same
+    waveform, aggregated over all four fiber models and their
+    diameter sweeps ($n\approx 120$ configurations per panel; vertical
+    dashed line = per-waveform median, vertical dotted red line =
+    $1\,\%$ acceptance criterion).  X-axes are shared (0--2.5\,\%) so
+    the panels are directly visually comparable: seven of the eight
+    waveforms fall entirely below the $1\,\%$ tolerance, only the
+    biphasic cathodic-first panel has a tail above $1\,\%$ (the four
+    smallest-Rattay outliers identified in Table~\ref{tab:validation-sd}).}
+  \label{fig:validation-waveforms}
+\end{figure}
 
 Conduction velocity (CV) is independently sensitive to the
 internodal and nodal time constants and so probes a different
@@ -99,14 +172,14 @@ full diameter range.
     convention (see Table~\ref{tab:validation-sd} caption).}
   \label{tab:validation-cv}
   \small
-  \begin{tabular}{l p{6.0cm} rrr}
+  \begin{tabular}{l p{5.4cm} cr}
     \toprule
-    Model    & diameters tested ($\mu$m) & median err.\ & peak err.\ & \%\,$<1\%$ \\
+    Model    & diameters tested ($\mu$m) & median err.\ [IQR] & peak err.\ \\
     \midrule
-    MRG      & 5.7, 7.3, 8.7, 10.0, 11.5, 12.8, 14.0, 15.0, 16.0  & $<0.01$\,\% & $<0.01$\,\% & 100\,\% \\
-    Sundt    & 0.3, 0.5, 0.8, 1.0, 1.2                             & $0.09$\,\%  & $0.24$\,\%  & 100\,\% \\
-    Sweeney  & 10                                                  & $<0.01$\,\% & $<0.01$\,\% & 100\,\% \\
-    Rattay   & 0.3, 0.5, 0.8, 1.0, 1.5                             & $0.05$\,\%  & $0.13$\,\%  & 100\,\% \\
+    MRG      & 5.7, 7.3, 8.7, 10.0, 11.5, 12.8, 14.0, 15.0, 16.0  & $<0.01$\,\% [0.00--0.00]  & $<0.01$\,\% \\
+    Sundt    & 0.3, 0.5, 0.8, 1.0, 1.2                             & $0.09$\,\% [0.08--0.16]   & $0.24$\,\%  \\
+    Sweeney  & 10                                                  & $<0.01$\,\% [0.00--0.00]  & $<0.01$\,\% \\
+    Rattay   & 0.3, 0.5, 0.8, 1.0, 1.5                             & $0.05$\,\% [0.02--0.05]   & $0.13$\,\%  \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -393,22 +466,27 @@ across fibre biophysics.
   \caption{Per-model selectivity statistics across 25 randomised
     Hussain-style nerves per model.  Each seed uses a uniformly random
     divider angle in $[0°,\,180°)$ and a freshly reject-sampled
-    fascicle packing.  Wave column is the warm-started waveform-Adam
-    optimum; median SI is $1.000$ on every model.}
+    fascicle packing.  Median [IQR] reported alongside the mean to
+    show distribution spread; the rect median is pinned at $1.000$ on
+    every model, but the Q1 of the IQR captures how tightly the bulk
+    of seeds clusters at the optimum.  Wave columns are the
+    warm-started waveform-Adam optimum.}
   \label{tab:selectivity}
-  \begin{tabular}{lrrrrrr}
+  \resizebox{\textwidth}{!}{%
+  \begin{tabular}{lrrcrrrc}
     \toprule
-    Model           & D ($\mu$m) & rect mean SI & rect median & \%\,$\ge 0.95$ & \%\,$=1.0$ & wave mean SI \\
+    Model           & D ($\mu$m) & rect mean & rect median [IQR] & \%\,$\ge 0.95$ & \%\,$=1.0$ & wave mean & wave median [IQR] \\
     \midrule
-    MRG (myel.)     &  5.7 & 0.962 & 1.000 & 84\,\% & 72\,\% & 0.952 \\
-    MRG (myel.)     & 10.0 & 0.944 & 1.000 & 76\,\% & 68\,\% & 0.941 \\
-    Sweeney (myel.) & 10.0 & 0.956 & 1.000 & 80\,\% & 76\,\% & 0.950 \\
-    Sundt (unmyel.) &  1.0 & 0.934 & 1.000 & 68\,\% & 64\,\% & 0.928 \\
-    Rattay (unmyel.) & 1.0 & 0.979 & 1.000 & 88\,\% & 72\,\% & 0.958 \\
+    MRG (myel.)     &  5.7 & 0.962 & 1.000 [0.97--1.00] & 84\,\% & 72\,\% & 0.952 & 0.990 [0.96--1.00] \\
+    MRG (myel.)     & 10.0 & 0.944 & 1.000 [0.95--1.00] & 76\,\% & 68\,\% & 0.941 & 1.000 [0.93--1.00] \\
+    Sweeney (myel.) & 10.0 & 0.956 & 1.000 [1.00--1.00] & 80\,\% & 76\,\% & 0.950 & 0.990 [0.96--1.00] \\
+    Sundt (unmyel.) &  1.0 & 0.934 & 1.000 [0.94--1.00] & 68\,\% & 64\,\% & 0.928 & 0.990 [0.94--1.00] \\
+    Rattay (unmyel.) & 1.0 & 0.979 & 1.000 [0.99--1.00] & 88\,\% & 72\,\% & 0.958 & 0.987 [0.94--1.00] \\
     \midrule
-    \textbf{all 125 seeds} & --- & \textbf{0.955} & \textbf{1.000} & \textbf{79\,\%} & \textbf{70\,\%} & \textbf{0.946} \\
+    \textbf{all 125 seeds} & --- & \textbf{0.955} & \textbf{1.000 [0.96--1.00]} & \textbf{79\,\%} & \textbf{70\,\%} & \textbf{0.946} & \textbf{0.990 [0.95--1.00]} \\
     \bottomrule
-  \end{tabular}
+  \end{tabular}%
+  }
 \end{table}
 
 Figure~\ref{fig:selectivity-gallery} shows representative
@@ -416,6 +494,39 @@ cross-sections per model and per seed: the random divider angle and
 the rejection-sampled fascicle positions give each panel a different
 target / off-target layout, and the optimised cuff configuration
 (per-contact polarities + amplitudes) adapts to it.
+Figure~\ref{fig:convergence} reports the per-model convergence
+profiles across the 125 seeds: the rect stage drives the WQ loss down
+by roughly an order of magnitude over $\sim 20$--$60$ iterations
+(panel a, with model-dependent rates --- MRG and Sweeney converge
+fastest, the unmyelinated Sundt and Rattay take more iterations),
+while the warm-started waveform stage holds the rect optimum's SI
+near 1.0 throughout (panel b, median always $\ge 0.95$ across all
+five model / diameter combinations).
+
+\begin{figure}[h]
+  \centering
+  \figmaybe[width=0.98\textwidth]{fig_optimization_convergence.png}
+  \caption{Per-model optimisation convergence across the 125
+    randomised Hussain-style nerve realisations.  In each panel the
+    solid line is the per-iteration median across the seeds for that
+    fibre model, the shaded band is the inter-quartile range
+    (Q1--Q3), and seeds that stop early are padded with their final
+    value so the curve is well-defined out to the longest run.
+    \textbf{(a)} Rectangular LBFGS-FD stage --- WQ loss vs.\ optimiser
+    iteration.  All models drop their loss by roughly an order of
+    magnitude over the first $\sim 30$ iterations; MRG and Sweeney
+    converge fastest, Sundt and Rattay (unmyelinated, higher
+    activation thresholds) take more iterations.
+    \textbf{(b)} Warm-started waveform-Adam stage --- selectivity
+    index vs.\ iteration.  Wave Adam starts from the rect optimum and
+    mostly preserves it; the median SI stays above the $0.95$
+    acceptance line (red dashed) throughout for every model.  The
+    legend ``$n=N$'' is the number of seeds whose wave history has
+    length $>1$ (seeds that already satisfied the
+    $\mathrm{SI}\ge 1$ early stop at warm-start contribute one point
+    only and are excluded from the per-iteration aggregation).}
+  \label{fig:convergence}
+\end{figure}
 
 \begin{figure}[h]
   \centering
@@ -441,21 +552,52 @@ target / off-target layout, and the optimised cuff configuration
   \centering
   \figmaybe[width=0.98\textwidth]{fig_selectivity_xsections.png}
   \caption{Cross-section activation patterns at the rectangular LBFGS
-    optimum, four representative seeds per fibre model.  The divider
-    line that splits target (filled blue) from off-target (hollow red)
-    fascicles is randomised per seed (uniform on
-    $[0,\,180)$°), so each panel corresponds to a different
-    target/off-target orientation.  Per-fibre activation is shown as
-    solid (fired) vs hollow (silent); the six-contact cuff is
-    annotated by per-contact polarity (green cathodic, orange anodic)
-    and amplitude.  Selectivity index for each seed is given in the
-    panel title.  The optimised cuff configuration adapts to the
-    randomised anatomy and recovers $\mathrm{SI}\ge 0.95$ for most
-    panels; the few exceptions correspond to seeds where the
-    target/off-target geometry is intrinsically harder (e.g.\ a
-    target fascicle landing near the nerve centre with off-target
-    fascicles fully surrounding it).}
+    optimum.  Two seeds per fibre model (rows: MRG~5.7\,$\mu$m,
+    MRG~10\,$\mu$m, Sweeney~10\,$\mu$m, Sundt~1\,$\mu$m,
+    Rattay~1\,$\mu$m; columns: two top-SI seeds chosen per row), giving
+    ten realisations in total.  Each cell stacks a cross-section
+    (top) and a per-contact pulse strip (bottom).  In the cross-section,
+    the thick black line is the target / off-target divider (randomised
+    per seed, uniform on $[0,\,180)$°); fibres are coloured by recruitment
+    --- filled green = target fired, open green = target silent, red
+    \texttimes{} = off-target fired (the leakage failure mode), small grey
+    dot = off-target silent.  The six cuff contacts (sitting on a
+    1.5\,mm ring around the nerve) are coloured by polarity (blue
+    cathodic, orange anodic) and sized by $|I_k|$.  Each pulse strip
+    underneath shows the optimised monophasic rectangular waveform for
+    each of the six contacts (delay 1.0\,ms, pulse-width 0.1\,ms);
+    the contact label C0--C5 and signed amplitude (mA) are printed
+    inside the panel.  The selectivity index and seed number are noted
+    in the top-right of each cross-section.  The optimised cuff
+    configuration adapts to the randomised anatomy and recovers
+    $\mathrm{SI}=1.0$ in the displayed cells; failure modes (red
+    \texttimes{} markers) appear in the per-model distributions of
+    Figure~\ref{fig:selectivity} but are absent from the
+    top-SI subset shown here.  Failure-mode examples are shown in
+    Figure~\ref{fig:selectivity-gallery-hard}.}
   \label{fig:selectivity-gallery}
+\end{figure}
+
+\begin{figure}[h]
+  \centering
+  \figmaybe[width=0.98\textwidth]{fig_selectivity_xsections_hard.png}
+  \caption{Companion to Figure~\ref{fig:selectivity-gallery}: the
+    two \emph{worst-SI} seeds per fibre model, drawn with the same
+    layout and marker scheme.  These are the residual failure cases
+    --- the optimisation pipeline still reaches a stable local optimum
+    on every seed, but the optimum has either some target fibres
+    silent (open green markers) or some off-target fibres recruited
+    (red \texttimes{} markers, the ``leakage'' mode), or both.  Visual
+    inspection shows that the residual failures are typically driven
+    by adversarial fascicle layouts where (i) a target and an
+    off-target fascicle sit close together near the cuff perimeter,
+    so any contact strong enough to drive the target also drives its
+    neighbour, or (ii) a target fascicle lands near the geometric
+    centre of the nerve where the field of any single ring contact is
+    weak.  Anatomically realistic FEM-derived $V_e$ fields, which
+    break the homogeneous-bath symmetry, are the natural next step
+    for resolving these hard-anatomy cases.}
+  \label{fig:selectivity-gallery-hard}
 \end{figure}
 
 \subsubsection*{Mixed-diameter regime.}
@@ -476,3 +618,61 @@ present cuff geometry and loss formulation are sufficient
 (single-diameter spatial selectivity) versus the regime in which an
 additional design lever---most plausibly anatomically realistic
 $V_e$ with target-fascicle-adjacent contacts---is required.
+
+To make the failure mode concrete, Figure~\ref{fig:mixed-landscape}
+shows the loss landscape along a one-dimensional cut through amplitude
+space for a representative mixed-diameter nerve.  We fix a bipolar
+template ($I_0 = -1\,\mathrm{mA}$ cathodic at the contact closest to
+the target fascicle, $I_3 = +1\,\mathrm{mA}$ anodic on the opposite
+side, other contacts at zero) and sweep a single scaling factor
+$\alpha$ from $0$ to $4\,\mathrm{mA}$.  Because the off-target
+fascicle's $D = 14\,\mu\mathrm{m}$ fibres have a lower activation
+threshold than the target fascicle's $D = 5.7\,\mu\mathrm{m}$ fibres
+under the same pulse width, they fire first as $\alpha$ grows
+(Figure~\ref{fig:mixed-landscape}a); over the entire intermediate
+$\alpha$ regime the selectivity index is \emph{negative}
+(Figure~\ref{fig:mixed-landscape}b, minimum
+$\mathrm{SI} = -0.56$ at $\alpha \approx 0.7\,\mathrm{mA}$).  The
+regularised WQ loss (Figure~\ref{fig:mixed-landscape}c) has two
+attractive minima --- the trivial $\alpha = 0$ (silent) and the
+saturated $\alpha \gg 0$ (all-fire) --- but no interior minimum at any
+regularisation strength $\lambda$ we tested.  The differentiable
+forward solver is gradient-informative at every $\alpha$; the
+optimisation failure is a loss-landscape property, not a
+gradient-availability one.
+
+\begin{figure}[h]
+  \centering
+  \figmaybe[width=0.98\textwidth]{fig_mixed_diameter_landscape.png}
+  \caption{Mixed-diameter loss-landscape diagnostic for one
+    representative two-fascicle nerve
+    ($D_{\mathrm{target}} = 5.7\,\mu\mathrm{m}$,
+     $D_{\mathrm{off}} = 14\,\mu\mathrm{m}$, 25 fibres per fascicle).
+    A bipolar amplitude template is fixed and scaled by a single
+    factor $\alpha$, sweeping the entire range from silent
+    ($\alpha = 0$) through threshold to saturation
+    ($\alpha = 4\,\mathrm{mA}$).
+    \textbf{(a)} Activation rates: the larger off-target fibres
+    (red, $D = 14\,\mu\mathrm{m}$) cross threshold at lower
+    $\alpha$ than the smaller target fibres (green,
+    $D = 5.7\,\mu\mathrm{m}$), reflecting their lower
+    pulse-width-equivalent threshold under the common monophasic
+    rectangular pulse.
+    \textbf{(b)} Selectivity index $\mathrm{SI}(\alpha)$ along the
+    same sweep: across the entire intermediate $\alpha$ window the
+    off-target population fires more strongly than the target, giving
+    \emph{anti-selectivity} (SI $< 0$, shaded red); SI returns to
+    zero at $\alpha = 0$ (no fibres fire) and at high $\alpha$ (all
+    fibres fire).  There is no $\alpha$ along this slice that yields
+    $\mathrm{SI} > 0$.
+    \textbf{(c)} Regularised WQ loss
+    $L(\alpha) = \mathrm{WQ}(\alpha) + \lambda \overline{I_k^{\,2}}$
+    at four energy-regularisation strengths $\lambda$.  For
+    $\lambda = 0$ the loss has two minima --- the silent $\alpha = 0$
+    and a saturated large-$\alpha$ minimum where all fibres fire.
+    Increasing $\lambda$ kills the large-$\alpha$ minimum but cannot
+    create an interior selective one.  The optimiser, run from any
+    initial $\alpha$, therefore lands at $\alpha = 0$ (trivial) or
+    $\alpha$-large (all-fire), never at a positive-SI configuration.}
+  \label{fig:mixed-landscape}
+\end{figure}

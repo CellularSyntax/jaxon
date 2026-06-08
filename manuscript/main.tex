@@ -3,17 +3,16 @@
 %
 % Build mode: SWITCH AT SUBMISSION
 %   - Local writing/preview:  use article class (default).
-%     iopart.cls is NOT redistributable on CTAN; IOP hosts it on
-%     their author portal.  For local writing, article is sufficient.
-%   - Submission:             download iopart.cls from
-%     https://publishingsupport.iopscience.iop.org/questions/latex-template/
-%     drop it next to main.tex, and toggle the conditional below.
+%   - Submission:             use iopjournal.cls (shipped alongside
+%     this main.tex; downloaded from
+%     https://publishingsupport.iopscience.iop.org/questions/latex-template/).
+%     Toggle the conditional below.
 %
 % Build: latexmk -pdf main.tex   (or `make`)
 % ============================================================
 
-% Set \jneSubmission to switch to iopart class.  Commented out =
-% local article-class preview; uncomment = JNE submission mode.
+% Set \jneSubmission to switch to the iopjournal class.  Commented
+% out = local article-class preview; uncomment = JNE submission mode.
 % \def\jneSubmission{1}
 
 \ifx\jneSubmission\undefined
@@ -21,20 +20,35 @@
   \documentclass[a4paper,11pt]{article}
   \usepackage[margin=1in]{geometry}
   \usepackage{authblk}
-  \providecommand{\submitto}[1]{}
-  \providecommand{\ead}[1]{\thanks{Email: \texttt{#1}}}
-  \providecommand{\address}[1]{\affil{#1}}
+  % Shim iopjournal-specific macros so the same source tree compiles
+  % cleanly under the article class.  The submission build will
+  % override these via iopjournal.cls.
+  \providecommand{\articletype}[1]{}
+  \providecommand{\orcid}[1]{\href{https://orcid.org/#1}{\textsuperscript{ORCID:\,#1}}}
+  \providecommand{\email}[1]{\thanks{Email: \texttt{#1}}}
+  \providecommand{\keywords}[1]{\par\noindent\textbf{Keywords:} #1\par}
+  \providecommand{\ack}[1]{\section*{Acknowledgements}#1}
+  \providecommand{\funding}[1]{\section*{Funding}#1}
+  \providecommand{\roles}[1]{\section*{Author contributions}#1}
+  \providecommand{\data}[1]{\section*{Data and code availability}#1}
+  \providecommand{\suppdata}[1]{\section*{Supplementary data}#1}
   \newcommand{\JNE}{Journal of Neural Engineering}
 \else
-  % Submission: iopart class (requires iopart.cls from IOP).
-  \documentclass[12pt]{iopart}
+  % Submission: iopjournal class (requires iopjournal.cls + orcid.pdf
+  % alongside main.tex; both ship in the IOP template zip from
+  % https://publishingsupport.iopscience.iop.org/questions/latex-template/).
+  \documentclass{iopjournal}
 \fi
 
 \usepackage{amsmath,amssymb}
 \usepackage{graphicx}
 \usepackage{booktabs}
 \usepackage{siunitx}
-\usepackage[hidelinks]{hyperref}
+% hyperref is preloaded by iopjournal.cls; load it ourselves only
+% under the article-class preview to avoid an option clash.
+\ifx\jneSubmission\undefined
+  \usepackage[hidelinks]{hyperref}
+\fi
 \usepackage{xcolor}
 \usepackage[textsize=footnotesize,colorinlistoftodos]{todonotes}
 
@@ -65,38 +79,54 @@
 
 \begin{document}
 
-\title{jaxon: differentiable peripheral nerve fiber simulation in JAX
-       for scalable selectivity optimisation}
-
 \ifx\jneSubmission\undefined
-  % article + authblk title block
-  \author{Max Haberbusch%
-    \thanks{Email: \texttt{max.haberbusch@meduniwien.ac.at}}}
+  % ── Article-class preview block ───────────────────────────────────
+  \title{jaxon: differentiable peripheral nerve fiber simulation in
+         JAX for scalable selectivity optimisation}
+  \author{David Lung\thanks{\href{https://orcid.org/0009-0003-7748-2335}{ORCID: 0009-0003-7748-2335}}}
   \affil{Center for Medical Physics and Biomedical Engineering, Medical
          University of Vienna, Vienna, Austria}
+  \author{Max Haberbusch\thanks{Corresponding author. \href{https://orcid.org/0000-0003-0712-4893}{ORCID: 0000-0003-0712-4893}.
+                                 Email: \texttt{max.haberbusch@meduniwien.ac.at}}}
+  \affil{Center for Medical Physics and Biomedical Engineering, Medical
+         University of Vienna, Vienna, Austria}
+  \affil{Ludwig Boltzmann Institute for Cardiovascular Research, Vienna, Austria}
   \date{\today}
   \maketitle
 
   \begin{abstract}
   \input{abstract}
   \end{abstract}
+
+  \keywords{peripheral nerve stimulation, differentiable simulation,
+            JAX, axon model, selectivity optimisation, neural engineering}
 \else
-  % iopart title block (handles \maketitle implicitly)
-  \author{Max Haberbusch}
-  \address{Center for Medical Physics and Biomedical Engineering, Medical
-           University of Vienna, Vienna, Austria}
-  \ead{max.haberbusch@meduniwien.ac.at}
+  % ── iopjournal submission block ───────────────────────────────────
+  \articletype{Paper}
+
+  \title{jaxon: differentiable peripheral nerve fiber simulation in
+         JAX for scalable selectivity optimisation}
+
+  \author{David Lung$^{1}$\orcid{0009-0003-7748-2335}\ and
+          Max Haberbusch$^{1,2,*}$\orcid{0000-0003-0712-4893}}
+
+  \affil{$^{1}$Center for Medical Physics and Biomedical Engineering,
+         Medical University of Vienna, Vienna, Austria}
+
+  \affil{$^{2}$Ludwig Boltzmann Institute for Cardiovascular Research,
+         Vienna, Austria}
+
+  \affil{$^{*}$Author to whom any correspondence should be addressed.}
+
+  \email{max.haberbusch@meduniwien.ac.at}
+
+  \keywords{peripheral nerve stimulation, differentiable simulation,
+            JAX, axon model, selectivity optimisation, neural engineering}
 
   \begin{abstract}
   \input{abstract}
   \end{abstract}
-
-  \submitto{\JNE}
 \fi
-
-% J Neural Eng keywords: 3–5 words
-\noindent\textit{Keywords:} peripheral nerve stimulation, differentiable
-simulation, JAX, axon model, selectivity optimisation, neural engineering
 
 % ─── Body ──────────────────────────────────────────────────────────
 \input{sections/01_introduction}
@@ -104,22 +134,23 @@ simulation, JAX, axon model, selectivity optimisation, neural engineering
 \input{sections/03_results}
 \input{sections/04_discussion}
 
+% ─── Appendix ──────────────────────────────────────────────────────
+\input{sections/05_appendix}
+
 % ─── Back matter ───────────────────────────────────────────────────
-\section*{Data and code availability}
-The full \texttt{jaxon} source code, validation harness, and
+\data{The full \texttt{jaxon} source code, validation harness, and
 reproduction scripts for every figure in this paper are available at
 \url{https://gitlab.meduniwien.ac.at/zmpbmt/cvd/jaxfibers} under the
 MIT licence.  All results in this paper were produced by the
 \texttt{experiments\_v2/} scripts in that repository at git tag
-\texttt{jne-submission} (to be assigned at submission).
+\texttt{jne-submission} (to be assigned at submission).}
 
-\section*{Acknowledgements}
-The author thanks the Medical University of Vienna for access to the
-HPC facility on which the NVIDIA A16 benchmarks and the
-100-realisation selectivity sweep were run.
+\ack{The authors thank the Medical University of Vienna for access to
+the HPC facility on which the NVIDIA A16 / A100 benchmarks and the
+randomised selectivity sweep were run.}
 
-% Funding, grant numbers, ORCID, collaborator attributions to be
-% inserted at submission.  See README pre-submission checklist.
+\funding{This work was supported by the Medical University of Vienna
+Focus Grant M (project VAGUSPEC).}
 
 \bibliographystyle{iopart-num}
 \bibliography{refs}

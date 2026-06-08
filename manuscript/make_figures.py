@@ -453,94 +453,130 @@ def fig_scaling_allmodels():
 
 # ─── 5. selectivity: violin distribution across all completed Phase 3 seeds ───
 def fig_selectivity_summary():
-    """SI distribution as violins (baseline / rect / wave), plus a
-    rect-vs-wave per-seed scatter that shows whether the warm-started
-    waveform stage refines or destabilises the rectangular optimum.
+    """Cross-model selectivity violin (rect + wave SI per model), plus a
+    rect-vs-wave per-seed scatter coloured by model.
 
-    Reads from manuscript/outputs/.../data_seed_*.json (preferred) or
-    falls back to the original repo outputs/.  Currently sourced from
-    a single fibre model (MRG @ D=5.7 µm); the across-model violin —
-    one violin per implemented model — is a natural extension once the
-    matching sweeps for Sundt, Sweeney and Rattay are added.
+    Reads every selectivity_sweep_phase3_*/ sub-directory that has at
+    least one data_seed_*.json file (manuscript/outputs/ preferred, falls
+    back to ../outputs/).  Each per-model directory becomes one group of
+    violins on the x-axis.  When only the original MRG @ 5.7 µm sweep
+    exists, the figure degrades gracefully to a single-model view.
     """
-    sweep_dir = _outdir("selectivity_sweep_phase3_manuscript")
-    seeds = sorted(sweep_dir.glob("data_seed_*.json"))
-    if not seeds:
-        return
-    data = []
-    for p in seeds:
-        d = json.loads(p.read_text())
-        data.append({
-            "seed":     d["seed"],
-            "baseline": d["si_baseline"],
-            "rect":     d["rect"]["final_si"],
-            "wave":     d["waveform"]["final_si"],
-        })
-    n = len(data)
-    rect = np.array([r["rect"]     for r in data])
-    wave = np.array([r["wave"]     for r in data])
-    base = np.array([r["baseline"] for r in data])
-
-    fig, axes = plt.subplots(1, 2, figsize=(11, 4.2))
-
-    # ── Panel A: violin distribution of baseline / rect / wave SI ─────────────
-    ax = axes[0]
-    groups = [base, rect, wave]
-    labels = [
-        f"baseline\n(mean {base.mean():.2f})",
-        f"rect LBFGS\n(mean {rect.mean():.3f},\nmedian {np.median(rect):.3f})",
-        f"wave Adam\n(mean {wave.mean():.3f},\nmedian {np.median(wave):.3f})",
+    # Per-model display labels + colours, in the canonical order they
+    # should appear left-to-right on the figure.
+    MODEL_DISPLAY = [
+        ("selectivity_sweep_phase3_manuscript", "MRG\n5.7 µm",  "#1f77b4"),
+        ("selectivity_sweep_phase3_mrg10um",    "MRG\n10 µm",   "#4a90c4"),
+        ("selectivity_sweep_phase3_sweeney_10um", "Sweeney\n10 µm", "#2ca02c"),
+        ("selectivity_sweep_phase3_sundt_1um",  "Sundt\n1 µm",  "#d62728"),
+        ("selectivity_sweep_phase3_rattay_1um", "Rattay\n1 µm", "#9467bd"),
     ]
-    pal = ["#cccccc", "#1f77b4", "#2ca02c"]
-    parts = ax.violinplot(groups, positions=[0, 1, 2], widths=0.85,
-                          showmeans=False, showmedians=False, showextrema=False)
-    for body, c in zip(parts["bodies"], pal):
-        body.set_facecolor(c)
-        body.set_edgecolor("black")
-        body.set_alpha(0.7)
-        body.set_linewidth(0.6)
-    # Overlay individual seed points (jitter) + median bars
+
+    # Collect all sweeps that exist on disk.
+    models = []
+    for subdir, label, colour in MODEL_DISPLAY:
+        sweep_dir = _outdir(subdir)
+        seeds = sorted(sweep_dir.glob("data_seed_*.json"))
+        if not seeds:
+            continue
+        rows = []
+        for p in seeds:
+            d = json.loads(p.read_text())
+            rows.append({
+                "seed":     d["seed"],
+                "baseline": d["si_baseline"],
+                "rect":     d["rect"]["final_si"],
+                "wave":     d["waveform"]["final_si"],
+            })
+        rect = np.array([r["rect"] for r in rows])
+        wave = np.array([r["wave"] for r in rows])
+        base = np.array([r["baseline"] for r in rows])
+        models.append(dict(label=label, colour=colour, n=len(rows),
+                           rect=rect, wave=wave, base=base))
+
+    if not models:
+        return
+    n_models = len(models)
+
+    fig, axes = plt.subplots(1, 2, figsize=(max(11, 2.0 * n_models + 4), 4.6))
+
+    # ── Panel A: per-model paired violins (rect + wave side by side) ────────
+    ax = axes[0]
     rng = np.random.default_rng(0)
-    for i, (g, c) in enumerate(zip(groups, pal)):
-        ax.scatter(i + rng.uniform(-0.1, 0.1, size=len(g)), g,
-                   s=14, color="black", alpha=0.45, edgecolors="none", zorder=3)
-        med = float(np.median(g))
-        ax.hlines(med, i - 0.35, i + 0.35, color="red", lw=1.8, zorder=4)
+    centres = np.arange(n_models) * 2.0   # one cluster per model
+    half = 0.40                           # half-width of paired violins
+    for i, m in enumerate(models):
+        x_rect = centres[i] - half * 0.55
+        x_wave = centres[i] + half * 0.55
+        for x, vals, edge_alpha in [(x_rect, m["rect"], 1.0),
+                                    (x_wave, m["wave"], 0.7)]:
+            parts = ax.violinplot([vals], positions=[x], widths=half,
+                                  showmeans=False, showmedians=False,
+                                  showextrema=False)
+            for body in parts["bodies"]:
+                body.set_facecolor(m["colour"])
+                body.set_edgecolor("black")
+                body.set_alpha(0.55 * edge_alpha)
+                body.set_linewidth(0.6)
+            jitter = rng.uniform(-half*0.18, half*0.18, size=len(vals))
+            ax.scatter(x + jitter, vals, s=10, color="black", alpha=0.45,
+                       edgecolors="none", zorder=3)
+            ax.hlines(float(np.median(vals)), x - half*0.4, x + half*0.4,
+                      color="red", lw=1.6, zorder=4)
     ax.axhline(0.95, color="red", lw=0.8, ls="--", alpha=0.55,
                label="acceptance criterion (SI = 0.95)")
-    ax.set_xticks([0, 1, 2])
-    ax.set_xticklabels(labels, fontsize=8)
+    ax.set_xticks(centres)
+    ax.set_xticklabels(
+        [f"{m['label']}\n(n={m['n']})" for m in models],
+        fontsize=8,
+    )
+    # Sub-tick annotation for rect / wave
+    for cx in centres:
+        ax.text(cx - half*0.55, -0.115, "rect", ha="center", va="top",
+                fontsize=7, color="grey", transform=ax.get_xaxis_transform())
+        ax.text(cx + half*0.55, -0.115, "wave", ha="center", va="top",
+                fontsize=7, color="grey", transform=ax.get_xaxis_transform())
     ax.set_ylabel("selectivity index")
     ax.set_ylim(-0.05, 1.10)
-    ax.set_title(f"SI distribution (n = {n} seeds, MRG $D=5.7$ $\\mu$m)",
+    ax.set_title("Per-model selectivity distribution  "
+                 "(rect LBFGS-FD,  warm-started wave Adam)",
                  fontsize=10)
     ax.legend(loc="lower right", fontsize=7, frameon=False)
 
-    # ── Panel B: rect vs wave per-seed scatter (diagonal = no change) ─────────
+    # ── Panel B: rect-vs-wave scatter coloured by model ────────────────────
     ax2 = axes[1]
     ax2.plot([0, 1.05], [0, 1.05], "k:", lw=0.8, alpha=0.5,
              label="wave = rect (no change)")
-    n_improved = int(np.sum(wave > rect + 0.005))
-    n_preserved = int(np.sum(np.abs(wave - rect) <= 0.005))
-    n_regressed = int(np.sum(wave < rect - 0.005))
-    ax2.scatter(rect, wave, s=28, c="#2ca02c", edgecolors="black", lw=0.4,
-                alpha=0.85, zorder=3)
-    ax2.set_xlabel("rect LBFGS SI")
-    ax2.set_ylabel("warm-started wave Adam SI")
+    for m in models:
+        ax2.scatter(m["rect"], m["wave"], s=26, c=m["colour"],
+                    edgecolors="black", lw=0.4, alpha=0.85, zorder=3,
+                    label=f"{m['label'].replace(chr(10), ' ')}  "
+                          f"(n={m['n']})")
+    ax2.set_xlabel("rect SI")
+    ax2.set_ylabel("warm-started wave SI")
     ax2.set_xlim(-0.05, 1.05)
     ax2.set_ylim(-0.05, 1.10)
+    # Aggregate improved / preserved / regressed across all models for the
+    # title (a single global summary is more readable than per-model labels).
+    all_rect = np.concatenate([m["rect"] for m in models])
+    all_wave = np.concatenate([m["wave"] for m in models])
+    n_improved  = int(np.sum(all_wave > all_rect + 0.005))
+    n_preserved = int(np.sum(np.abs(all_wave - all_rect) <= 0.005))
+    n_regressed = int(np.sum(all_wave < all_rect - 0.005))
     ax2.set_title(
-        f"wave vs rect per seed   "
-        f"(improved: {n_improved}, preserved: {n_preserved}, "
-        f"regressed: {n_regressed})",
+        f"wave vs rect per seed (all models)   "
+        f"improved: {n_improved}, preserved: {n_preserved}, "
+        f"regressed: {n_regressed}",
         fontsize=9,
     )
     ax2.legend(loc="upper left", fontsize=7, frameon=False)
     ax2.set_aspect("equal", adjustable="box")
 
+    n_total = sum(m["n"] for m in models)
     fig.suptitle(
-        f"Selectivity optimisation across {n} randomised Hussain-style "
-        "nerve realisations (MRG, $D=5.7$ $\\mu$m)",
+        f"Selectivity optimisation across {n_total} randomised "
+        f"Hussain-style nerve realisations spanning {n_models} fibre "
+        "model" + ("s" if n_models > 1 else ""),
         fontsize=11, fontweight="bold", y=0.995,
     )
     plt.tight_layout(rect=[0, 0, 1, 0.94])

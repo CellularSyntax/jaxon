@@ -64,11 +64,11 @@ export WAVE_PATIENCE="${WAVE_PATIENCE:-20}"
 # 100-fibre CPU smoketest: at ±0.30 mA / lr 0.015 the optimiser
 # overshot a good warm-start and landed at the all-fire attractor.
 # All env-overrideable on submission.
-export AMP_INIT_MA="${AMP_INIT_MA:--0.10}"
-export AMP_CLIP_LO="${AMP_CLIP_LO:--0.20}"
-export AMP_CLIP_HI="${AMP_CLIP_HI:-0.20}"
-export ADAM_LR_MA="${ADAM_LR_MA:-0.005}"
-export FD_EPS_MA="${FD_EPS_MA:-0.003}"
+export AMP_INIT_MA="${AMP_INIT_MA:--0.30}"
+export AMP_CLIP_LO="${AMP_CLIP_LO:--1.50}"
+export AMP_CLIP_HI="${AMP_CLIP_HI:-1.50}"
+export ADAM_LR_MA="${ADAM_LR_MA:-0.015}"
+export FD_EPS_MA="${FD_EPS_MA:-0.010}"
 
 # Where the Duke FEM bundles live.  Override on resubmit to point at a
 # different staging directory if the data moves.

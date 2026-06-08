@@ -118,12 +118,12 @@ RECT_OPTIMIZER  = os.environ.get("RECT_OPTIMIZER", "adam_fd")  # adam_fd | lbfgs
 # we back off to ±0.10 mA init / ±0.20 mA clip / smaller lr so the
 # optimiser stays in the gradient-informative regime instead of
 # landing at the all-fire attractor.  All env-overrideable.
-AMP_INIT_MA = _env_flt("AMP_INIT_MA", -0.10)
-_AMP_CLIP_LO = _env_flt("AMP_CLIP_LO", -0.20)
-_AMP_CLIP_HI = _env_flt("AMP_CLIP_HI",  0.20)
+AMP_INIT_MA = _env_flt("AMP_INIT_MA", -0.30)
+_AMP_CLIP_LO = _env_flt("AMP_CLIP_LO", -1.50)
+_AMP_CLIP_HI = _env_flt("AMP_CLIP_HI",  1.50)
 AMP_CLIP    = (_AMP_CLIP_LO, _AMP_CLIP_HI)
-ADAM_LR_MA  = _env_flt("ADAM_LR_MA",  0.005)
-FD_EPS_MA   = _env_flt("FD_EPS_MA",   0.003)
+ADAM_LR_MA  = _env_flt("ADAM_LR_MA",  0.015)
+FD_EPS_MA   = _env_flt("FD_EPS_MA",   0.010)
 
 
 def _build_seed(duke: dict, seed: int, verbose: bool = True) -> dict:

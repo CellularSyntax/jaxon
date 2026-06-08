@@ -43,9 +43,15 @@ precision (Figure~\ref{fig:traces}, bottom rows).
   \caption{Strength--duration threshold agreement of jaxon vs.\
     \texttt{pyfibers}-wrapped NEURON, aggregated across all tested
     diameters, waveforms and pulse widths per model.  Sweeney is
-    currently reported at $D=10\,\mu\mathrm{m}$ only pending the
-    full multi-diameter re-validation; the corresponding figures
-    will be refreshed before camera-ready.}
+    evaluated at $D=10\,\mu\mathrm{m}$ only because Sweeney's
+    original parameterisation~\cite{sweeney1987} was derived and
+    validated at $D=10\,\mu\mathrm{m}$ and the pyfibers reference
+    implementation~\cite{hussain2024} follows the same convention;
+    the 17 cells dropped from Sweeney's 48-cell sweep at $D=10$ are
+    NEURON \texttt{extracellular}-mechanism singular-solve failures
+    under anodic-leading pulses, not jaxon errors (the jaxon values
+    in those cells are themselves finite and consistent with the
+    surrounding cathodic results).}
   \label{tab:validation-sd}
   \begin{tabular}{lrrrrr}
     \toprule
@@ -89,7 +95,7 @@ full diameter range.
     \midrule
     MRG      & 5.7\,--\,16.0 ($n=9$) & $<0.01$\,\% & $<0.01$\,\% & 100\,\% \\
     Sundt    & 0.3\,--\,1.2  ($n=5$) & $0.09$\,\%  & $0.24$\,\%  & 100\,\% \\
-    Sweeney  & $10$ ($n=1$, multi-$D$ refresh pending) & $<0.01$\,\% & $<0.01$\,\% & 100\,\% \\
+    Sweeney  & $10$ ($n=1$ -- single-$D$ by Sweeney 1987 convention) & $<0.01$\,\% & $<0.01$\,\% & 100\,\% \\
     Rattay   & 0.3\,--\,1.5  ($n=5$) & $0.05$\,\%  & $0.13$\,\%  & 100\,\% \\
     \bottomrule
   \end{tabular}

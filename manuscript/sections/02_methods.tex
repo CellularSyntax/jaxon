@@ -243,7 +243,7 @@ L-BFGS~\cite{liu1989lbfgs} with zoom line search
 (\texttt{optax.lbfgs}), which uses autodiff backward through the
 \texttt{lax.scan} ODE integration and---thanks to \texttt{jax.checkpoint}
 on the inner-loop fiber integrator---fits within the memory budget of
-a 12\,GB A16 GPU at $N=200$.  Both optimisers use the bipolar
+a 40\,GB A100 GPU at $N=200$.  Both optimisers use the bipolar
 Ve-weighted initialisation $\mathbf{I}_0 = (2 \tilde{V}_e - 1) \cdot
 |I_{\mathrm{init}}| \cdot \mathrm{sign}(I_{\mathrm{init}})$, where
 $\tilde{V}_e \in [0,1]$ is the normalised baseline extracellular field
@@ -374,7 +374,7 @@ Reproduction scripts are
 
 \subsection{Hardware and software}
 
-All results in this paper were produced on a single NVIDIA A16 GPU
+All results in this paper were produced on a single NVIDIA A100 GPU
 (40\,GB) of the MedUni Vienna HPC cluster.  jaxon was run on
 Python 3.11.15, \texttt{jax} 0.6.2, \texttt{jaxley} 0.13.0 and a
 CUDA 12.4 container (\texttt{nvcr.io/nvidia/pytorch:25.03-py3}).

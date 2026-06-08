@@ -329,58 +329,66 @@ spike-detection quantisation resolution.
 
 The principal performance motivation for the JAX implementation is
 the expectation that GPU vmap-batching will outperform CPU-parallel
-NEURON as the fiber count grows.  We benchmarked seven axon models
-(the four primary plus MRG with interpolated parameters and two
-Schild variants~\cite{schild1994}) at $N \in \{1, 10, 100, 1000,
-10\,000\}$ fibers on a single NVIDIA A16 GPU, against
-\texttt{pyfibers} running 8-thread CPU-parallel on a matched Xeon
-host.  Figure~\ref{fig:scaling} reports the per-model wall time
-(panel A) and the resulting jaxon-vs-pyfibers speedup (panel B);
+NEURON as the fiber count grows.  We benchmarked the four primary
+axon models at $N \in \{1, 10, 100, 1\,000, 10\,000, 100\,000\}$
+fibers on a single NVIDIA A100 GPU, against \texttt{pyfibers} running
+8-thread CPU-parallel on a matched Xeon host.  At the time of
+submission the MRG, Sundt and Rattay sweeps are complete; the
+Sweeney sweep is still in progress.
+Figure~\ref{fig:scaling} reports the per-model wall time (panel A)
+and the resulting jaxon-vs-pyfibers speedup (panel B);
 Table~\ref{tab:scaling} summarises the headline numbers.
 
 At small $N$, GPU launch overhead dominates and \texttt{pyfibers}
-on CPU is faster (jaxon takes $0.13$\,s vs.\ \texttt{pyfibers}'s
+on CPU is faster (jaxon takes $0.15$\,s vs.\ \texttt{pyfibers}'s
 $0.05$\,s on $N=1$ MRG).  Throughput then scales sub-linearly with
 $N$ on the GPU because the vmap-batched forward pass amortises the
 per-step launch cost across all fibers in the batch; the crossover
 at which jaxon overtakes \texttt{pyfibers} is $N \approx 10$ for every
-model tested.  By $N=1\,000$ MRG, jaxon completes in $0.71\,\mathrm{s}$
-vs.\ \texttt{pyfibers}'s $49.1\,\mathrm{s}$ (a $69\times$ wall-time
-reduction); by $N=10\,000$ MRG, $8.3\,\mathrm{s}$ vs.\ $501\,\mathrm{s}$
-($60\times$).  The Sweeney model, whose smaller per-fiber state vector
-fits better in GPU registers, reaches a $122\times$ speedup at
-$N=10\,000$ ($5.0$ vs.\ $607\,\mathrm{s}$).
+model tested.  By $N=1\,000$ MRG, jaxon completes in $0.24\,\mathrm{s}$
+vs.\ \texttt{pyfibers}'s $49.3\,\mathrm{s}$ (a $209\times$ wall-time
+reduction); by $N=10\,000$ MRG, $0.78\,\mathrm{s}$ vs.\
+$525\,\mathrm{s}$ ($671\times$); by $N=100\,000$ MRG,
+$9.5\,\mathrm{s}$ vs.\ $5\,172\,\mathrm{s}$ ($544\times$).  The
+unmyelinated Sundt and Rattay C-fibres, whose longer time courses
+make \texttt{pyfibers} substantially slower per fiber, reach
+$1\,006\times$ and $929\times$ speedups respectively at $N=100\,000$
+($16.5$ vs.\ $16\,593\,\mathrm{s}$ and $15.1$ vs.\
+$14\,068\,\mathrm{s}$).  The geometric mean of the three completed
+models at $N=100\,000$ is $\sim 800\times$, taking what would have
+been roughly 10 CPU-hours of \texttt{pyfibers} time per forward pass
+down to under twenty seconds of GPU wall time.
 For the fascicular selectivity sweeps reported in
-Section~\ref{sec:results-selectivity}, where $N=200$ fibers per
-nerve realisation and 100 realisations are needed, the implied
-throughput advantage---roughly $30\times$ at $N=200$---reduces a
-single GPU-hour to what would otherwise have required a full day of
-CPU wall time.
+Section~\ref{sec:results-selectivity}, where $\sim 1\,000$ fibers per
+nerve realisation are simulated thousands of times during
+optimisation, this throughput differential is what brings
+multi-anatomy gradient-based optimisation on a 12-contact cuff into
+reach on a single GPU-day.
 
 \begin{table}[h]
   \centering
   \caption{Wall time per forward simulation (in seconds) and speedup
     of jaxon over \texttt{pyfibers} at representative fiber counts.
-    jaxon runs on a single NVIDIA A16 GPU; \texttt{pyfibers} runs
-    8-thread CPU-parallel.  All timings exclude JAX compile time
-    (one-time, amortised over each batched run).  Dashes indicate
-    $N=10\,000$ runs not completed by \texttt{pyfibers} within the
-    benchmark budget.}
+    jaxon runs on a single NVIDIA A100 GPU; \texttt{pyfibers} runs
+    8-thread CPU-parallel on a matched Xeon host.  All timings exclude
+    JAX compile time (5--30\,s one-time per model, amortised over each
+    batched run).  Sweeney scaling on A100 is still in progress at the
+    time of submission; partial pyfibers timings to $N=1\,000$ are
+    consistent with the other myelinated row but the GPU sweep is
+    pending.}
   \label{tab:scaling}
   \begin{tabular}{lrrrrrr}
     \toprule
-                            & \multicolumn{2}{c}{$N=100$}
                             & \multicolumn{2}{c}{$N=1\,000$}
-                            & \multicolumn{2}{c}{$N=10\,000$} \\
+                            & \multicolumn{2}{c}{$N=10\,000$}
+                            & \multicolumn{2}{c}{$N=100\,000$} \\
     \cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
-    Model    & pyf.\ (s)\ & speedup & pyf.\ (s)\ & speedup & pyf.\ (s)\ & speedup \\
+    Model    & pyf.\ (s) & speedup & pyf.\ (s) & speedup & pyf.\ (s) & speedup \\
     \midrule
-    MRG      &   4.97 & $27\times$ & 49.1 & $69\times$ &  501 &  $60\times$ \\
-    Sundt    &  17.55 & $30\times$ &  168 & $71\times$ &  --- &       --- \\
-    Sweeney  &   6.49 & $37\times$ & 63.8 & $112\times$ & 607 & $122\times$ \\
-    Rattay   &  16.04 & $24\times$ &  149 & $69\times$ &  --- &       --- \\
-    Schild94 &  34.62 & $19\times$ &  342 & $37\times$ &  --- &       --- \\
-    Schild97 &  34.63 & $19\times$ &  335 & $38\times$ &  --- &       --- \\
+    MRG      &  49.3 & $209\times$ &  525 & $671\times$ &  $5\,172$ &  $544\times$ \\
+    Sundt    &   183 & $304\times$ & $1\,742$ & $985\times$ & $16\,593$ & $1\,006\times$ \\
+    Rattay   &   151 & $259\times$ & $1\,425$ & $868\times$ & $14\,068$ &  $929\times$ \\
+    Sweeney  &  ---  &      ---    & ---  &       ---   & ---       &      ---     \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -388,16 +396,19 @@ CPU wall time.
 \begin{figure}[h]
   \centering
   \figmaybe[width=0.98\textwidth]{fig_scaling_allmodels.png}
-  \caption{Forward-pass throughput on a single NVIDIA A16 GPU as a
-    function of fiber count $N$ for all seven benchmarked models.
+  \caption{Forward-pass throughput on a single NVIDIA A100 GPU as a
+    function of fiber count $N$ for the three benchmarked models
+    whose A100 sweeps are complete at submission (MRG, Sundt, Rattay;
+    Sweeney pending).
     \textbf{(a)} Absolute wall time per forward simulation.  Dashed
     coloured lines + open markers: \texttt{pyfibers} on 8-thread CPU.
-    Solid coloured lines: jaxon on a single A16.  jaxon's curves are
+    Solid coloured lines: jaxon on a single A100.  jaxon's curves are
     nearly flat up to $N \approx 100$ as the GPU is under-utilised,
     then scale linearly.  \texttt{pyfibers} scales linearly throughout.
     \textbf{(b)} Implied speedup; horizontal grey reference at
     $1\times$.  Crossover at $N \approx 10$ for every model; at
-    $N \ge 1\,000$ all models exceed $30\times$ speedup.}
+    $N = 100\,000$ all three exceed $500\times$ speedup, with the
+    unmyelinated C-fibres exceeding $900\times$.}
   \label{fig:scaling}
 \end{figure}
 

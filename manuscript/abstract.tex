@@ -21,9 +21,11 @@ configs), 0.46\,\% (Sundt, 240), 0.06\,\% (Sweeney, 31), and 2.24\,\%
 (Rattay, 240; four biphasic-cathodic edge cases at the shortest pulse
 width exceed $1\%$).  Conduction velocity matches NEURON to within
 $0.24\,\%$ across all models.  Benchmarking throughput
-against pyfibers on a single NVIDIA A16, jaxon achieves a
-\textbf{69-fold speedup at $N=1000$ MRG fibers (49\,s\,$\to$\,0.71\,s)
-and 122-fold at $N=10\,000$ Sweeney fibers (607\,s\,$\to$\,5.0\,s)},
+against pyfibers on a single NVIDIA A100, jaxon achieves a
+\textbf{$544\times$ speedup at $N=100\,000$ MRG fibers
+($5{,}172$\,s\,$\to$\,9.5\,s), $1\,006\times$ at $N=100\,000$ Sundt
+C-fibers ($16{,}593$\,s\,$\to$\,16.5\,s), and $929\times$ at
+$N=100\,000$ Rattay C-fibers ($14{,}068$\,s\,$\to$\,15.1\,s)},
 crossing parity at $N\approx 10$ and dominating thereafter.  As a
 demonstration of the differentiability advantage, we use jaxon to
 optimise spatially selective fascicular stimulation across 125

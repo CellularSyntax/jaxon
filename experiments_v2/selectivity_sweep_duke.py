@@ -155,7 +155,7 @@ def _parse_restart_mags(env_val: str) -> list[float]:
         ) from e
 
 ADAM_FD_RESTART_MAGS = _parse_restart_mags(
-    os.environ.get("ADAM_FD_RESTART_MAGS", "-0.05,-0.10,-0.20,-0.40")
+    os.environ.get("ADAM_FD_RESTART_MAGS", "-0.10,-0.30,-0.80,-1.50")
 )
 
 

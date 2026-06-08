@@ -110,16 +110,20 @@ export FD_EPS_MA="${FD_EPS_MA:-0.030}"
 # put every Duke anatomy in the gradient-informative threshold regime
 # (sub-46 / sub-47 stalled at SI=0 because the 953/47 fascicle split
 # left every fibre either fully sub- or fully supra-threshold at init,
-# so the FD gradient was exactly zero).  Default span 8x:
-#   -0.05 mA  rescues over-saturated cases that need a small init
-#   -0.10 mA  near our previous single-start default
-#   -0.20 mA  for intermediate Duke geometries
-#   -0.40 mA  rescues under-saturated cases that need bigger init
-# Comma-separated, signed mA.  Set to a single value (e.g. "-0.08") to
+# so the FD gradient was exactly zero).  Grid retuned after the first
+# multi-start run showed -0.05 was below threshold on every Duke
+# anatomy (wasted restart) and -0.40 was still insufficient on poorly-
+# coupled fascicles like sub-46 where even -0.30 mA gave 0% firing.
+# New default spans 15x:
+#   -0.10 mA  for well-coupled anatomies (e.g. sub-50, fires here)
+#   -0.30 mA  middle ground, the old single-start default
+#   -0.80 mA  for poorly-coupled target fascicles
+#   -1.50 mA  the amp_clip limit, last-resort for stuck geometries
+# Comma-separated, signed mA.  Set to a single value (e.g. "-0.30") to
 # revert to single-start Adam-FD.  Cost: rect time scales linearly in
 # the number of restarts; with the default 4 entries each sample takes
 # ~4x the rect wall-time of a single-start run.
-export ADAM_FD_RESTART_MAGS="${ADAM_FD_RESTART_MAGS:--0.05,-0.10,-0.20,-0.40}"
+export ADAM_FD_RESTART_MAGS="${ADAM_FD_RESTART_MAGS:--0.10,-0.30,-0.80,-1.50}"
 
 # Where the Duke FEM bundles live.  Default = duke_meshes/ (the
 # 18-swine + 20-human bundle from the FEM pipeline).  Earlier bundles

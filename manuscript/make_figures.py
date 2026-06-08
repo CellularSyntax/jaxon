@@ -1602,6 +1602,560 @@ def fig_selectivity_xsections_hard():
     _make_xsection_gallery(_bottom_si, "fig_selectivity_xsections_hard.png")
 
 
+# ============================================================================
+# Duke FEM-nerve figures (parallel to the synthetic Hussain-style nerves)
+# ============================================================================
+# These read JSONs written by experiments_v2/selectivity_sweep_duke.py from
+# outputs/selectivity_sweep_duke_<sample>/ and render selectivity-summary,
+# cross-section gallery, hard-case gallery, and convergence figures using
+# the realistic polygonal fascicle geometry from duke_Ves/<sample>/nerve_xsec.json.
+# Coexists with — does not replace — the synthetic-nerve figures above.
+
+# Per-sample cache: nerve outline polygon + fascicle polygons + electrode metadata.
+_DUKE_XSEC_CACHE: dict[str, dict] = {}
+_DUKE_ROOT = HERE.parent / "duke_Ves"
+
+
+def _load_duke_xsec(sample: str) -> dict | None:
+    """Load + cache duke_Ves/<sample>/nerve_xsec.json (and electrode_config).
+
+    Returns dict with keys ``outline`` (Nx2 µm), ``fascicles`` (list of
+    dicts), ``contact_phi_deg`` (12,), ``contact_z_m`` (12,), or ``None``
+    if the sample directory is not present locally."""
+    if sample in _DUKE_XSEC_CACHE:
+        return _DUKE_XSEC_CACHE[sample]
+    sample_dir = _DUKE_ROOT / sample
+    nxsec_path = sample_dir / "nerve_xsec.json"
+    if not nxsec_path.exists():
+        return None
+    nx = json.loads(nxsec_path.read_text())
+    fasc = []
+    for fc in nx["fascicles"]:
+        fasc.append({
+            "id":       int(fc["id"]),
+            "centroid": tuple(fc["centroid_xy_um"]),
+            "radius":   float(fc["radius_um"]),
+            "polygon":  np.asarray(fc["polygon_xy_um"], dtype=np.float64),
+        })
+    # Electrode metadata — best-effort, may be missing.
+    contact_phi_deg = None
+    contact_z_m = None
+    ec_path = sample_dir / "electrode_config.json"
+    if ec_path.exists():
+        try:
+            ec = json.loads(ec_path.read_text())
+            # Try both schema variants seen in the FEM bundles.
+            patches = ec.get("patches") or ec.get("contacts") or []
+            if patches:
+                contact_phi_deg = np.array([float(p.get("phi_deg",
+                                          np.rad2deg(p.get("phi", 0.0))))
+                                            for p in patches])
+                contact_z_m = np.array([float(p.get("z", 0.0)) for p in patches])
+        except Exception:
+            pass
+    # Fall back to canonical 3 axial rows × 4 angles if needed.
+    if contact_phi_deg is None or len(contact_phi_deg) != 12:
+        contact_phi_deg = np.repeat([0.0, 90.0, 180.0, 270.0], 3)
+        contact_z_m     = np.tile([-1.35e-3, 0.0, +1.35e-3], 4)
+    out = {
+        "outline":         np.asarray(nx["nerve_outline_xy_um"], dtype=np.float64),
+        "fascicles":       fasc,
+        "contact_phi_deg": contact_phi_deg,
+        "contact_z_m":     contact_z_m,
+    }
+    _DUKE_XSEC_CACHE[sample] = out
+    return out
+
+
+def _duke_sweep_dirs() -> list[Path]:
+    """Discover Duke sweep output directories on disk.  Returns a list of
+    output dirs, one per Duke sample with at least one ``data_seed_*.json``."""
+    found = []
+    for cand_root in (_LOCAL_OUTROOT, _REPO_OUTROOT):
+        if not cand_root.exists():
+            continue
+        for d in sorted(cand_root.glob("selectivity_sweep_duke_*")):
+            if any(d.glob("data_seed_*.json")):
+                found.append(d)
+    # De-duplicate while keeping order (local takes precedence in _outdir).
+    seen = set()
+    uniq = []
+    for d in found:
+        if d.name not in seen:
+            seen.add(d.name)
+            uniq.append(d)
+    return uniq
+
+
+def _duke_sample_name_from_dir(sweep_dir: Path) -> str:
+    """selectivity_sweep_duke_sub-10_sam-1 → sub-10_sam-1."""
+    return sweep_dir.name[len("selectivity_sweep_duke_"):]
+
+
+def _draw_duke_cross_section_cell(ax_xsec, ax_pulse_grid,
+                                   json_path: Path, sample: str):
+    """Cross-section + 12-contact pulse strip for one Duke seed.  Handles
+    polygonal fascicles + the 12-contact MultiContact cuff (3 axial rows
+    × 4 azimuthal angles).  Mirrors ``_draw_cross_section_cell`` for
+    synthetic nerves but reads the irregular geometry from the cached
+    ``_load_duke_xsec`` output and the per-seed JSON.
+    """
+    from matplotlib.patches import Polygon as _Polygon
+    d = json.loads(json_path.read_text())
+    amps = np.asarray(d["rect"]["amps_mA"], dtype=float)
+    acts = np.asarray(d["rect"]["final_acts"], dtype=float)
+    rect_si  = float(d["rect"]["final_si"])
+    seed_num = int(d["seed"])
+    divider_deg = float(d.get("divider_deg", 0.0))
+    fired = acts >= 0.5
+    target_mask = np.asarray(d["nerve"]["target_mask"], dtype=bool)
+    fx = np.asarray(d["nerve"]["fiber_x_um"], dtype=float)
+    fy = np.asarray(d["nerve"]["fiber_y_um"], dtype=float)
+
+    geom = _load_duke_xsec(sample)
+    if geom is None:
+        ax_xsec.text(0.5, 0.5,
+                     f"Duke geometry not found for\n{sample}\n"
+                     "(check duke_Ves/<sample>/nerve_xsec.json)",
+                     ha="center", va="center", transform=ax_xsec.transAxes,
+                     fontsize=9, style="italic", color="grey")
+        ax_xsec.set_xticks([]); ax_xsec.set_yticks([])
+        return
+
+    outline = geom["outline"]
+    # Outer half-extent in µm — used for the contact ring and label radii.
+    R_ext = float(np.max(np.abs(outline)) * 1.05)
+
+    # Nerve outer outline (polygon)
+    ax_xsec.add_patch(_Polygon(outline, closed=True, fill=False,
+                                ec="0.55", lw=1.0, ls="--"))
+    # Fascicle polygons — classify target vs off-target by divider line
+    th = np.deg2rad(divider_deg)
+    cosT, sinT = np.cos(th), np.sin(th)
+    nrm_x, nrm_y = -sinT, cosT
+    for fc in geom["fascicles"]:
+        cx, cy = fc["centroid"]
+        side = nrm_x * cx + nrm_y * cy
+        is_tgt_fasc = side > 0.0
+        face = (0.78, 0.93, 0.78) if is_tgt_fasc else (0.88, 0.88, 0.88)
+        edge = "#2ca02c" if is_tgt_fasc else "0.5"
+        ax_xsec.add_patch(_Polygon(fc["polygon"], closed=True,
+                                    fc=face, ec=edge, lw=0.6, alpha=0.85))
+
+    # Divider line through (0, 0) spanning the outline
+    line_len = R_ext * 1.10
+    ax_xsec.plot([-line_len * cosT, line_len * cosT],
+                 [-line_len * sinT, line_len * sinT],
+                 color="black", lw=2.4, solid_capstyle="round", zorder=4)
+
+    # Fibers (4 styles, identical to synthetic)
+    tgt_fired   = target_mask &  fired
+    tgt_silent  = target_mask & ~fired
+    off_fired   = (~target_mask) &  fired
+    off_silent  = (~target_mask) & ~fired
+    ax_xsec.scatter(fx[off_silent], fy[off_silent],
+                    s=8, c="0.55", edgecolors="none", alpha=0.7, zorder=2)
+    ax_xsec.scatter(fx[tgt_silent], fy[tgt_silent],
+                    s=22, facecolors="none", edgecolors="#2ca02c", lw=1.1, zorder=3)
+    ax_xsec.scatter(fx[tgt_fired], fy[tgt_fired],
+                    s=26, c="#2ca02c", edgecolors="black", lw=0.3, zorder=4)
+    ax_xsec.scatter(fx[off_fired], fy[off_fired],
+                    s=44, marker="x", c="#d62728", lw=1.6, zorder=5)
+
+    # 12 contacts on an outer ring, sized by |amp|, coloured by polarity
+    contact_ring_r = R_ext * 1.18
+    amp_max = max(float(np.max(np.abs(amps))), 1e-9)
+    phi_deg = geom["contact_phi_deg"]
+    # The MultiContact array stacks 3 axial contacts at each of 4 angles;
+    # to distinguish them visually within one azimuthal "station" we
+    # nudge them tangentially by a small offset proportional to their z.
+    z_m = geom["contact_z_m"]
+    z_min, z_max = float(z_m.min()), float(z_m.max())
+    z_range = max(z_max - z_min, 1e-9)
+    NUDGE_DEG = 8.0
+    for k in range(len(amps)):
+        a_k = float(amps[k])
+        # Tangential nudge in degrees: z=-z_max → -NUDGE, z=+z_max → +NUDGE
+        nudge = ((z_m[k] - 0.5 * (z_min + z_max)) / (0.5 * z_range)) * NUDGE_DEG
+        ang_deg = phi_deg[k] + nudge
+        ang = np.deg2rad(ang_deg)
+        cx_k = contact_ring_r * np.cos(ang)
+        cy_k = contact_ring_r * np.sin(ang)
+        clr = "#1f77b4" if a_k < 0 else "#ff7f0e"
+        s_k = 38 + 200 * (abs(a_k) / amp_max)
+        ax_xsec.scatter(cx_k, cy_k, s=s_k, c=clr, edgecolors="black",
+                        lw=0.5, marker="o", zorder=6)
+
+    # 'target' / 'off-target' labels perpendicular to the divider
+    lbl_r = R_ext * 1.42
+    ax_xsec.text(
+        +nrm_x * lbl_r, +nrm_y * lbl_r, "target",
+        ha="center", va="center", fontsize=8, color="0.10",
+        style="italic", fontweight="bold", zorder=7,
+        bbox=dict(boxstyle="round,pad=0.18", fc="white",
+                  ec="0.6", lw=0.4, alpha=0.95),
+    )
+    ax_xsec.text(
+        -nrm_x * lbl_r, -nrm_y * lbl_r, "off-target",
+        ha="center", va="center", fontsize=8, color="0.40",
+        style="italic", zorder=7,
+        bbox=dict(boxstyle="round,pad=0.18", fc="white",
+                  ec="0.6", lw=0.4, alpha=0.95),
+    )
+
+    # Aspect / limits — keep symmetric around (0,0).
+    pad = R_ext * 0.62
+    ax_xsec.set_xlim(-R_ext - pad, R_ext + pad)
+    ax_xsec.set_ylim(-R_ext - pad, R_ext + pad)
+    ax_xsec.set_aspect("equal", adjustable="box")
+    ax_xsec.set_xticks([]); ax_xsec.set_yticks([])
+    for spine in ax_xsec.spines.values():
+        spine.set_visible(False)
+    # Per-cell annotation
+    ax_xsec.text(0.98, 0.97,
+                 f"seed {seed_num}\nSI = {rect_si:+.2f}",
+                 transform=ax_xsec.transAxes, ha="right", va="top",
+                 fontsize=8, family="DejaVu Sans Mono",
+                 bbox=dict(boxstyle="round,pad=0.20", fc="white",
+                           ec="0.7", lw=0.5))
+
+    # ── 12-contact pulse strip ──────────────────────────────────────────────
+    DELAY_MS = 1.0
+    PW_MS    = 0.1
+    T_VIEW   = 1.5
+    t_grid = np.linspace(0.0, T_VIEW, 256)
+    pulse_mask = ((t_grid >= DELAY_MS) & (t_grid < DELAY_MS + PW_MS)).astype(float)
+    y_lim = max(amp_max * 1.25, 1e-3)
+    for k, ax_p in enumerate(ax_pulse_grid):
+        a_k = float(amps[k])
+        clr = "#1f77b4" if a_k < 0 else "#ff7f0e"
+        ax_p.fill_between(t_grid, 0.0, a_k * pulse_mask,
+                          color=clr, alpha=0.85, lw=0)
+        ax_p.axhline(0.0, color="0.4", lw=0.5)
+        ax_p.set_ylim(-y_lim, y_lim)
+        ax_p.set_xlim(0.0, T_VIEW)
+        ax_p.set_xticks([]); ax_p.set_yticks([])
+        for spine in ax_p.spines.values():
+            spine.set_visible(False)
+        sign_chr = "−" if a_k < 0 else "+"
+        ax_p.text(0.05, 0.96, f"C{k}",
+                  transform=ax_p.transAxes, ha="left", va="top",
+                  fontsize=7, color="0.20", family="DejaVu Sans Mono")
+        ax_p.text(0.97, 0.04, f"{sign_chr}{abs(a_k):.2f}",
+                  transform=ax_p.transAxes, ha="right", va="bottom",
+                  fontsize=7, color="0.20", family="DejaVu Sans Mono")
+
+
+def _make_duke_xsection_gallery(seed_picker, out_name: str,
+                                  n_seeds_per_sample: int = 2):
+    """Build a (n_samples × n_seeds_per_sample) cross-section gallery for
+    every Duke sample with sweep output on disk.  ``seed_picker`` mirrors
+    the synthetic version."""
+    from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
+    from matplotlib.lines import Line2D
+
+    sweep_dirs = _duke_sweep_dirs()
+    if not sweep_dirs:
+        print(f"  no Duke sweep dirs found under outputs/ — skipping {out_name}")
+        return
+
+    rows = []
+    for sweep_dir in sweep_dirs:
+        sample = _duke_sample_name_from_dir(sweep_dir)
+        seed_jsons = sorted(sweep_dir.glob("data_seed_*.json"))
+        scored = []
+        for j in seed_jsons:
+            try:
+                rect_si = float(json.loads(j.read_text())["rect"]["final_si"])
+            except Exception:
+                continue
+            seed_num = int(j.stem.split("_")[-1])
+            scored.append((rect_si, seed_num, j))
+        picked = seed_picker(scored)[:n_seeds_per_sample]
+        if picked:
+            rows.append((sample, picked))
+
+    if not rows:
+        return
+
+    n_rows = len(rows)
+    n_cols = n_seeds_per_sample
+
+    fig = plt.figure(figsize=(5.5 * n_cols + 0.7, 5.0 * n_rows))
+    outer = GridSpec(
+        n_rows, n_cols + 1,
+        width_ratios=[0.10] + [1.0] * n_cols,
+        wspace=0.18, hspace=0.22,
+        left=0.02, right=0.985, top=0.95, bottom=0.02,
+    )
+
+    for r, (sample, picked) in enumerate(rows):
+        ax_lbl = fig.add_subplot(outer[r, 0])
+        ax_lbl.axis("off")
+        ax_lbl.text(0.5, 0.5, sample.replace("_", "\n"),
+                    ha="center", va="center", rotation=90,
+                    fontsize=12, fontweight="bold",
+                    transform=ax_lbl.transAxes)
+
+        for c, (_si, seed_num, json_path) in enumerate(picked):
+            inner = GridSpecFromSubplotSpec(
+                2, 1, subplot_spec=outer[r, c + 1],
+                height_ratios=[2.6, 1.0], hspace=0.12,
+            )
+            ax_xsec = fig.add_subplot(inner[0, 0])
+            # 12-contact pulse strip
+            pulse_spec = GridSpecFromSubplotSpec(
+                1, 12, subplot_spec=inner[1, 0], wspace=0.20,
+            )
+            ax_pulses = [fig.add_subplot(pulse_spec[0, k]) for k in range(12)]
+            _draw_duke_cross_section_cell(
+                ax_xsec, ax_pulses, json_path=json_path, sample=sample,
+            )
+
+    legend_handles = [
+        Line2D([0], [0], marker="o", color="none", mfc="#2ca02c",
+               mec="black", mew=0.3, ms=7, label="target fired"),
+        Line2D([0], [0], marker="o", color="none", mfc="none",
+               mec="#2ca02c", mew=1.2, ms=7, label="target silent"),
+        Line2D([0], [0], marker="x", color="#d62728",
+               mew=1.6, ms=8, ls="", label="off-target fired (leak)"),
+        Line2D([0], [0], marker="o", color="none", mfc="0.55",
+               mec="none", ms=5, label="off-target silent"),
+        Line2D([0], [0], marker="o", color="none", mfc="#1f77b4",
+               mec="black", mew=0.4, ms=8, label="contact (cathodic)"),
+        Line2D([0], [0], marker="o", color="none", mfc="#ff7f0e",
+               mec="black", mew=0.4, ms=8, label="contact (anodic)"),
+    ]
+    fig.legend(handles=legend_handles, loc="upper center",
+               bbox_to_anchor=(0.52, 0.995), ncol=6,
+               frameon=False, fontsize=9)
+
+    out = FIGDIR / out_name
+    fig.savefig(out)
+    plt.close(fig)
+    print(f"  -> {out.name}")
+
+
+def fig_duke_selectivity_xsections():
+    """Duke gallery: top-SI seeds per sample."""
+    def _top(scored):
+        scored = sorted(scored, key=lambda r: (-r[0], r[1]))
+        return sorted(scored[:2], key=lambda r: r[1])
+    _make_duke_xsection_gallery(_top, "fig_duke_selectivity_xsections.png")
+
+
+def fig_duke_selectivity_xsections_hard():
+    """Duke gallery: worst-SI seeds per sample."""
+    def _bot(scored):
+        scored = sorted(scored, key=lambda r: (r[0], r[1]))
+        return sorted(scored[:2], key=lambda r: r[1])
+    _make_duke_xsection_gallery(_bot, "fig_duke_selectivity_xsections_hard.png")
+
+
+def fig_duke_selectivity_summary():
+    """Per-sample SI distribution for the Duke sweep.
+
+    One paired violin (rect + wave) per Duke sample on the left panel,
+    rect-vs-wave scatter on the right.  Mirrors fig_selectivity_summary
+    but reads outputs/selectivity_sweep_duke_*/ instead of the
+    synthetic phase-3 directories.
+    """
+    sweep_dirs = _duke_sweep_dirs()
+    if not sweep_dirs:
+        print("  no Duke sweep dirs found under outputs/ — skipping")
+        return
+    samples = []
+    for sweep_dir in sweep_dirs:
+        sample = _duke_sample_name_from_dir(sweep_dir)
+        rows = []
+        for j in sorted(sweep_dir.glob("data_seed_*.json")):
+            try:
+                dd = json.loads(j.read_text())
+            except Exception:
+                continue
+            rows.append({
+                "seed":     dd["seed"],
+                "baseline": dd.get("si_baseline", 0.0),
+                "rect":     dd["rect"]["final_si"],
+                "wave":     dd.get("waveform", {}).get("final_si",
+                                                       dd["rect"]["final_si"]),
+            })
+        if rows:
+            samples.append(dict(
+                label=sample,
+                colour=plt.cm.tab10(len(samples) % 10),
+                n=len(rows),
+                rect=np.array([r["rect"] for r in rows]),
+                wave=np.array([r["wave"] for r in rows]),
+            ))
+    if not samples:
+        return
+
+    n_samples = len(samples)
+    fig, axes = plt.subplots(1, 2,
+                             figsize=(max(11, 2.0 * n_samples + 5), 5.0),
+                             gridspec_kw={"wspace": 0.22})
+
+    # ── Panel A: per-sample paired violins (rect + wave) ───────────────────
+    ax = axes[0]
+    rng = np.random.default_rng(0)
+    centres = np.arange(n_samples) * 2.0
+    half = 0.40
+    for i, m in enumerate(samples):
+        for x, vals, edge_alpha in [(centres[i] - half * 0.55, m["rect"], 1.0),
+                                    (centres[i] + half * 0.55, m["wave"], 0.7)]:
+            parts = ax.violinplot([vals], positions=[x], widths=half,
+                                  showmeans=False, showmedians=False,
+                                  showextrema=False)
+            for body in parts["bodies"]:
+                body.set_facecolor(m["colour"])
+                body.set_edgecolor("black")
+                body.set_alpha(0.55 * edge_alpha)
+                body.set_linewidth(0.6)
+            jitter = rng.uniform(-half * 0.18, half * 0.18, size=len(vals))
+            ax.scatter(x + jitter, vals, s=10, color="black", alpha=0.45,
+                       edgecolors="none", zorder=3)
+            ax.hlines(float(np.median(vals)), x - half * 0.4, x + half * 0.4,
+                      color="red", lw=1.6, zorder=4)
+    ax.axhline(0.95, color="red", lw=0.8, ls="--", alpha=0.55,
+               label="acceptance (SI=0.95)")
+    ax.set_xticks(centres)
+    ax.set_xticklabels(
+        [f"{m['label']}\n(n={m['n']})" for m in samples],
+        fontsize=10,
+    )
+    for cx in centres:
+        ax.text(cx - half * 0.55, -0.135, "rect", ha="center", va="top",
+                fontsize=9, color="grey", transform=ax.get_xaxis_transform())
+        ax.text(cx + half * 0.55, -0.135, "wave", ha="center", va="top",
+                fontsize=9, color="grey", transform=ax.get_xaxis_transform())
+    ax.set_ylabel("selectivity index")
+    ax.set_ylim(-0.05, 1.10)
+    ax.text(-0.08, 1.04, "(a)", transform=ax.transAxes,
+            ha="left", va="bottom", fontsize=15, fontweight="bold")
+    ax.legend(loc="lower right", fontsize=10)
+
+    # ── Panel B: rect-vs-wave scatter ──────────────────────────────────────
+    ax2 = axes[1]
+    ax2.plot([0, 1.05], [0, 1.05], "k:", lw=0.8, alpha=0.5, label="wave = rect")
+    for m in samples:
+        ax2.scatter(m["rect"], m["wave"], s=30, c=[m["colour"]],
+                    edgecolors="black", lw=0.4, alpha=0.85, zorder=3,
+                    label=f"{m['label']}  (n={m['n']})")
+    ax2.set_xlabel("rect SI")
+    ax2.set_ylabel("warm-started wave SI")
+    ax2.set_xlim(-0.05, 1.05)
+    ax2.set_ylim(-0.05, 1.10)
+    all_rect = np.concatenate([m["rect"] for m in samples])
+    all_wave = np.concatenate([m["wave"] for m in samples])
+    n_improved  = int(np.sum(all_wave > all_rect + 0.005))
+    n_preserved = int(np.sum(np.abs(all_wave - all_rect) <= 0.005))
+    n_regressed = int(np.sum(all_wave < all_rect - 0.005))
+    ax2.text(0.98, 0.03,
+             f"improved: {n_improved}\n"
+             f"preserved: {n_preserved}\n"
+             f"regressed: {n_regressed}",
+             transform=ax2.transAxes, ha="right", va="bottom",
+             fontsize=10, family="DejaVu Sans Mono",
+             bbox=dict(boxstyle="round,pad=0.28", fc="white",
+                       ec="0.7", lw=0.5))
+    ax2.text(-0.10, 1.04, "(b)", transform=ax2.transAxes,
+             ha="left", va="bottom", fontsize=15, fontweight="bold")
+    ax2.legend(loc="upper left", bbox_to_anchor=(1.02, 1.0),
+               fontsize=10, borderaxespad=0.0)
+    ax2.set_aspect("equal", adjustable="box")
+
+    plt.tight_layout()
+    out = FIGDIR / "fig_duke_selectivity_summary.png"
+    fig.savefig(out)
+    plt.close(fig)
+    print(f"  -> {out.name}")
+
+
+def fig_duke_optimization_convergence():
+    """Per-sample loss / SI convergence curves for the Duke sweep."""
+    sweep_dirs = _duke_sweep_dirs()
+    if not sweep_dirs:
+        print("  no Duke sweep dirs found — skipping")
+        return
+
+    def _stack_padded(curves):
+        L = max(len(c) for c in curves)
+        out = np.empty((len(curves), L), dtype=np.float64)
+        for i, c in enumerate(curves):
+            out[i, :len(c)] = c
+            if len(c) < L:
+                out[i, len(c):] = c[-1]
+        return out
+
+    fig, axes = plt.subplots(1, 2, figsize=(13, 6.0),
+                             gridspec_kw={"wspace": 0.22})
+
+    for i, sweep_dir in enumerate(sweep_dirs):
+        sample = _duke_sample_name_from_dir(sweep_dir)
+        clr = plt.cm.tab10(i % 10)
+        rect_lh, wave_si = [], []
+        for j in sorted(sweep_dir.glob("data_seed_*.json")):
+            try:
+                dd = json.loads(j.read_text())
+            except Exception:
+                continue
+            rect_lh.append(np.asarray(dd["rect"]["loss_history"], float))
+            sh = dd.get("waveform", {}).get("si_history") or []
+            if len(sh) > 1:
+                wave_si.append(np.asarray(sh, float))
+        if not rect_lh:
+            continue
+        R = _stack_padded(rect_lh)
+        x = np.arange(R.shape[1])
+        med = np.nanmedian(R, axis=0)
+        q1, q3 = np.nanpercentile(R, [25, 75], axis=0)
+        axes[0].fill_between(x, q1, q3, color=clr, alpha=0.18, lw=0)
+        axes[0].plot(x, med, "-", color=clr, lw=1.8,
+                     label=f"{sample}  (n={len(rect_lh)})")
+        if wave_si:
+            S = _stack_padded(wave_si)
+            xw = np.arange(S.shape[1])
+            med_s = np.nanmedian(S, axis=0)
+            q1_s, q3_s = np.nanpercentile(S, [25, 75], axis=0)
+            axes[1].fill_between(xw, q1_s, q3_s, color=clr, alpha=0.18, lw=0)
+            axes[1].plot(xw, med_s, "-", color=clr, lw=1.8,
+                         label=f"{sample}  (n={len(wave_si)})")
+
+    ax = axes[0]
+    ax.set_yscale("log")
+    ax.set_xlabel("optimiser iteration")
+    ax.set_ylabel("WQ loss")
+    ax.text(-0.14, 1.03, "(a)", transform=ax.transAxes,
+            ha="left", va="bottom", fontsize=15, fontweight="bold")
+    ax.grid(True, which="both", alpha=0.3, lw=0.5)
+    panel_a_handles, panel_a_labels = ax.get_legend_handles_labels()
+
+    ax = axes[1]
+    accept_line = ax.axhline(
+        0.95, color="red", lw=0.9, ls="--", alpha=0.7,
+        label="acceptance (SI=0.95)")
+    ax.axhline(1.0, color="black", lw=0.6, ls=":", alpha=0.6)
+    ax.set_xlabel("optimiser iteration")
+    ax.set_ylabel("selectivity index")
+    ax.set_ylim(-0.05, 1.08)
+    ax.text(-0.14, 1.03, "(b)", transform=ax.transAxes,
+            ha="left", va="bottom", fontsize=15, fontweight="bold")
+    ax.grid(True, which="both", alpha=0.3, lw=0.5)
+
+    fig.legend(
+        panel_a_handles + [accept_line],
+        panel_a_labels + ["acceptance (SI=0.95)"],
+        loc="lower center", ncol=max(2, len(sweep_dirs) + 1),
+        bbox_to_anchor=(0.5, -0.02), fontsize=10,
+    )
+    plt.tight_layout(rect=[0, 0.06, 1, 1])
+    out = FIGDIR / "fig_duke_optimization_convergence.png"
+    fig.savefig(out, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  -> {out.name}")
+
+
 # ─── orchestration ────────────────────────────────────────────────────────────
 ALL = {
     "overview":       fig_overview,
@@ -1615,6 +2169,11 @@ ALL = {
     "mixed_landscape":fig_mixed_diameter_landscape,
     "xsections":      fig_selectivity_xsections,
     "xsections_hard": fig_selectivity_xsections_hard,
+    # Duke (FEM-Ve) figures — coexist with the synthetic ones above.
+    "duke_xsections":      fig_duke_selectivity_xsections,
+    "duke_xsections_hard": fig_duke_selectivity_xsections_hard,
+    "duke_selectivity":    fig_duke_selectivity_summary,
+    "duke_convergence":    fig_duke_optimization_convergence,
 }
 
 def main(argv: list[str]) -> int:

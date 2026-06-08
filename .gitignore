@@ -64,3 +64,9 @@ reference_code/**/__pycache__/
 reference_code/**/*.egg-info/
 reference_code/**/x86_64/
 reference_code/**/arm64/
+
+# --- Duke FEM nerve bundles (heavy data, mirrored from the FEM pipeline) ---
+duke_Ves/
+
+# --- Manuscript build artefacts (regenerated from source) ---
+manuscript/main_iop.pdf

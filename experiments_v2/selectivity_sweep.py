@@ -321,7 +321,8 @@ def _build_seed_inputs(seed: int, verbose: bool = True) -> dict:
     )
 
 
-def _waveform_step_per_seed(seed_in: dict, rect_amps: np.ndarray, verbose: bool) -> dict:
+def _waveform_step_per_seed(seed_in: dict, rect_amps: np.ndarray, verbose: bool,
+                            u_clip: tuple[float, float] = (-5.0, 5.0)) -> dict:
     """Run waveform optimisation for a single seed, warm-started from rect amps."""
     label = seed_in["label"]
     pulse_mask = seed_in["pulse_mask"]
@@ -332,7 +333,8 @@ def _waveform_step_per_seed(seed_in: dict, rect_amps: np.ndarray, verbose: bool)
         u_init[k] = float(rect_amps[k]) * pulse_mask
 
     if verbose:
-        print(f"{label} Waveform optimisation ({N_OPT_WAVE} iters) ...", flush=True)
+        print(f"{label} Waveform optimisation ({N_OPT_WAVE} iters, "
+              f"u_clip={u_clip}) ...", flush=True)
     t0 = time.time()
     wave_res = run_waveform_optimization(
         fiber_statics_batch=seed_in["fs_batch"],
@@ -341,7 +343,7 @@ def _waveform_step_per_seed(seed_in: dict, rect_amps: np.ndarray, verbose: bool)
         node_indices=seed_in["node_indices"],
         target_mask=seed_in["nerve"].target_mask,
         dt=DT, T=N_STEPS, n_steps=N_OPT_WAVE, u_init=u_init,
-        lr=WAVE_LR, early_stop_patience=WAVE_PATIENCE,
+        lr=WAVE_LR, early_stop_patience=WAVE_PATIENCE, u_clip=u_clip,
         verbose=verbose,
     )
     return wave_res, time.time() - t0
@@ -413,14 +415,32 @@ def _run_seed_chunk(seeds: list[int], verbose: bool = True) -> list[dict]:
     # ── Rect (LBFGS + multi-restart, batched over seeds when len > 1) ─────────
     pulse_mask = seed_inputs[0]["pulse_mask"]    # same across seeds
     rect_t0 = time.time()
-    # amp_init_mA=-1.5, amp_clip=(-3, 3): default (-0.4, ±2.5) was tuned for
-    # the mixed-diameter regime where 14-16 µm fibers fire at ~-0.2 mA.
-    # With single D=5.7 µm, that init is well below threshold (≈ -1.5 mA
-    # at this cuff distance), so the activation proxy is flat and SI stays
-    # pinned at 0.000.  Initialising at the expected threshold magnitude
-    # gives the gradient useful signal from iter 0.
-    AMP_INIT_MA = -1.5
-    AMP_CLIP    = (-3.0, 3.0)
+    # Per-model amp_init / amp_clip.  Activation threshold scales with the
+    # fibre channel and the cuff-to-fibre distance; values below come from
+    # the validation traces (data_<model>_traces.json: amp_extra_mA,
+    # threshold_extra_mA at SRC_H=1 mm) scaled by ~2x for our 1.5 mm cuff
+    # radius.  Without per-model scaling, the unmyelinated sweeps saturate
+    # at the MRG-scale ±3 mA clip and never fire — the rect loss stays
+    # frozen at the no-activation baseline and SI sits pinned at 0.
+    _AMP_BY_MODEL = {
+        # MRG D=5.7 µm: threshold ~-0.3 mA at 1 mm; init at 5x threshold
+        # so the gradient has signal from iter 0.
+        "mrg":      dict(init=-1.5, clip=(-3.0,   3.0)),
+        # Sweeney D=10 µm: threshold ~-0.21 mA; same regime as MRG.
+        "sweeney":  dict(init=-1.5, clip=(-3.0,   3.0)),
+        # Sundt D=0.8 µm: threshold ~-22 mA at 1 mm; ~-50 mA at 1.5 mm cuff.
+        "sundt":    dict(init=-40.0, clip=(-80.0, 80.0)),
+        # Rattay D=0.8 µm: threshold ~-16 mA at 1 mm; ~-35 mA at 1.5 mm cuff.
+        "rattay":   dict(init=-30.0, clip=(-60.0, 60.0)),
+    }
+    _amp_default = _AMP_BY_MODEL.get(FIBER_MODEL, _AMP_BY_MODEL["mrg"])
+    AMP_INIT_MA = _env_flt("AMP_INIT_MA", _amp_default["init"])
+    _clip_lo    = _env_flt("AMP_CLIP_LO", _amp_default["clip"][0])
+    _clip_hi    = _env_flt("AMP_CLIP_HI", _amp_default["clip"][1])
+    AMP_CLIP    = (_clip_lo, _clip_hi)
+    if verbose:
+        print(f"[chunk] amp init={AMP_INIT_MA:.1f} mA, clip=[{_clip_lo:.1f}, "
+              f"{_clip_hi:.1f}] mA for model={FIBER_MODEL}", flush=True)
 
     if len(seeds) == 1 and RECT_OPTIMIZER == "adam_fd":
         # Adam-FD smoketest path: pure forward + finite-difference gradient.
@@ -516,7 +536,13 @@ def _run_seed_chunk(seeds: list[int], verbose: bool = True) -> list[dict]:
             }
             wave_t = 0.0
         else:
-            wave_res, wave_t = _waveform_step_per_seed(s_in, rect_res["amps"], verbose)
+            # Use the same per-model amp clip range for the waveform stage so
+            # the warm-started u stays inside the achievable amplitude range
+            # (otherwise wave Adam at lr=5e-4 would clip every step in the
+            # large-amp C-fibre regime).
+            wave_res, wave_t = _waveform_step_per_seed(
+                s_in, rect_res["amps"], verbose, u_clip=AMP_CLIP,
+            )
             si_wave_best = float(wave_res["best_si"])
             si_wave_last = float(wave_res["history"]["si"][-1])
             print(f"{s_in['label']} Wave done: SI {si_rect:+.3f} → "

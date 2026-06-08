@@ -80,7 +80,11 @@ if not SAMPLE_PATH.is_absolute():
     SAMPLE_PATH = ROOT / SAMPLE_PATH
 SAMPLE_NAME = SAMPLE_PATH.name   # e.g. "sub-10_sam-1"
 
-# Output dir scoped by sample so multiple samples can land side-by-side.
+# Output dir scoped by sample so multiple samples land side-by-side
+# under a single ``outputs/duke_sweeps/`` parent.  The sample directory
+# itself keeps the bundle's name verbatim (e.g. ``sub-10_sam-1`` or
+# ``human-sub-3_sam-1``) — the species can be inferred from the prefix
+# downstream by the figure code.
 _OUT_OVERRIDE = os.environ.get("JAXLEY_FIBERS_OUTPUT_DIR", "").strip()
 if _OUT_OVERRIDE:
     _OUT_PATH = pathlib.Path(_OUT_OVERRIDE)
@@ -88,7 +92,7 @@ if _OUT_OVERRIDE:
         _OUT_PATH = ROOT / _OUT_PATH
     OUT = ensure_dir(_OUT_PATH)
 else:
-    OUT = ensure_dir(ROOT / "outputs" / f"selectivity_sweep_duke_{SAMPLE_NAME}")
+    OUT = ensure_dir(ROOT / "outputs" / "duke_sweeps" / SAMPLE_NAME)
 
 # ────────────────────────────────────────── sweep parameters (env-overrideable)
 def _env_int(name, default): return int(os.environ.get(name, default))

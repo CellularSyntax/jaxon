@@ -1688,28 +1688,57 @@ def _load_duke_xsec(sample: str) -> dict | None:
 
 
 def _duke_sweep_dirs() -> list[Path]:
-    """Discover Duke sweep output directories on disk.  Returns a list of
-    output dirs, one per Duke sample with at least one ``data_seed_*.json``."""
+    """Discover Duke sweep output directories on disk.
+
+    Searches both the new layout
+    (``outputs/duke_sweeps/<sample>/data_seed_*.json``) and the legacy
+    layout (``outputs/selectivity_sweep_duke_<sample>/...``).  Returns
+    a deduplicated list of output dirs, one per Duke sample with at
+    least one JSON inside.  Sample-name uniqueness is enforced; if a
+    sample exists under both layouts the manuscript-local copy
+    (``manuscript/outputs/...``) takes precedence over the repo copy.
+    """
     found = []
     for cand_root in (_LOCAL_OUTROOT, _REPO_OUTROOT):
         if not cand_root.exists():
             continue
+        # New layout: outputs/duke_sweeps/<sample>/
+        duke_root = cand_root / "duke_sweeps"
+        if duke_root.exists():
+            for d in sorted(duke_root.iterdir()):
+                if d.is_dir() and any(d.glob("data_seed_*.json")):
+                    found.append(d)
+        # Legacy layout: outputs/selectivity_sweep_duke_<sample>/
         for d in sorted(cand_root.glob("selectivity_sweep_duke_*")):
             if any(d.glob("data_seed_*.json")):
                 found.append(d)
-    # De-duplicate while keeping order (local takes precedence in _outdir).
+    # De-duplicate by sample name (first occurrence wins).
     seen = set()
     uniq = []
     for d in found:
-        if d.name not in seen:
-            seen.add(d.name)
+        name = _duke_sample_name_from_dir(d)
+        if name not in seen:
+            seen.add(name)
             uniq.append(d)
     return uniq
 
 
 def _duke_sample_name_from_dir(sweep_dir: Path) -> str:
-    """selectivity_sweep_duke_sub-10_sam-1 → sub-10_sam-1."""
-    return sweep_dir.name[len("selectivity_sweep_duke_"):]
+    """Extract the sample bundle name from either layout's dir name.
+
+    New layout: ``outputs/duke_sweeps/sub-10_sam-1`` -> ``sub-10_sam-1``.
+    Legacy:    ``outputs/selectivity_sweep_duke_sub-10_sam-1`` -> ``sub-10_sam-1``.
+    """
+    name = sweep_dir.name
+    return name[len("selectivity_sweep_duke_"):] if name.startswith("selectivity_sweep_duke_") else name
+
+
+def _duke_species_of(sample_name: str) -> str:
+    """Infer species from a Duke sample folder name.
+
+    Convention: ``human-sub-*`` -> human; everything else -> swine.
+    """
+    return "human" if sample_name.startswith("human") else "swine"
 
 
 def _draw_duke_cross_section_cell(ax_xsec, ax_pulse_grid,
@@ -1866,22 +1895,33 @@ def _draw_duke_cross_section_cell(ax_xsec, ax_pulse_grid,
                   fontsize=7, color="0.20", family="DejaVu Sans Mono")
 
 
-def _make_duke_xsection_gallery(seed_picker, out_name: str,
-                                  n_seeds_per_sample: int = 2):
-    """Build a (n_samples × n_seeds_per_sample) cross-section gallery for
-    every Duke sample with sweep output on disk.  ``seed_picker`` mirrors
-    the synthetic version."""
+def _make_duke_xsection_gallery(seed_picker, out_name_template: str,
+                                  n_seeds_per_sample: int = 1,
+                                  n_grid_cols: int = 4):
+    """Build species-grouped Duke cross-section galleries.
+
+    Produces TWO files: ``<out_name_template>_swine.png`` and
+    ``<out_name_template>_human.png`` (one per species detected in
+    ``_duke_sweep_dirs()``).  Within each species the samples are
+    arranged in a ``n_grid_cols``-wide grid of cells; each cell holds
+    a cross-section + 12-contact pulse strip for the seed(s) picked by
+    ``seed_picker``.  With the default ``n_seeds_per_sample=1`` (the
+    standard 1-divider-per-nerve sweep) the cell count equals the
+    sample count per species.
+    """
     from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
     from matplotlib.lines import Line2D
 
     sweep_dirs = _duke_sweep_dirs()
     if not sweep_dirs:
-        print(f"  no Duke sweep dirs found under outputs/ — skipping {out_name}")
+        print(f"  no Duke sweep dirs found under outputs/ — skipping {out_name_template}")
         return
 
-    rows = []
+    # Bucket sweep_dirs by species first.
+    by_species: dict[str, list[tuple[str, list]]] = {"swine": [], "human": []}
     for sweep_dir in sweep_dirs:
         sample = _duke_sample_name_from_dir(sweep_dir)
+        species = _duke_species_of(sample)
         seed_jsons = sorted(sweep_dir.glob("data_seed_*.json"))
         scored = []
         for j in seed_jsons:
@@ -1893,44 +1933,63 @@ def _make_duke_xsection_gallery(seed_picker, out_name: str,
             scored.append((rect_si, seed_num, j))
         picked = seed_picker(scored)[:n_seeds_per_sample]
         if picked:
-            rows.append((sample, picked))
+            by_species[species].append((sample, picked))
 
-    if not rows:
-        return
+    for species, samples in by_species.items():
+        if not samples:
+            continue
+        _make_duke_xsection_grid(samples, n_grid_cols, species,
+                                   f"{out_name_template}_{species}.png")
 
-    n_rows = len(rows)
-    n_cols = n_seeds_per_sample
 
-    fig = plt.figure(figsize=(5.5 * n_cols + 0.7, 5.0 * n_rows))
+def _make_duke_xsection_grid(samples: list, n_grid_cols: int, species: str,
+                              out_name: str):
+    """Render the per-species cross-section grid."""
+    from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
+    from matplotlib.lines import Line2D
+
+    # Each sample = one "cell" (cross-section + pulse strip).  With one
+    # seed per sample there is exactly one cell per sample.  Multi-seed
+    # samples expand to consecutive cells along the row-major sweep.
+    cells: list[tuple[str, Path]] = []
+    for sample, picked in samples:
+        for _si, _seed_num, json_path in picked:
+            cells.append((sample, json_path))
+
+    n_cells = len(cells)
+    n_cols = n_grid_cols
+    n_rows = (n_cells + n_cols - 1) // n_cols
+
+    fig = plt.figure(figsize=(5.5 * n_cols, 5.6 * n_rows + 0.5))
     outer = GridSpec(
-        n_rows, n_cols + 1,
-        width_ratios=[0.10] + [1.0] * n_cols,
-        wspace=0.18, hspace=0.22,
-        left=0.02, right=0.985, top=0.95, bottom=0.02,
+        n_rows, n_cols,
+        wspace=0.22, hspace=0.30,
+        left=0.03, right=0.985, top=0.96, bottom=0.04,
     )
 
-    for r, (sample, picked) in enumerate(rows):
-        ax_lbl = fig.add_subplot(outer[r, 0])
-        ax_lbl.axis("off")
-        ax_lbl.text(0.5, 0.5, sample.replace("_", "\n"),
-                    ha="center", va="center", rotation=90,
-                    fontsize=12, fontweight="bold",
-                    transform=ax_lbl.transAxes)
+    for i, (sample, json_path) in enumerate(cells):
+        r, c = divmod(i, n_cols)
+        inner = GridSpecFromSubplotSpec(
+            2, 1, subplot_spec=outer[r, c],
+            height_ratios=[2.6, 1.0], hspace=0.14,
+        )
+        ax_xsec = fig.add_subplot(inner[0, 0])
+        pulse_spec = GridSpecFromSubplotSpec(
+            1, 12, subplot_spec=inner[1, 0], wspace=0.20,
+        )
+        ax_pulses = [fig.add_subplot(pulse_spec[0, k]) for k in range(12)]
+        _draw_duke_cross_section_cell(
+            ax_xsec, ax_pulses, json_path=json_path, sample=sample,
+        )
+        # Sample tag at top-left of cell (above the cross-section).
+        ax_xsec.text(0.02, 1.04, sample,
+                     transform=ax_xsec.transAxes, ha="left", va="bottom",
+                     fontsize=11, fontweight="bold", color="0.20")
 
-        for c, (_si, seed_num, json_path) in enumerate(picked):
-            inner = GridSpecFromSubplotSpec(
-                2, 1, subplot_spec=outer[r, c + 1],
-                height_ratios=[2.6, 1.0], hspace=0.12,
-            )
-            ax_xsec = fig.add_subplot(inner[0, 0])
-            # 12-contact pulse strip
-            pulse_spec = GridSpecFromSubplotSpec(
-                1, 12, subplot_spec=inner[1, 0], wspace=0.20,
-            )
-            ax_pulses = [fig.add_subplot(pulse_spec[0, k]) for k in range(12)]
-            _draw_duke_cross_section_cell(
-                ax_xsec, ax_pulses, json_path=json_path, sample=sample,
-            )
+    # Species header at top of figure.
+    fig.text(0.5, 0.985,
+             f"{species.capitalize()}  (n={n_cells})",
+             ha="center", va="top", fontsize=15, fontweight="bold")
 
     legend_handles = [
         Line2D([0], [0], marker="o", color="none", mfc="#2ca02c",
@@ -1957,122 +2016,152 @@ def _make_duke_xsection_gallery(seed_picker, out_name: str,
 
 
 def fig_duke_selectivity_xsections():
-    """Duke gallery: top-SI seeds per sample."""
+    """Duke gallery: best seed per nerve, grouped by species.
+
+    With the default sweep (SEED_END=1 → 1 seed per nerve) ``_top`` just
+    returns that single seed.  Produces two output files:
+    ``fig_duke_selectivity_xsections_swine.png`` and ``_human.png``.
+    """
     def _top(scored):
         scored = sorted(scored, key=lambda r: (-r[0], r[1]))
-        return sorted(scored[:2], key=lambda r: r[1])
-    _make_duke_xsection_gallery(_top, "fig_duke_selectivity_xsections.png")
+        return scored[:1]
+    _make_duke_xsection_gallery(_top, "fig_duke_selectivity_xsections")
 
 
 def fig_duke_selectivity_xsections_hard():
-    """Duke gallery: worst-SI seeds per sample."""
+    """Duke gallery: worst seed per nerve, grouped by species.
+
+    With 1 seed per nerve this is equivalent to the top-SI gallery
+    (same single seed).  Kept as a separate entry point for symmetry
+    with the synthetic figures and for the case where the user opts
+    back into multi-seed mode (SEED_END>1)."""
     def _bot(scored):
         scored = sorted(scored, key=lambda r: (r[0], r[1]))
-        return sorted(scored[:2], key=lambda r: r[1])
-    _make_duke_xsection_gallery(_bot, "fig_duke_selectivity_xsections_hard.png")
+        return scored[:1]
+    _make_duke_xsection_gallery(_bot, "fig_duke_selectivity_xsections_hard")
+
+
+_DUKE_SPECIES_COLOURS = {"swine": "#3a6ec1", "human": "#d96b2c"}
 
 
 def fig_duke_selectivity_summary():
-    """Per-sample SI distribution for the Duke sweep.
+    """Cross-anatomy SI distribution for the Duke sweep, grouped by species.
 
-    One paired violin (rect + wave) per Duke sample on the left panel,
-    rect-vs-wave scatter on the right.  Mirrors fig_selectivity_summary
-    but reads outputs/selectivity_sweep_duke_*/ instead of the
-    synthetic phase-3 directories.
+    Panel (a): two paired violins (rect / wave) — one for swine, one for
+    human — pooled over every nerve in the species.  Per-nerve SI is
+    overlaid as a jittered dot.
+    Panel (b): rect-vs-wave scatter, points coloured by species, showing
+    whether the wave stage improved on the rect optimum nerve-by-nerve.
+
+    Reads every ``outputs/duke_sweeps/<sample>/data_seed_*.json`` (plus
+    legacy ``outputs/selectivity_sweep_duke_*/...``) and infers species
+    from the sample-name prefix (``human-*`` -> human, else swine).
     """
     sweep_dirs = _duke_sweep_dirs()
     if not sweep_dirs:
         print("  no Duke sweep dirs found under outputs/ — skipping")
         return
-    samples = []
+
+    # Collect per-nerve final SI's, bucketed by species.
+    by_species: dict[str, dict] = {
+        "swine": {"rect": [], "wave": [], "labels": []},
+        "human": {"rect": [], "wave": [], "labels": []},
+    }
     for sweep_dir in sweep_dirs:
         sample = _duke_sample_name_from_dir(sweep_dir)
-        rows = []
+        species = _duke_species_of(sample)
+        seed_rects, seed_waves = [], []
         for j in sorted(sweep_dir.glob("data_seed_*.json")):
             try:
                 dd = json.loads(j.read_text())
             except Exception:
                 continue
-            rows.append({
-                "seed":     dd["seed"],
-                "baseline": dd.get("si_baseline", 0.0),
-                "rect":     dd["rect"]["final_si"],
-                "wave":     dd.get("waveform", {}).get("final_si",
-                                                       dd["rect"]["final_si"]),
-            })
-        if rows:
-            samples.append(dict(
-                label=sample,
-                colour=plt.cm.tab10(len(samples) % 10),
-                n=len(rows),
-                rect=np.array([r["rect"] for r in rows]),
-                wave=np.array([r["wave"] for r in rows]),
-            ))
-    if not samples:
+            seed_rects.append(float(dd["rect"]["final_si"]))
+            seed_waves.append(float(dd.get("waveform", {}).get("final_si",
+                                                              dd["rect"]["final_si"])))
+        if seed_rects:
+            # Per-nerve SI = the median across that nerve's seeds (collapses
+            # to the single value when SEED_END=1).
+            by_species[species]["rect"].append(float(np.median(seed_rects)))
+            by_species[species]["wave"].append(float(np.median(seed_waves)))
+            by_species[species]["labels"].append(sample)
+
+    species_present = [s for s in ("swine", "human") if by_species[s]["rect"]]
+    if not species_present:
         return
 
-    n_samples = len(samples)
-    fig, axes = plt.subplots(1, 2,
-                             figsize=(max(11, 2.0 * n_samples + 5), 5.0),
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5.4),
                              gridspec_kw={"wspace": 0.22})
 
-    # ── Panel A: per-sample paired violins (rect + wave) ───────────────────
+    # ── Panel A: per-species paired violins (rect / wave) ──────────────────
     ax = axes[0]
     rng = np.random.default_rng(0)
-    centres = np.arange(n_samples) * 2.0
-    half = 0.40
-    for i, m in enumerate(samples):
-        for x, vals, edge_alpha in [(centres[i] - half * 0.55, m["rect"], 1.0),
-                                    (centres[i] + half * 0.55, m["wave"], 0.7)]:
-            parts = ax.violinplot([vals], positions=[x], widths=half,
-                                  showmeans=False, showmedians=False,
-                                  showextrema=False)
-            for body in parts["bodies"]:
-                body.set_facecolor(m["colour"])
-                body.set_edgecolor("black")
-                body.set_alpha(0.55 * edge_alpha)
-                body.set_linewidth(0.6)
+    centres = np.arange(len(species_present)) * 2.0
+    half = 0.42
+    for i, species in enumerate(species_present):
+        rect = np.array(by_species[species]["rect"])
+        wave = np.array(by_species[species]["wave"])
+        clr = _DUKE_SPECIES_COLOURS[species]
+        for x, vals, edge_alpha in [(centres[i] - half * 0.55, rect, 1.0),
+                                    (centres[i] + half * 0.55, wave, 0.7)]:
+            if len(vals) >= 2:
+                parts = ax.violinplot([vals], positions=[x], widths=half,
+                                      showmeans=False, showmedians=False,
+                                      showextrema=False)
+                for body in parts["bodies"]:
+                    body.set_facecolor(clr)
+                    body.set_edgecolor("black")
+                    body.set_alpha(0.55 * edge_alpha)
+                    body.set_linewidth(0.6)
             jitter = rng.uniform(-half * 0.18, half * 0.18, size=len(vals))
-            ax.scatter(x + jitter, vals, s=10, color="black", alpha=0.45,
-                       edgecolors="none", zorder=3)
+            ax.scatter(x + jitter, vals, s=22, color=clr, alpha=0.85,
+                       edgecolors="black", lw=0.4, zorder=3)
             ax.hlines(float(np.median(vals)), x - half * 0.4, x + half * 0.4,
-                      color="red", lw=1.6, zorder=4)
+                      color="red", lw=1.8, zorder=4)
     ax.axhline(0.95, color="red", lw=0.8, ls="--", alpha=0.55,
                label="acceptance (SI=0.95)")
     ax.set_xticks(centres)
     ax.set_xticklabels(
-        [f"{m['label']}\n(n={m['n']})" for m in samples],
-        fontsize=10,
+        [f"{s.capitalize()}\n(n={len(by_species[s]['rect'])})"
+         for s in species_present],
+        fontsize=12, fontweight="bold",
     )
     for cx in centres:
         ax.text(cx - half * 0.55, -0.135, "rect", ha="center", va="top",
-                fontsize=9, color="grey", transform=ax.get_xaxis_transform())
+                fontsize=10, color="grey", transform=ax.get_xaxis_transform())
         ax.text(cx + half * 0.55, -0.135, "wave", ha="center", va="top",
-                fontsize=9, color="grey", transform=ax.get_xaxis_transform())
+                fontsize=10, color="grey", transform=ax.get_xaxis_transform())
     ax.set_ylabel("selectivity index")
     ax.set_ylim(-0.05, 1.10)
     ax.text(-0.08, 1.04, "(a)", transform=ax.transAxes,
             ha="left", va="bottom", fontsize=15, fontweight="bold")
     ax.legend(loc="lower right", fontsize=10)
 
-    # ── Panel B: rect-vs-wave scatter ──────────────────────────────────────
+    # ── Panel B: rect-vs-wave scatter, coloured by species ────────────────
     ax2 = axes[1]
-    ax2.plot([0, 1.05], [0, 1.05], "k:", lw=0.8, alpha=0.5, label="wave = rect")
-    for m in samples:
-        ax2.scatter(m["rect"], m["wave"], s=30, c=[m["colour"]],
+    ax2.plot([0, 1.05], [0, 1.05], "k:", lw=0.8, alpha=0.5,
+             label="wave = rect")
+    for species in species_present:
+        rect = np.array(by_species[species]["rect"])
+        wave = np.array(by_species[species]["wave"])
+        clr = _DUKE_SPECIES_COLOURS[species]
+        ax2.scatter(rect, wave, s=44, c=clr,
                     edgecolors="black", lw=0.4, alpha=0.85, zorder=3,
-                    label=f"{m['label']}  (n={m['n']})")
-    ax2.set_xlabel("rect SI")
-    ax2.set_ylabel("warm-started wave SI")
+                    label=f"{species.capitalize()}  (n={len(rect)})")
+    ax2.set_xlabel("rect SI (per nerve)")
+    ax2.set_ylabel("warm-started wave SI (per nerve)")
     ax2.set_xlim(-0.05, 1.05)
     ax2.set_ylim(-0.05, 1.10)
-    all_rect = np.concatenate([m["rect"] for m in samples])
-    all_wave = np.concatenate([m["wave"] for m in samples])
+    # Counts pooled across both species.
+    all_rect = np.concatenate([np.array(by_species[s]["rect"])
+                                for s in species_present])
+    all_wave = np.concatenate([np.array(by_species[s]["wave"])
+                                for s in species_present])
     n_improved  = int(np.sum(all_wave > all_rect + 0.005))
     n_preserved = int(np.sum(np.abs(all_wave - all_rect) <= 0.005))
     n_regressed = int(np.sum(all_wave < all_rect - 0.005))
     ax2.text(0.98, 0.03,
-             f"improved: {n_improved}\n"
+             f"improved:  {n_improved}\n"
              f"preserved: {n_preserved}\n"
              f"regressed: {n_regressed}",
              transform=ax2.transAxes, ha="right", va="bottom",
@@ -2108,39 +2197,54 @@ def fig_duke_optimization_convergence():
                 out[i, len(c):] = c[-1]
         return out
 
-    fig, axes = plt.subplots(1, 2, figsize=(13, 6.0),
-                             gridspec_kw={"wspace": 0.22})
-
-    for i, sweep_dir in enumerate(sweep_dirs):
+    # Bucket rect loss + wave SI trajectories by species so we can show
+    # one median + IQR band per species (instead of one line per nerve,
+    # which would be 38 overlapping curves).
+    by_species: dict[str, dict] = {
+        "swine": {"rect": [], "wave_si": []},
+        "human": {"rect": [], "wave_si": []},
+    }
+    for sweep_dir in sweep_dirs:
         sample = _duke_sample_name_from_dir(sweep_dir)
-        clr = plt.cm.tab10(i % 10)
-        rect_lh, wave_si = [], []
+        species = _duke_species_of(sample)
         for j in sorted(sweep_dir.glob("data_seed_*.json")):
             try:
                 dd = json.loads(j.read_text())
             except Exception:
                 continue
-            rect_lh.append(np.asarray(dd["rect"]["loss_history"], float))
+            by_species[species]["rect"].append(
+                np.asarray(dd["rect"]["loss_history"], float))
             sh = dd.get("waveform", {}).get("si_history") or []
             if len(sh) > 1:
-                wave_si.append(np.asarray(sh, float))
-        if not rect_lh:
-            continue
+                by_species[species]["wave_si"].append(np.asarray(sh, float))
+
+    species_present = [s for s in ("swine", "human")
+                       if by_species[s]["rect"]]
+    if not species_present:
+        return
+
+    fig, axes = plt.subplots(1, 2, figsize=(13, 6.0),
+                             gridspec_kw={"wspace": 0.22})
+
+    for species in species_present:
+        clr = _DUKE_SPECIES_COLOURS[species]
+        rect_lh = by_species[species]["rect"]
+        wave_si = by_species[species]["wave_si"]
         R = _stack_padded(rect_lh)
         x = np.arange(R.shape[1])
         med = np.nanmedian(R, axis=0)
         q1, q3 = np.nanpercentile(R, [25, 75], axis=0)
-        axes[0].fill_between(x, q1, q3, color=clr, alpha=0.18, lw=0)
-        axes[0].plot(x, med, "-", color=clr, lw=1.8,
-                     label=f"{sample}  (n={len(rect_lh)})")
+        axes[0].fill_between(x, q1, q3, color=clr, alpha=0.20, lw=0)
+        axes[0].plot(x, med, "-", color=clr, lw=2.2,
+                     label=f"{species.capitalize()}  (n={len(rect_lh)})")
         if wave_si:
             S = _stack_padded(wave_si)
             xw = np.arange(S.shape[1])
             med_s = np.nanmedian(S, axis=0)
             q1_s, q3_s = np.nanpercentile(S, [25, 75], axis=0)
-            axes[1].fill_between(xw, q1_s, q3_s, color=clr, alpha=0.18, lw=0)
-            axes[1].plot(xw, med_s, "-", color=clr, lw=1.8,
-                         label=f"{sample}  (n={len(wave_si)})")
+            axes[1].fill_between(xw, q1_s, q3_s, color=clr, alpha=0.20, lw=0)
+            axes[1].plot(xw, med_s, "-", color=clr, lw=2.2,
+                         label=f"{species.capitalize()}  (n={len(wave_si)})")
 
     ax = axes[0]
     ax.set_yscale("log")
@@ -2166,8 +2270,8 @@ def fig_duke_optimization_convergence():
     fig.legend(
         panel_a_handles + [accept_line],
         panel_a_labels + ["acceptance (SI=0.95)"],
-        loc="lower center", ncol=max(2, len(sweep_dirs) + 1),
-        bbox_to_anchor=(0.5, -0.02), fontsize=10,
+        loc="lower center", ncol=len(species_present) + 1,
+        bbox_to_anchor=(0.5, -0.02), fontsize=11,
     )
     plt.tight_layout(rect=[0, 0.06, 1, 1])
     out = FIGDIR / "fig_duke_optimization_convergence.png"

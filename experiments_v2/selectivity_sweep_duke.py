@@ -135,6 +135,29 @@ AMP_CLIP    = (_AMP_CLIP_LO, _AMP_CLIP_HI)
 ADAM_LR_MA  = _env_flt("ADAM_LR_MA",  0.005)
 FD_EPS_MA   = _env_flt("FD_EPS_MA",   0.030)
 
+# Adam-FD multi-start: a single AMP_INIT_MA cannot put every Duke
+# anatomy into the gradient-informative threshold regime simultaneously
+# (e.g. unbalanced 2-fascicle nerves with 953/47 splits land entirely
+# sub- or supra-threshold at any fixed magnitude, collapsing the FD
+# gradient to zero).  Instead we run Adam-FD from K different init
+# magnitudes and keep the lowest-loss trajectory.  Comma-separated
+# signed mA values; default spans 8x in magnitude.  Set to a single
+# value (e.g. "-0.08") to revert to a single-start Adam-FD.
+def _parse_restart_mags(env_val: str) -> list[float]:
+    if not env_val.strip():
+        return [AMP_INIT_MA]
+    try:
+        return [float(x.strip()) for x in env_val.split(",") if x.strip()]
+    except ValueError as e:
+        raise ValueError(
+            f"ADAM_FD_RESTART_MAGS must be comma-separated signed floats "
+            f"(mA), got {env_val!r}"
+        ) from e
+
+ADAM_FD_RESTART_MAGS = _parse_restart_mags(
+    os.environ.get("ADAM_FD_RESTART_MAGS", "-0.05,-0.10,-0.20,-0.40")
+)
+
 
 def _firing_summary(acts, target_mask) -> dict:
     """Compute per-group firing counts from ``acts`` (sigmoid-like activation
@@ -234,39 +257,76 @@ def _run_one_seed(seed_in: dict, verbose: bool = True) -> dict:
     rect_t0 = time.time()
     if RECT_OPTIMIZER == "adam_fd":
         n_iters = max(N_OPT_RECT * 3, 30)
+        mags = ADAM_FD_RESTART_MAGS
         if verbose:
-            print(f"{label} Rect Adam-FD ({n_iters} iters) ...", flush=True)
-        adam_res = run_rect_optimization(
-            fiber_statics_batch=seed_in["fs_batch"],
-            state0_batch=seed_in["s0_batch"],
-            Ve_unit=seed_in["Ve_unit"],
-            pulse_mask=seed_in["pulse_mask"],
-            node_indices=seed_in["node_indices"],
-            target_mask=seed_in["target_mask"],
-            dt=DT, n_steps=n_iters,
-            amp_init_mA=AMP_INIT_MA, amp_clip=AMP_CLIP,
-            lr=ADAM_LR_MA, fd_eps=FD_EPS_MA,
-            verbose=verbose,
-        )
-        loss_hist = np.asarray(adam_res["history"]["loss"])
-        # Adam-FD can overshoot a good warm-start (mid-trajectory loss
-        # 0.17, last-iter loss 0.55 was observed on the Duke smoketest).
-        # Return the BEST-loss iter's amps + acts, not the last iter.
+            mag_str = ", ".join(f"{m:+.3f}" for m in mags)
+            print(
+                f"{label} Rect Adam-FD multi-start: {len(mags)} restarts "
+                f"× {n_iters} iters, init magnitudes (mA) = [{mag_str}]",
+                flush=True,
+            )
+
+        best_restart = -1
+        best_overall_loss = float("inf")
+        best_adam_res = None
+        all_final_losses: list[float] = []
+        for r_idx, init_mag in enumerate(mags):
+            if verbose:
+                print(f"{label} --- restart {r_idx + 1}/{len(mags)}  "
+                      f"init={init_mag:+.3f} mA ---", flush=True)
+            adam_res = run_rect_optimization(
+                fiber_statics_batch=seed_in["fs_batch"],
+                state0_batch=seed_in["s0_batch"],
+                Ve_unit=seed_in["Ve_unit"],
+                pulse_mask=seed_in["pulse_mask"],
+                node_indices=seed_in["node_indices"],
+                target_mask=seed_in["target_mask"],
+                dt=DT, n_steps=n_iters,
+                amp_init_mA=init_mag, amp_clip=AMP_CLIP,
+                lr=ADAM_LR_MA, fd_eps=FD_EPS_MA,
+                verbose=verbose,
+            )
+            run_loss_hist = np.asarray(adam_res["history"]["loss"])
+            run_best = float(np.min(run_loss_hist))
+            all_final_losses.append(run_best)
+            if verbose:
+                print(f"{label} --- restart {r_idx + 1} done: "
+                      f"best_loss={run_best:.4f} "
+                      f"(global best so far {min(run_best, best_overall_loss):.4f})",
+                      flush=True)
+            if run_best < best_overall_loss:
+                best_overall_loss = run_best
+                best_restart = r_idx
+                best_adam_res = adam_res
+
+        # Extract best-iter from the winning restart.  Adam-FD can
+        # overshoot a good warm-start (mid-trajectory loss 0.17, last-iter
+        # loss 0.55 was observed on the Duke smoketest); we return the
+        # BEST-loss iter's amps + acts, not the last iter.
+        loss_hist = np.asarray(best_adam_res["history"]["loss"])
         best_iter = int(np.argmin(loss_hist))
-        best_amps = np.asarray(adam_res["history"]["amps"][best_iter])
-        best_acts = np.asarray(adam_res["history"]["acts"][best_iter])
+        best_amps = np.asarray(best_adam_res["history"]["amps"][best_iter])
+        best_acts = np.asarray(best_adam_res["history"]["acts"][best_iter])
         rect_res = {
-            "optimizer":     "Adam-FD",
+            "optimizer":     ("Adam-FD-multistart" if len(mags) > 1
+                              else "Adam-FD"),
             "amps":          best_amps,
             "loss_history":  loss_hist,
             "final_loss":    float(loss_hist[best_iter]),
             "final_acts":    best_acts,
             "best_iter":     best_iter,
-            "best_restart":  0,
-            "n_restarts":    1,
+            "best_restart":  best_restart,
+            "restart_mags":  list(mags),
+            "n_restarts":    len(mags),
             "n_steps":       n_iters,
-            "all_final_losses": np.asarray([loss_hist[-1]]),
+            "all_final_losses": np.asarray(all_final_losses),
         }
+        if verbose:
+            print(f"{label} Rect Adam-FD multi-start winner: "
+                  f"restart {best_restart + 1}/{len(mags)} "
+                  f"(init={mags[best_restart]:+.3f} mA, "
+                  f"best_loss={loss_hist[best_iter]:.4f} @ iter {best_iter})",
+                  flush=True)
     else:  # LBFGS
         if verbose:
             print(f"{label} Rect LBFGS ({N_RESTARTS_RECT} restarts × "
@@ -368,6 +428,7 @@ def _package_result(seed_in: dict, rect_res: dict, rect_t: float,
             "n_restarts":  rect_res["n_restarts"],
             "n_steps":     rect_res["n_steps"],
             "best_restart": rect_res["best_restart"],
+            "restart_mags": rect_res.get("restart_mags", []),
             "final_loss":  rect_res["final_loss"],
             "final_si":      si_rect_signed,
             "achievable_si": abs(si_rect_signed),

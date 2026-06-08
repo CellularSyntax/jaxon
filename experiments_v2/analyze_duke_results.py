@@ -92,6 +92,13 @@ def _summarise(jsons: list[tuple[str, Path]]) -> dict:
         rect_loss = float(d["rect"]["final_loss"])
         divider  = float(d.get("divider_deg", 0.0))
         seed     = int(d.get("seed", 0))
+        # Multi-start Adam-FD bookkeeping (absent on pre-multistart JSONs).
+        restart_mags = d["rect"].get("restart_mags", [])
+        best_restart = int(d["rect"].get("best_restart", 0))
+        n_restarts   = int(d["rect"].get("n_restarts", 1))
+        winning_mag  = (float(restart_mags[best_restart])
+                        if restart_mags and 0 <= best_restart < len(restart_mags)
+                        else float("nan"))
         by_species[_species_of(sample)].append({
             "sample":           sample,
             "seed":             seed,
@@ -105,6 +112,9 @@ def _summarise(jsons: list[tuple[str, Path]]) -> dict:
             "rect_loss":        rect_loss,
             "best_si":          max(rect_signed, wave_signed),
             "best_achievable":  max(rect_ach, wave_ach),
+            "n_restarts":       n_restarts,
+            "best_restart":     best_restart,
+            "winning_mag":      winning_mag,
         })
     return by_species
 

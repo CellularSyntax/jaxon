@@ -99,6 +99,21 @@ export AMP_CLIP_HI="${AMP_CLIP_HI:-1.50}"
 export ADAM_LR_MA="${ADAM_LR_MA:-0.005}"
 export FD_EPS_MA="${FD_EPS_MA:-0.030}"
 
+# Adam-FD multi-start over init magnitude.  A single fixed init cannot
+# put every Duke anatomy in the gradient-informative threshold regime
+# (sub-46 / sub-47 stalled at SI=0 because the 953/47 fascicle split
+# left every fibre either fully sub- or fully supra-threshold at init,
+# so the FD gradient was exactly zero).  Default span 8x:
+#   -0.05 mA  rescues over-saturated cases that need a small init
+#   -0.10 mA  near our previous single-start default
+#   -0.20 mA  for intermediate Duke geometries
+#   -0.40 mA  rescues under-saturated cases that need bigger init
+# Comma-separated, signed mA.  Set to a single value (e.g. "-0.08") to
+# revert to single-start Adam-FD.  Cost: rect time scales linearly in
+# the number of restarts; with the default 4 entries each sample takes
+# ~4x the rect wall-time of a single-start run.
+export ADAM_FD_RESTART_MAGS="${ADAM_FD_RESTART_MAGS:--0.05,-0.10,-0.20,-0.40}"
+
 # Where the Duke FEM bundles live.  Default = duke_meshes/ (the
 # 18-swine + 20-human bundle from the FEM pipeline).  Earlier bundles
 # lived under duke_Ves/ and either name is accepted on disk; override
@@ -165,6 +180,7 @@ export WAVE_LR=\"${WAVE_LR}\" WAVE_PATIENCE=\"${WAVE_PATIENCE}\"
 export AMP_INIT_MA=\"${AMP_INIT_MA}\"
 export AMP_CLIP_LO=\"${AMP_CLIP_LO}\" AMP_CLIP_HI=\"${AMP_CLIP_HI}\"
 export ADAM_LR_MA=\"${ADAM_LR_MA}\" FD_EPS_MA=\"${FD_EPS_MA}\"
+export ADAM_FD_RESTART_MAGS=\"${ADAM_FD_RESTART_MAGS}\"
 bash \"${PROJECT_ROOT}/slurm/setup_env.sh\"
 python -u experiments_v2/selectivity_sweep_duke.py
 "; then

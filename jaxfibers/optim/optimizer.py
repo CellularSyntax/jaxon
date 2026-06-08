@@ -134,6 +134,13 @@ def run_rect_optimization(
     w = (jnp.ones(n_fibers, dtype=jnp.float64) / n_fibers
          if weights is None else jnp.asarray(weights, dtype=jnp.float64))
 
+    # Boolean target mask + totals for the per-iter firing summary that
+    # shows up in the verbose log line (oversaturated / undersaturated /
+    # gradient-informative regime is otherwise invisible mid-run).
+    target_mask_bool = np.asarray(target_mask, dtype=bool)
+    n_target_total    = int(target_mask_bool.sum())
+    n_nontarget_total = int((~target_mask_bool).sum())
+
     # Tile statics once outside JIT — constant across all iterations.
     fs_tiled = _tile_fiber_statics(fiber_statics_batch, n_configs)
     s0_tiled = _tile_states(state0_batch, n_configs)
@@ -250,9 +257,13 @@ def run_rect_optimization(
         if verbose and (i % max(1, n_steps // 20) == 0 or i == n_steps - 1):
             dt_ms   = (time.time() - t0) * 1000
             amp_str = "  ".join(f"{a:+.2f}" for a in np.array(amps))
+            fired_now = acts_np > 0.5
+            nft = int(np.sum(fired_now & target_mask_bool))
+            nfn = int(np.sum(fired_now & ~target_mask_bool))
             print(
                 f"  [{i:3d}/{n_steps}] loss={float(loss_val):.4f}  "
                 f"SI={si_now:+.3f}  "
+                f"fired={nft}/{n_target_total}t+{nfn}/{n_nontarget_total}nt  "
                 f"amps=[{amp_str}] mA  dt={dt_ms:.0f}ms",
                 flush=True,
             )
@@ -739,6 +750,13 @@ def run_waveform_optimization(
     w = (jnp.ones(n_fibers, dtype=jnp.float64) / n_fibers
          if weights is None else jnp.asarray(weights, dtype=jnp.float64))
 
+    # Boolean target mask + totals for the per-iter firing summary in the
+    # verbose log line.  Mirrors the rect optimiser, so over/undersaturation
+    # is visible during the wave run too.
+    target_mask_bool   = np.asarray(target_mask, dtype=bool)
+    n_target_total     = int(target_mask_bool.sum())
+    n_nontarget_total  = int((~target_mask_bool).sum())
+
     u0 = (jnp.zeros((K, T), dtype=jnp.float64)
           if u_init is None else jnp.asarray(u_init, dtype=jnp.float64))
 
@@ -804,9 +822,14 @@ def run_waveform_optimization(
         if verbose and (i % max(1, n_steps // 20) == 0 or i == n_steps - 1):
             dt_ms = (time.time() - t0) * 1000
             u_np  = np.array(u)
+            fired_now = acts_np > 0.5
+            nft = int(np.sum(fired_now & target_mask_bool))
+            nfn = int(np.sum(fired_now & ~target_mask_bool))
             print(
                 f"  [{i:3d}/{n_steps}] loss={float(loss_val):.4f}  "
-                f"SI={si_now:+.3f}  best={best_loss:.4f}@{best_iter}  "
+                f"SI={si_now:+.3f}  "
+                f"fired={nft}/{n_target_total}t+{nfn}/{n_nontarget_total}nt  "
+                f"best={best_loss:.4f}@{best_iter}  "
                 f"rms={float(np.sqrt(np.mean(u_np**2))):.3f} mA  "
                 f"peak={float(np.abs(u_np).max()):.3f} mA  dt={dt_ms:.0f}ms",
                 flush=True,

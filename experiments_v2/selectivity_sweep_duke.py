@@ -116,18 +116,59 @@ WAVE_PATIENCE   = _env_int("WAVE_PATIENCE", 20)
 RECT_OPTIMIZER  = os.environ.get("RECT_OPTIMIZER", "adam_fd")  # adam_fd | lbfgs
 
 # Per-Duke amplitude knobs.  Defaults below are tuned for MRG 5.7 µm
-# against the FEM Ve scale of the sub-10_sam-1 bundle (peak Ve ≈ 870
-# mV/mA, ~5× the synthetic point-source).  Iter-0 of the smoketest at
-# ±0.30 mA already drove 72 % of off-target fibres → super-threshold;
-# we back off to ±0.10 mA init / ±0.20 mA clip / smaller lr so the
-# optimiser stays in the gradient-informative regime instead of
-# landing at the all-fire attractor.  All env-overrideable.
-AMP_INIT_MA = _env_flt("AMP_INIT_MA", -0.30)
+# against the FEM Ve scale of the typical Duke bundle (peak Ve ≈ 800–
+# 900 mV/mA per contact, ~5× the synthetic point-source).  The
+# original smoketest tuning at AMP_INIT_MA=-0.30 / FD_EPS_MA=0.010
+# was retuned after the initial full-cohort sweep showed that on
+# unbalanced 2-fascicle anatomies (e.g. human_sub-46_sam-2 with
+# 953/47 target split) the init amplitudes landed every fibre either
+# deeply sub-threshold or deeply supra-threshold; the 0.010 mA FD
+# probe was then too small to flip any fibre's firing state, so the
+# FD gradient was exactly zero and Adam-FD stalled for 20+ iters
+# before early-stopping at SI=0.  Smaller init + larger FD probe
+# brings the init into the gradient-informative threshold regime.
+# All env-overrideable.
+AMP_INIT_MA = _env_flt("AMP_INIT_MA", -0.08)
 _AMP_CLIP_LO = _env_flt("AMP_CLIP_LO", -1.50)
 _AMP_CLIP_HI = _env_flt("AMP_CLIP_HI",  1.50)
 AMP_CLIP    = (_AMP_CLIP_LO, _AMP_CLIP_HI)
-ADAM_LR_MA  = _env_flt("ADAM_LR_MA",  0.015)
-FD_EPS_MA   = _env_flt("FD_EPS_MA",   0.010)
+ADAM_LR_MA  = _env_flt("ADAM_LR_MA",  0.005)
+FD_EPS_MA   = _env_flt("FD_EPS_MA",   0.030)
+
+
+def _firing_summary(acts, target_mask) -> dict:
+    """Compute per-group firing counts from ``acts`` (sigmoid-like activation
+    proxy in [0,1], > 0.5 ≈ fired).  Distinguishing oversaturated (everything
+    fires) from undersaturated (nothing fires) is essential for diagnosing
+    optimiser stalls — both give SI = 0 but call for opposite tuning fixes
+    (smaller vs larger init amplitude)."""
+    acts = np.asarray(acts).ravel()
+    target_mask = np.asarray(target_mask, dtype=bool).ravel()
+    fired = acts > 0.5
+    n_target    = int(target_mask.sum())
+    n_nontarget = int((~target_mask).sum())
+    n_total     = int(target_mask.size)
+    n_fired_target    = int(np.sum(fired & target_mask))
+    n_fired_nontarget = int(np.sum(fired & ~target_mask))
+    n_fired_total     = int(fired.sum())
+    return {
+        "n_target":             n_target,
+        "n_nontarget":          n_nontarget,
+        "n_total":              n_total,
+        "n_fired_target":       n_fired_target,
+        "n_fired_nontarget":    n_fired_nontarget,
+        "n_fired_total":        n_fired_total,
+        "frac_fired_total":     n_fired_total / max(n_total, 1),
+        "frac_fired_target":    n_fired_target / max(n_target, 1),
+        "frac_fired_nontarget": n_fired_nontarget / max(n_nontarget, 1),
+    }
+
+
+def _fmt_firing(fs: dict) -> str:
+    """One-line human-readable firing summary suitable for the per-stage log."""
+    return (f"fired {fs['n_fired_target']}/{fs['n_target']} tgt, "
+            f"{fs['n_fired_nontarget']}/{fs['n_nontarget']} nt "
+            f"({100.0 * fs['frac_fired_total']:.1f}% total)")
 
 
 def _build_seed(duke: dict, seed: int, verbose: bool = True) -> dict:
@@ -255,8 +296,11 @@ def _run_one_seed(seed_in: dict, verbose: bool = True) -> dict:
         }
     rect_t = time.time() - rect_t0
     si_rect = selectivity_index(rect_res["final_acts"], seed_in["target_mask"])
+    rect_fire = _firing_summary(rect_res["final_acts"], seed_in["target_mask"])
+    rect_res["firing"] = rect_fire
     print(f"{label} Rect done: SI {seed_in['si_baseline']:+.3f} → "
-          f"{si_rect:+.3f}  ({rect_t:.0f}s)", flush=True)
+          f"{si_rect:+.3f}  ({rect_t:.0f}s) | {_fmt_firing(rect_fire)}",
+          flush=True)
 
     # ── Waveform ──────────────────────────────────────────────────────────
     if N_OPT_WAVE <= 0:
@@ -265,6 +309,7 @@ def _run_one_seed(seed_in: dict, verbose: bool = True) -> dict:
             "best_iter": 0,
             "best_acts": np.asarray(rect_res["final_acts"]),
             "history":   {"loss": [], "si": [], "acts": [np.asarray(rect_res["final_acts"])]},
+            "firing":    rect_fire,
         }
         wave_t = 0.0
     else:
@@ -286,9 +331,12 @@ def _run_one_seed(seed_in: dict, verbose: bool = True) -> dict:
         )
         wave_t = time.time() - t0
         si_wave = float(wave_res["best_si"])
+        wave_fire = _firing_summary(wave_res["best_acts"],
+                                    seed_in["target_mask"])
+        wave_res["firing"] = wave_fire
         print(f"{label} Wave done: SI {si_rect:+.3f} → {si_wave:+.3f} "
-              f"(best @ iter {wave_res['best_iter']})  ({wave_t:.0f}s)",
-              flush=True)
+              f"(best @ iter {wave_res['best_iter']})  ({wave_t:.0f}s) | "
+              f"{_fmt_firing(wave_fire)}", flush=True)
 
     return _package_result(seed_in, rect_res, rect_t, wave_res, wave_t)
 
@@ -296,7 +344,19 @@ def _run_one_seed(seed_in: dict, verbose: bool = True) -> dict:
 def _package_result(seed_in: dict, rect_res: dict, rect_t: float,
                     wave_res: dict, wave_t: float) -> dict:
     target_mask = seed_in["target_mask"]
-    si_rect_final = selectivity_index(rect_res["final_acts"], target_mask)
+    # Signed SI as the optimiser reports it.  A negative value means the
+    # optimiser found a strongly anti-selective config — i.e. it can fire
+    # the *non-target* group selectively, which by the symmetry of the
+    # divider labelling is equivalent to a positive-SI solution with the
+    # target/non-target labels swapped.  We record both:
+    #
+    #   final_si        — signed (kept for backward compatibility)
+    #   achievable_si   — |final_si|  (the magnitude the optimiser found)
+    #   target_flipped  — True iff signed SI was negative (i.e. would
+    #                     require swapping target↔non-target to land
+    #                     positive)
+    si_rect_signed = float(selectivity_index(rect_res["final_acts"], target_mask))
+    si_wave_signed = float(wave_res["best_si"])
     nerve = seed_in["nerve"]
     return {
         "sample":   SAMPLE_NAME,
@@ -309,7 +369,10 @@ def _package_result(seed_in: dict, rect_res: dict, rect_t: float,
             "n_steps":     rect_res["n_steps"],
             "best_restart": rect_res["best_restart"],
             "final_loss":  rect_res["final_loss"],
-            "final_si":    float(si_rect_final),
+            "final_si":      si_rect_signed,
+            "achievable_si": abs(si_rect_signed),
+            "target_flipped": si_rect_signed < 0,
+            "firing":      rect_res.get("firing", {}),
             "loss_history": rect_res["loss_history"].tolist(),
             "all_final_losses": rect_res["all_final_losses"].tolist(),
             "amps_mA":     rect_res["amps"].tolist(),
@@ -321,10 +384,13 @@ def _package_result(seed_in: dict, rect_res: dict, rect_t: float,
             "n_steps":    N_OPT_WAVE,
             "lr":         WAVE_LR,
             "patience":   WAVE_PATIENCE,
-            "final_si":   float(wave_res["best_si"]),
+            "final_si":      si_wave_signed,
+            "achievable_si": abs(si_wave_signed),
+            "target_flipped": si_wave_signed < 0,
+            "firing":     wave_res.get("firing", {}),
             "best_iter":  int(wave_res["best_iter"]),
             "last_si":    (float(wave_res["history"]["si"][-1])
-                           if wave_res["history"]["si"] else float(wave_res["best_si"])),
+                           if wave_res["history"]["si"] else si_wave_signed),
             "n_iters_run": len(wave_res["history"]["loss"]),
             "loss_history": wave_res["history"]["loss"],
             "si_history":  wave_res["history"]["si"],

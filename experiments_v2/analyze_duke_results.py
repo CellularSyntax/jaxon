@@ -78,19 +78,33 @@ def _summarise(jsons: list[tuple[str, Path]]) -> dict:
         except Exception as e:
             print(f"[warn] cannot read {j}: {e}", file=sys.stderr)
             continue
-        rect = float(d["rect"]["final_si"])
-        wave = float(d.get("waveform", {}).get("final_si", rect))
+        rect_signed = float(d["rect"]["final_si"])
+        wave_signed = float(d.get("waveform", {}).get("final_si", rect_signed))
+        # achievable_si = |signed_si| — backward-compatible with old JSONs
+        # that pre-date the autoflip bookkeeping.
+        rect_ach = float(d["rect"].get("achievable_si", abs(rect_signed)))
+        wave_ach = float(d.get("waveform", {}).get(
+            "achievable_si", abs(wave_signed)))
+        flipped_rect = bool(d["rect"].get(
+            "target_flipped", rect_signed < 0))
+        flipped_wave = bool(d.get("waveform", {}).get(
+            "target_flipped", wave_signed < 0))
         rect_loss = float(d["rect"]["final_loss"])
         divider  = float(d.get("divider_deg", 0.0))
         seed     = int(d.get("seed", 0))
         by_species[_species_of(sample)].append({
-            "sample":     sample,
-            "seed":       seed,
-            "divider":    divider,
-            "rect_si":    rect,
-            "wave_si":    wave,
-            "rect_loss":  rect_loss,
-            "best_si":    max(rect, wave),
+            "sample":           sample,
+            "seed":             seed,
+            "divider":          divider,
+            "rect_si":          rect_signed,
+            "wave_si":          wave_signed,
+            "rect_achievable":  rect_ach,
+            "wave_achievable":  wave_ach,
+            "rect_flipped":     flipped_rect,
+            "wave_flipped":     flipped_wave,
+            "rect_loss":        rect_loss,
+            "best_si":          max(rect_signed, wave_signed),
+            "best_achievable":  max(rect_ach, wave_ach),
         })
     return by_species
 
@@ -101,22 +115,27 @@ def _print_table(by_species: dict) -> None:
           f"{'rect mean':>10s}  {'rect med':>9s}  "
           f"{'%>=0.95':>8s}  {'%=1.0':>7s}  "
           f"{'wave mean':>10s}  {'wave med':>9s}  "
-          f"{'best mean':>10s}")
-    print("-" * 90)
+          f"{'best mean':>10s}  {'#flipped':>9s}")
+    print("-" * 100)
     for species in ("swine", "human"):
         rows = by_species.get(species, [])
         if not rows:
             continue
-        rect = np.array([r["rect_si"] for r in rows])
-        wave = np.array([r["wave_si"] for r in rows])
-        best = np.array([r["best_si"] for r in rows])
+        rect = np.array([r["rect_achievable"] for r in rows])
+        wave = np.array([r["wave_achievable"] for r in rows])
+        best = np.array([r["best_achievable"] for r in rows])
+        n_flipped = sum(1 for r in rows if r["rect_flipped"] or r["wave_flipped"])
         print(f"{species:>8s}  {len(rows):>4d}  "
               f"{rect.mean():>9.3f}   {np.median(rect):>8.3f}   "
               f"{100*(rect>=0.95).mean():>7.1f}%  "
               f"{100*(rect>=0.999).mean():>6.1f}%  "
               f"{wave.mean():>9.3f}   {np.median(wave):>8.3f}   "
-              f"{best.mean():>9.3f}")
+              f"{best.mean():>9.3f}   {n_flipped:>4d}/{len(rows):<4d}")
     print()
+    print("[note] all SI values are |signed_si| (achievable selectivity); "
+          "#flipped is the number of seeds where the optimiser landed in "
+          "the anti-selective basin, equivalent to a positive-SI solution "
+          "with target↔non-target swapped.")
 
 
 def _print_per_nerve(by_species: dict) -> None:

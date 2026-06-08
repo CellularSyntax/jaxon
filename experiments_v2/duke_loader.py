@@ -140,9 +140,32 @@ def load_duke_sample(
         sample_name    — short tag, e.g. "sub-10_sam-1"
     """
     sample_dir = Path(sample_dir)
-    nx = json.loads((sample_dir / "nerve_xsec.json").read_text())
-    ec = json.loads((sample_dir / "electrode_config.json").read_text())
-    npz = np.load(sample_dir / "paths_Ve.npz")
+    nx_path  = sample_dir / "nerve_xsec.json"
+    ec_path  = sample_dir / "electrode_config.json"
+    npz_path = sample_dir / "paths_Ve.npz"
+    for p in (nx_path, ec_path, npz_path):
+        if not p.exists():
+            raise FileNotFoundError(
+                f"Duke bundle missing required file: {p}"
+            )
+        if p.stat().st_size == 0:
+            raise ValueError(
+                f"Duke bundle file is empty (0 bytes), likely a failed "
+                f"transfer: {p}"
+            )
+    try:
+        nx = json.loads(nx_path.read_text())
+    except json.JSONDecodeError as e:
+        raise ValueError(
+            f"nerve_xsec.json malformed in {sample_dir.name}: {e}"
+        ) from e
+    try:
+        ec = json.loads(ec_path.read_text())
+    except json.JSONDecodeError as e:
+        raise ValueError(
+            f"electrode_config.json malformed in {sample_dir.name}: {e}"
+        ) from e
+    npz = np.load(npz_path)
 
     # ── Nerve geometry ──────────────────────────────────────────────────────
     fiber_xy_all  = np.asarray(nx["fibers"]["xy_um"], dtype=np.float64)  # [F_full, 2]

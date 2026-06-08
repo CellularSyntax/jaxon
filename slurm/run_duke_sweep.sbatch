@@ -76,15 +76,28 @@ export WAVE_LR="${WAVE_LR:-5e-4}"
 export WAVE_PATIENCE="${WAVE_PATIENCE:-20}"
 # Duke-specific amp scaling.  FEM Ve peaks at ~870 mV/mA on this
 # bundle (~5× the synthetic point-source); single-contact thresholds
-# are correspondingly ~5× smaller.  Defaults below were tuned on a
-# 100-fibre CPU smoketest: at ±0.30 mA / lr 0.015 the optimiser
-# overshot a good warm-start and landed at the all-fire attractor.
-# All env-overrideable on submission.
-export AMP_INIT_MA="${AMP_INIT_MA:--0.30}"
+# are correspondingly ~5× smaller.  Defaults below were re-tuned after
+# the first full-cohort run: the smoketest-tuned ±0.30 mA / 0.010 mA
+# combination put many nerves (e.g. 2-fascicle imbalanced anatomies)
+# either entirely sub-threshold or entirely supra-threshold at init,
+# in which case the ±0.010 mA FD probe was too small to flip any fibre
+# across threshold and the FD gradient collapsed to exactly zero —
+# Adam-FD then made no progress for 20+ iters before the early-stop
+# fired (see logs from initial run on human_sub-46_sam-2 etc.).  The
+# new defaults put the init amplitude near per-contact threshold for
+# the median Duke anatomy and widen the FD probe enough to register
+# firing-state flips:
+#
+#   AMP_INIT_MA: -0.30 → -0.08 (~4× smaller; near-threshold init)
+#   FD_EPS_MA  :  0.010 →  0.030 (3× larger; enough to flip near-threshold fibres)
+#   ADAM_LR_MA :  0.015 → 0.005 (smaller; avoids overshoot back into saturation)
+#
+# All env-overrideable on submission for further tuning.
+export AMP_INIT_MA="${AMP_INIT_MA:--0.08}"
 export AMP_CLIP_LO="${AMP_CLIP_LO:--1.50}"
 export AMP_CLIP_HI="${AMP_CLIP_HI:-1.50}"
-export ADAM_LR_MA="${ADAM_LR_MA:-0.015}"
-export FD_EPS_MA="${FD_EPS_MA:-0.010}"
+export ADAM_LR_MA="${ADAM_LR_MA:-0.005}"
+export FD_EPS_MA="${FD_EPS_MA:-0.030}"
 
 # Where the Duke FEM bundles live.  Default = duke_meshes/ (the
 # 18-swine + 20-human bundle from the FEM pipeline).  Earlier bundles
@@ -129,7 +142,10 @@ for SAMPLE_DIR in "${DUKE_VES_ROOT}"/*/; do
   echo "============================================================"
   echo "Sample: ${SAMPLE_NAME}  (index ${SAMPLE_INDEX}, shard ${SHARD_IDX}/${N_SHARDS})"
   echo "============================================================"
-  srun \
+  # Per-sample failures (e.g. a corrupt nerve_xsec.json) must NOT kill the
+  # remaining samples in this shard — wrap srun in an if-guard so set -e
+  # doesn't propagate.
+  if srun \
     --container-image="${CONTAINER_IMAGE}" \
     --container-mounts="${PROJECT_ROOT}:${PROJECT_ROOT}" \
     --container-workdir="${PROJECT_ROOT}" \
@@ -151,7 +167,12 @@ export AMP_CLIP_LO=\"${AMP_CLIP_LO}\" AMP_CLIP_HI=\"${AMP_CLIP_HI}\"
 export ADAM_LR_MA=\"${ADAM_LR_MA}\" FD_EPS_MA=\"${FD_EPS_MA}\"
 bash \"${PROJECT_ROOT}/slurm/setup_env.sh\"
 python -u experiments_v2/selectivity_sweep_duke.py
-"
+"; then
+    echo "[shard ${SHARD_IDX}] ${SAMPLE_NAME}: OK"
+  else
+    rc=$?
+    echo "[shard ${SHARD_IDX}] ${SAMPLE_NAME}: FAILED rc=${rc} — continuing to next sample"
+  fi
 done
 
 echo

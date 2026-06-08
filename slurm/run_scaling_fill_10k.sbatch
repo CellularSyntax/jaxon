@@ -44,7 +44,13 @@ fi
 
 mkdir -p "${PROJECT_ROOT}/logs" "${PROJECT_ROOT}/outputs/scaling"
 
-export SKIP_PYFIBERS_COMPILE=1
+# NOTE: SKIP_PYFIBERS_COMPILE is intentionally NOT set here.  Unlike
+# the Phase 3 selectivity sweeps (which only call jaxon and never
+# touch NEURON), the scaling benchmark compares pyfibers vs jaxon
+# wall times -- so the NMODL mechanisms (axnode_myel etc.) MUST be
+# compiled inside the container before python runs, otherwise NEURON
+# raises 'argument not a density mechanism name' the moment pyfibers
+# tries to insert the MRG node channels.
 export SLURM_STEP_LAUNCH_TIMEOUT=600
 
 # 24 h budget per pyfibers chunk - plenty for N=10k on the C-fiber
@@ -63,7 +69,8 @@ srun \
 set -euo pipefail
 export PROJECT_ROOT=\"${PROJECT_ROOT}\"
 export JAX_ENABLE_X64=1
-export SKIP_PYFIBERS_COMPILE=1
+# Intentionally NOT setting SKIP_PYFIBERS_COMPILE: scaling.py calls
+# pyfibers which needs NEURON's axnode_myel + friends compiled.
 export JAXLEY_FIBERS_PF_BUDGET_S=${JAXLEY_FIBERS_PF_BUDGET_S}
 bash \"${PROJECT_ROOT}/slurm/setup_env.sh\"
 python -u experiments_v2/scaling.py

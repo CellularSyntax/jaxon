@@ -23,19 +23,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 HERE = Path(__file__).resolve().parent
-# Output search path: when sweep data is refreshed from the cluster we
-# drop the new JSONs into manuscript/outputs/ so the manuscript figures
-# pick them up without overwriting the original repo outputs/.
-# Look in manuscript/outputs/<subdir>/ first; fall back to ../outputs/.
-_LOCAL_OUTROOT = HERE / "outputs"
-_REPO_OUTROOT  = HERE.parent / "outputs"
+# All sweep data lives in the repo-level outputs/ at the project root.
+OUTROOT = HERE.parent / "outputs"
 def _outdir(subdir: str) -> Path:
-    """Resolve outputs subdir, preferring the manuscript-local copy."""
-    local = _LOCAL_OUTROOT / subdir
-    repo  = _REPO_OUTROOT  / subdir
-    return local if local.exists() else repo
+    """Resolve ``outputs/<subdir>/`` at the project root."""
+    return OUTROOT / subdir
 
-OUTROOT = _REPO_OUTROOT   # kept for back-compat with old call sites
 FIGDIR = HERE / "figures"
 FIGDIR.mkdir(exist_ok=True)
 
@@ -1614,19 +1607,17 @@ def fig_selectivity_xsections_hard():
 
 # Per-sample cache: nerve outline polygon + fascicle polygons + electrode metadata.
 _DUKE_XSEC_CACHE: dict[str, dict] = {}
-# Search the canonical FEM-bundle root names in order: env override first,
-# then the new duke_meshes/ (swine + human), then the legacy duke_Ves/.
-_DUKE_ROOTS = [
-    p for p in (
-        os.environ.get("DUKE_VES_ROOT", "").strip(),
-        HERE.parent / "duke_meshes",
-        HERE.parent / "duke_Ves",
-    ) if p
-]
-# Normalise to Path; keep only the ones that actually exist on disk.
-_DUKE_ROOTS = [Path(p) if not isinstance(p, Path) else p for p in _DUKE_ROOTS]
+# Where the Duke FEM bundles live on disk.  ``DUKE_VES_ROOT`` env var
+# wins; otherwise prefer the new ``duke_meshes/`` (swine + human) bundle
+# at the project root, fall back to the legacy ``duke_Ves/`` name.  Only
+# roots that exist on disk are kept; the cross-section drawer iterates
+# them when resolving a sample directory.
+_DUKE_ROOTS: list[Path] = []
+_env_root = os.environ.get("DUKE_VES_ROOT", "").strip()
+if _env_root:
+    _DUKE_ROOTS.append(Path(_env_root))
+_DUKE_ROOTS.extend([HERE.parent / "duke_meshes", HERE.parent / "duke_Ves"])
 _DUKE_ROOTS = [p for p in _DUKE_ROOTS if p.exists()]
-# Backwards-compat alias for existing call sites.
 _DUKE_ROOT = _DUKE_ROOTS[0] if _DUKE_ROOTS else (HERE.parent / "duke_meshes")
 
 
@@ -1688,30 +1679,27 @@ def _load_duke_xsec(sample: str) -> dict | None:
 
 
 def _duke_sweep_dirs() -> list[Path]:
-    """Discover Duke sweep output directories on disk.
+    """Discover Duke sweep output directories under ``outputs/``.
 
     Searches both the new layout
     (``outputs/duke_sweeps/<sample>/data_seed_*.json``) and the legacy
     layout (``outputs/selectivity_sweep_duke_<sample>/...``).  Returns
     a deduplicated list of output dirs, one per Duke sample with at
-    least one JSON inside.  Sample-name uniqueness is enforced; if a
-    sample exists under both layouts the manuscript-local copy
-    (``manuscript/outputs/...``) takes precedence over the repo copy.
+    least one JSON inside.
     """
-    found = []
-    for cand_root in (_LOCAL_OUTROOT, _REPO_OUTROOT):
-        if not cand_root.exists():
-            continue
-        # New layout: outputs/duke_sweeps/<sample>/
-        duke_root = cand_root / "duke_sweeps"
-        if duke_root.exists():
-            for d in sorted(duke_root.iterdir()):
-                if d.is_dir() and any(d.glob("data_seed_*.json")):
-                    found.append(d)
-        # Legacy layout: outputs/selectivity_sweep_duke_<sample>/
-        for d in sorted(cand_root.glob("selectivity_sweep_duke_*")):
-            if any(d.glob("data_seed_*.json")):
+    found: list[Path] = []
+    if not OUTROOT.exists():
+        return found
+    # New layout: outputs/duke_sweeps/<sample>/
+    duke_root = OUTROOT / "duke_sweeps"
+    if duke_root.exists():
+        for d in sorted(duke_root.iterdir()):
+            if d.is_dir() and any(d.glob("data_seed_*.json")):
                 found.append(d)
+    # Legacy layout: outputs/selectivity_sweep_duke_<sample>/
+    for d in sorted(OUTROOT.glob("selectivity_sweep_duke_*")):
+        if any(d.glob("data_seed_*.json")):
+            found.append(d)
     # De-duplicate by sample name (first occurrence wins).
     seen = set()
     uniq = []

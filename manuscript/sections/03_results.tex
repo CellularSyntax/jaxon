@@ -17,25 +17,35 @@ scripts are in the repository under
 
 For each axon model we drove jaxon and \texttt{pyfibers}-wrapped
 NEURON with the identical stimulus and compared the activation
-threshold (the lowest amplitude at which the centre node fired an AP)
-across diameters, pulse widths and stimulus waveforms.  In total we
-ran 1\,152 distinct test configurations, spanning all four models, 26
-diameters ($D \in [0.3,\,16]\,\mu\mathrm{m}$), eight stimulus
+threshold (the lowest amplitude at which the centre node fired an
+AP) across diameters, pulse widths and stimulus waveforms.  In
+total we ran 943 distinct test configurations, spanning all four
+models and the diameters they are parameterised over, eight stimulus
 waveforms (monophasic cathodic / anodic, biphasic cathodic-first /
 anodic-first, sinusoidal, sawtooth, exponentially-decaying and
 Gaussian), and six pulse widths ($0.02$--$1\,\mathrm{ms}$).
-\textbf{Every single one of the 1\,152 configurations agreed to within
-$1\%$ relative threshold error with NEURON} (Table~\ref{tab:validation-sd}).
-The peak relative error in the entire test suite is $0.46\,\%$
-(Sundt $D=0.5\,\mu\mathrm{m}$, biphasic cathodic-first, $0.02\,\mathrm{ms}$);
-the median across all 1\,152 configurations is below $0.1\,\%$.
+\textbf{$99.6\,\%$ of the 943 configurations agree to within $1\,\%$
+relative threshold error with NEURON}
+(Table~\ref{tab:validation-sd}); only the Rattay model has
+configurations exceeding the $1\,\%$ acceptance criterion, and those
+exceptions are concentrated in a single edge regime
+(biphasic cathodic-first pulses at the shortest pulse width
+$\mathrm{PW}=0.1\,\mathrm{ms}$ across the four smallest Rattay
+diameters; peak $2.24\,\%$ at $D=0.3\,\mu\mathrm{m}$).  We attribute
+this to the bisection-based threshold detector having reduced
+resolution near the inflection point of the biphasic cathodic-first
+strength--duration curve at the smallest diameters; the
+intracellular voltage traces themselves agree to NEURON-level
+precision (Figure~\ref{fig:traces}, bottom rows).
 
 \begin{table}[h]
   \centering
   \caption{Strength--duration threshold agreement of jaxon vs.\
     \texttt{pyfibers}-wrapped NEURON, aggregated across all tested
-    diameters, waveforms and pulse widths per model.  Every test
-    configuration agreed to within $1\,\%$.}
+    diameters, waveforms and pulse widths per model.  Sweeney is
+    currently reported at $D=10\,\mu\mathrm{m}$ only pending the
+    full multi-diameter re-validation; the corresponding figures
+    will be refreshed before camera-ready.}
   \label{tab:validation-sd}
   \begin{tabular}{lrrrrr}
     \toprule
@@ -43,8 +53,10 @@ the median across all 1\,152 configurations is below $0.1\,\%$.
     \midrule
     MRG      &  432 & 0.04\,\% & 0.20\,\% & 0.39\,\% & 100\,\% \\
     Sundt    &  240 & 0.34\,\% & 0.42\,\% & 0.46\,\% & 100\,\% \\
-    Sweeney  &  240 & 0.03\,\% & 0.00\,\% & 0.02\,\% & 100\,\% \\
-    Rattay   &  240 & 0.06\,\% & 0.14\,\% & 0.17\,\% & 100\,\% \\
+    Sweeney  &   31 & 0.02\,\% & 0.06\,\% & 0.06\,\% & 100\,\% \\
+    Rattay   &  240 & 0.07\,\% & 0.15\,\% & 2.24\,\% &  98.3\,\% \\
+    \midrule
+    \textbf{total} & \textbf{943} & --- & --- & 2.24\,\% & \textbf{99.6\,\%} \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -52,19 +64,22 @@ the median across all 1\,152 configurations is below $0.1\,\%$.
 Conduction velocity (CV) is independently sensitive to the
 internodal and nodal time constants and so probes a different
 component of the model.  Table~\ref{tab:validation-cv} reports the
-CV agreement across the published diameter range of each model
-(myelinated MRG: $5.7$--$16\,\mu\mathrm{m}$; Sweeney
-$2$--$12\,\mu\mathrm{m}$; unmyelinated Sundt $0.3$--$1.2\,\mu\mathrm{m}$;
-Rattay $0.3$--$1.5\,\mu\mathrm{m}$).  For MRG, Sweeney and Rattay
-the median error rounds to zero across every tested diameter; the
-Sundt model shows a peak $0.24\,\%$ error at the smallest tested
-diameter ($D=0.3\,\mu\mathrm{m}$).
+CV agreement across the published diameter range of each model.
+For MRG, Sweeney and Rattay the median error rounds to zero across
+every tested diameter; the Sundt model shows a peak $0.24\,\%$
+error at the smallest tested diameter ($D=0.3\,\mu\mathrm{m}$).
+For Rattay, the AP peak voltage at the centre node sits near
+$-4\,\mathrm{mV}$ (well below the $0\,\mathrm{mV}$ crossing
+threshold conventionally used elsewhere in the suite), so CV
+extraction uses a $-30\,\mathrm{mV}$ crossing threshold instead;
+under this convention the CV agreement is sub-percent across the
+full diameter range.
 
 \begin{table}[h]
   \centering
   \caption{Conduction velocity agreement against NEURON, evaluated
     at each tested diameter for each model.  Diameter ranges follow
-    those over which each fiber model has been parameterised in the
+    those over which each fibre model has been parameterised in the
     original publication.  The exact diameters tested are listed in
     Methods (Section~\ref{sec:methods-validation}).}
   \label{tab:validation-cv}
@@ -72,10 +87,10 @@ diameter ($D=0.3\,\mu\mathrm{m}$).
     \toprule
     Model    & diameter range ($\mu$m) & median err.\ & peak err.\ & \%\,$<1\%$ \\
     \midrule
-    MRG      & 5.7\,--\,16.0 ($n=9$) & $<0.01$\,\% & $0.00$\,\% & 100\,\% \\
-    Sundt    & 0.3\,--\,1.2  ($n=5$) & $<0.01$\,\% & $0.24$\,\% & 100\,\% \\
-    Sweeney  & 2.0\,--\,12.0 ($n=6$) & $<0.01$\,\% & $0.00$\,\% & 100\,\% \\
-    Rattay   & 0.3\,--\,1.5  ($n=5$) & $<0.01$\,\% & $<0.01$\,\% & 100\,\% \\
+    MRG      & 5.7\,--\,16.0 ($n=9$) & $<0.01$\,\% & $<0.01$\,\% & 100\,\% \\
+    Sundt    & 0.3\,--\,1.2  ($n=5$) & $0.09$\,\%  & $0.24$\,\%  & 100\,\% \\
+    Sweeney  & $10$ ($n=1$, multi-$D$ refresh pending) & $<0.01$\,\% & $<0.01$\,\% & 100\,\% \\
+    Rattay   & 0.3\,--\,1.5  ($n=5$) & $0.05$\,\%  & $0.13$\,\%  & 100\,\% \\
     \bottomrule
   \end{tabular}
 \end{table}

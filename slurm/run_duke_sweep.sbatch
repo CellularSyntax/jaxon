@@ -49,8 +49,14 @@ export SKIP_PYFIBERS_COMPILE=1
 export SLURM_STEP_LAUNCH_TIMEOUT=600
 
 # Sweep knobs (env-overrideable on sbatch submission).
+#
+# SEED_END=1 (default): 1 random divider angle per nerve.  The
+# manuscript story across the 38 swine + human Duke samples is the
+# cross-anatomy spread, not the per-anatomy robustness; 25 seeds ×
+# 38 nerves would be ~950 runs and dilute the per-nerve signal.  Set
+# SEED_END=25 if you really want the 25-seed per-anatomy distribution.
 export SEED_START="${SEED_START:-0}"
-export SEED_END="${SEED_END:-25}"
+export SEED_END="${SEED_END:-1}"
 export FIBER_DIAMETER_UM="${FIBER_DIAMETER_UM:-5.7}"
 export N_NODES="${N_NODES:-21}"
 export RECT_OPTIMIZER="${RECT_OPTIMIZER:-adam_fd}"
@@ -70,9 +76,15 @@ export AMP_CLIP_HI="${AMP_CLIP_HI:-1.50}"
 export ADAM_LR_MA="${ADAM_LR_MA:-0.015}"
 export FD_EPS_MA="${FD_EPS_MA:-0.010}"
 
-# Where the Duke FEM bundles live.  Override on resubmit to point at a
-# different staging directory if the data moves.
-DUKE_VES_ROOT="${DUKE_VES_ROOT:-${PROJECT_ROOT}/duke_Ves}"
+# Where the Duke FEM bundles live.  Default = duke_meshes/ (the
+# 18-swine + 20-human bundle from the FEM pipeline).  Earlier bundles
+# lived under duke_Ves/ and either name is accepted on disk; override
+# DUKE_VES_ROOT on resubmit to point at a different staging directory.
+if [ -d "${PROJECT_ROOT}/duke_meshes" ]; then
+  DUKE_VES_ROOT="${DUKE_VES_ROOT:-${PROJECT_ROOT}/duke_meshes}"
+else
+  DUKE_VES_ROOT="${DUKE_VES_ROOT:-${PROJECT_ROOT}/duke_Ves}"
+fi
 
 echo "Duke sweep: seeds ${SEED_START}..$((SEED_END-1))  D=${FIBER_DIAMETER_UM} µm"
 echo "DUKE_VES_ROOT=${DUKE_VES_ROOT}"

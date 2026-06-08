@@ -13,6 +13,7 @@ Run:
 from __future__ import annotations
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -1613,7 +1614,20 @@ def fig_selectivity_xsections_hard():
 
 # Per-sample cache: nerve outline polygon + fascicle polygons + electrode metadata.
 _DUKE_XSEC_CACHE: dict[str, dict] = {}
-_DUKE_ROOT = HERE.parent / "duke_Ves"
+# Search the canonical FEM-bundle root names in order: env override first,
+# then the new duke_meshes/ (swine + human), then the legacy duke_Ves/.
+_DUKE_ROOTS = [
+    p for p in (
+        os.environ.get("DUKE_VES_ROOT", "").strip(),
+        HERE.parent / "duke_meshes",
+        HERE.parent / "duke_Ves",
+    ) if p
+]
+# Normalise to Path; keep only the ones that actually exist on disk.
+_DUKE_ROOTS = [Path(p) if not isinstance(p, Path) else p for p in _DUKE_ROOTS]
+_DUKE_ROOTS = [p for p in _DUKE_ROOTS if p.exists()]
+# Backwards-compat alias for existing call sites.
+_DUKE_ROOT = _DUKE_ROOTS[0] if _DUKE_ROOTS else (HERE.parent / "duke_meshes")
 
 
 def _load_duke_xsec(sample: str) -> dict | None:
@@ -1624,10 +1638,16 @@ def _load_duke_xsec(sample: str) -> dict | None:
     if the sample directory is not present locally."""
     if sample in _DUKE_XSEC_CACHE:
         return _DUKE_XSEC_CACHE[sample]
-    sample_dir = _DUKE_ROOT / sample
-    nxsec_path = sample_dir / "nerve_xsec.json"
-    if not nxsec_path.exists():
+    # Try every configured root in order (env override, duke_meshes/, duke_Ves/).
+    sample_dir = None
+    for root in _DUKE_ROOTS or [_DUKE_ROOT]:
+        cand = root / sample
+        if (cand / "nerve_xsec.json").exists():
+            sample_dir = cand
+            break
+    if sample_dir is None:
         return None
+    nxsec_path = sample_dir / "nerve_xsec.json"
     nx = json.loads(nxsec_path.read_text())
     fasc = []
     for fc in nx["fascicles"]:

@@ -8,8 +8,18 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=96G
 #SBATCH -t 23:59:00
-#SBATCH -o logs/%x-%j.out
-#SBATCH -e logs/%x-%j.err
+#SBATCH --array=0-2
+#SBATCH -o logs/%x-%A_%a.out
+#SBATCH -e logs/%x-%A_%a.err
+
+# SLURM array: by default the sweep is split into 3 parallel shards
+# (--array=0-2) so each shard processes ~1/3 of the Duke sample
+# folders.  Override with `sbatch --array=0-N ...` for finer / coarser
+# splits, or `--array=0` to fall back to a single-job sequential run.
+# Shard assignment is interleaved (sample i goes to shard i % N) so
+# the wall-time stays balanced even if individual samples differ in
+# fibre count.  All shards write into the SAME outputs/duke_sweeps/
+# tree, so there are no per-shard output files to merge afterwards.
 
 # Duke FEM nerve selectivity sweep.
 #
@@ -86,23 +96,38 @@ else
   DUKE_VES_ROOT="${DUKE_VES_ROOT:-${PROJECT_ROOT}/duke_Ves}"
 fi
 
+# Shard bookkeeping for SLURM array jobs (--array=0-N).  When the
+# sbatch is run as an array, each task processes only the samples
+# whose interleaved index matches the task id; outside an array we
+# fall back to single-shard (all samples).
+N_SHARDS="${SLURM_ARRAY_TASK_COUNT:-1}"
+SHARD_IDX="${SLURM_ARRAY_TASK_ID:-0}"
+
 echo "Duke sweep: seeds ${SEED_START}..$((SEED_END-1))  D=${FIBER_DIAMETER_UM} µm"
 echo "DUKE_VES_ROOT=${DUKE_VES_ROOT}"
+echo "Shard ${SHARD_IDX} of ${N_SHARDS}"
 echo "Optimiser: ${RECT_OPTIMIZER}  (init=${AMP_INIT_MA}, clip=[${AMP_CLIP_LO}, ${AMP_CLIP_HI}], lr=${ADAM_LR_MA}, fd_eps=${FD_EPS_MA})"
 echo "Samples discovered:"
 ls -d "${DUKE_VES_ROOT}"/*/ 2>/dev/null | xargs -n1 basename | sed "s/^/  /"
 
 # Iterate over every sample directory under DUKE_VES_ROOT.  A sample
 # directory is recognised by the presence of paths_Ve.npz + nerve_xsec.json.
+# In array mode, each shard handles samples i where i mod N_SHARDS ==
+# SHARD_IDX (interleaved to balance per-sample wall time).
+SAMPLE_INDEX=-1
 for SAMPLE_DIR in "${DUKE_VES_ROOT}"/*/; do
   if [ ! -f "${SAMPLE_DIR}/paths_Ve.npz" ] || [ ! -f "${SAMPLE_DIR}/nerve_xsec.json" ]; then
     echo "[skip] ${SAMPLE_DIR} — missing paths_Ve.npz or nerve_xsec.json"
     continue
   fi
+  SAMPLE_INDEX=$((SAMPLE_INDEX+1))
+  if [ $((SAMPLE_INDEX % N_SHARDS)) -ne ${SHARD_IDX} ]; then
+    continue
+  fi
   SAMPLE_NAME=$(basename "${SAMPLE_DIR%/}")
   echo
   echo "============================================================"
-  echo "Sample: ${SAMPLE_NAME}"
+  echo "Sample: ${SAMPLE_NAME}  (index ${SAMPLE_INDEX}, shard ${SHARD_IDX}/${N_SHARDS})"
   echo "============================================================"
   srun \
     --container-image="${CONTAINER_IMAGE}" \

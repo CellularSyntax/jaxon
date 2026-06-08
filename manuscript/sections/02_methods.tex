@@ -162,6 +162,50 @@ amplitude at each contact; this places the deterministic restart at a
 plausible cathodic/anodic split rather than at a single-polarity
 saturation.
 
+The hyperparameters $|I_{\mathrm{init}}|$, the amplitude clamp range,
+the Adam step size and the finite-difference probe magnitude are all
+scaled per fibre model so the optimiser starts in the
+gradient-informative regime regardless of the activation threshold's
+absolute scale.  At our 1.5\,mm cuff-to-fibre distance, single-contact
+extracellular activation thresholds span two orders of magnitude
+across the four supported models (Table~\ref{tab:opt-hparams}):
+$\sim 0.3\,\mathrm{mA}$ for MRG, $\sim 0.2\,\mathrm{mA}$ for Sweeney,
+$\sim 30\,\mathrm{mA}$ for Rattay, and $\sim 50\,\mathrm{mA}$ for
+Sundt (read off the single-fibre extracellular validation traces, see
+Section~\ref{sec:results-validation}).  The defaults below place
+$|I_{\mathrm{init}}|$ at $\sim 2\times$ the single-contact threshold,
+the clamp at $\sim 5\times$, Adam step size such that 30 iterations
+can traverse the clamp range, and the FD probe at a few percent of
+the threshold magnitude.
+
+\begin{table}[h]
+  \centering
+  \caption{Per-model rectangular-pulse optimiser defaults.  All four
+    knobs scale together with the single-contact extracellular
+    activation threshold of each model.  Users can override any of
+    these via the \texttt{AMP\_INIT\_MA / AMP\_CLIP\_LO / AMP\_CLIP\_HI /
+    ADAM\_LR\_MA / FD\_EPS\_MA} environment variables.}
+  \label{tab:opt-hparams}
+  \begin{tabular}{lrrrr}
+    \toprule
+    Model    & $|I_{\mathrm{init}}|$ (mA) & amp clip (mA) & Adam $\eta$ (mA/step) & FD $\epsilon$ (mA) \\
+    \midrule
+    MRG     &  1.5 & $\pm 3$   & 0.08 & 0.05 \\
+    Sweeney &  1.5 & $\pm 3$   & 0.08 & 0.05 \\
+    Rattay  & 50.0 & $\pm 150$ & 3.0  & 1.0  \\
+    Sundt   & 80.0 & $\pm 200$ & 5.0  & 2.0  \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Both rectangular optimisers also use an early-stop pair: the loop
+terminates as soon as the hard selectivity index reaches the target
+($\mathrm{SI}\ge 1.0$ by default) \emph{or} the best loss has not
+improved by at least $10^{-5}$ for 20 consecutive iterations.  This
+stops easy seeds at $\sim 15$--$30$ Adam iterations instead of the
+full 90 iterations budgeted, cutting per-seed wall time on the
+sweep by an order of magnitude on the easy-seed majority.
+
 \paragraph{Arbitrary-waveform optimisation.}
 For per-contact arbitrary waveforms $u_k(t) \in \mathbb{R}^{K \times T}$
 we use Adam with reverse-mode autodiff through the scan.  The
@@ -170,10 +214,12 @@ optimum (i.e.\ $u_k(t) = I_k^{\star} \cdot p(t)$ where $p(t)$ is the
 pulse mask), so iteration 0 reproduces the rectangular result.  To
 avoid Adam overshooting the warm-started optimum, the learning rate
 is reduced by an order of magnitude (lr$=5\times 10^{-4}$ vs the
-$5\times 10^{-3}$ used for cold-start) and early-stopping
-(patience = 20 iterations) is enabled.  All results report the
-\emph{best-loss} iterate, not the final iterate, so that any post-
-warm-start Adam drift is invisible to the reported selectivity index.
+$5\times 10^{-3}$ used for cold-start), the waveform clamp range
+matches the per-model rect amp clamp from Table~\ref{tab:opt-hparams},
+and the same SI-target / patience early-stop pair as for the rect
+optimiser is enabled.  All results report the \emph{best-loss}
+iterate, not the final iterate, so that any post-warm-start Adam
+drift is invisible to the reported selectivity index.
 
 \subsection{Nerve geometry generation}
 \label{sec:methods-geom}
@@ -183,18 +229,35 @@ construction~\cite{hussain2024}: $N_{\mathrm{fasc}}$ non-overlapping
 circular fascicles of radius drawn uniformly from $[55, 110]\,\mu
 \mathrm{m}$ are packed into a $500\,\mu\mathrm{m}$-radius nerve outline
 by rejection sampling with a $12\,\mu\mathrm{m}$ inter-fascicle gap.
-$N_{\mathrm{fiber}}/N_{\mathrm{fasc}}$ fibers are placed inside each
-fascicle by additional rejection sampling.  A straight line through
-the nerve centre at angle $\theta_{\mathrm{div}}$ partitions the
-fascicles into a \emph{target} (above the line) and \emph{off-target}
-(below) set, giving the binary target mask $y_f$ in
-Eq.~(\ref{eq:wq-loss}).  The cuff electrode is a six-contact ring of
-radius $1500\,\mu\mathrm{m}$ centred on the nerve.  $V_e$ at each
-fiber compartment is computed analytically from the point-source
-formula in homogeneous bath conductivity
-$\sigma = 0.3\,\mathrm{S/m}$.  For the manuscript sweep,
-$N_{\mathrm{fasc}} = 8$, $N_{\mathrm{fiber}} = 200$ and $\theta_{
-\mathrm{div}} = 0$ (horizontal divider, target above).
+$N_{\mathrm{fiber}}/N_{\mathrm{fasc}}$ fibres are placed inside each
+fascicle by additional rejection sampling.
+
+The fascicles are then partitioned into a \emph{target} and an
+\emph{off-target} set by a straight line through the nerve centre at
+angle $\theta_{\mathrm{div}}$.  Each fascicle is assigned to the
+target set if its centroid lies above the line, off-target otherwise,
+producing the binary target mask $y_f$ in Eq.~(\ref{eq:wq-loss}).
+Importantly, $\theta_{\mathrm{div}}$ is \emph{drawn uniformly from
+$[0°,\,180°)$ independently per seed} (range stops at $180°$ because
+the divider line is reflection-symmetric).  This randomisation
+breaks the artificial coupling between the fascicle-packing seed and
+the target / off-target orientation: a fixed $\theta_{\mathrm{div}}$
+(e.g.\ $0°$, horizontal) would bake in a single
+``dorsal-vs-ventral'' configuration for every realisation, whereas
+the random divider ensures the sweep covers every possible
+target-fascicle orientation around the nerve cross-section.  The 25
+seeds of each per-model sweep therefore correspond to 25 distinct
+geometric / topological problems rather than 25 noisy draws from one.
+
+The cuff electrode is a six-contact ring of radius
+$1500\,\mu\mathrm{m}$ centred on the nerve.  $V_e$ at each fibre
+compartment is computed analytically from the point-source formula
+in homogeneous bath conductivity $\sigma = 0.3\,\mathrm{S/m}$.  For
+the manuscript sweep, $N_{\mathrm{fasc}} = 8$ and
+$N_{\mathrm{fiber}} = 200$ (25 fibres per fascicle).  The legacy
+fixed-divider mode (\texttt{RANDOMIZE\_DIVIDER=0}) is retained for
+debugging and for reproducing the original Hussain-style P1--P6
+motor-vs-sensory split.
 
 \subsection{Validation protocol}
 \label{sec:methods-validation}

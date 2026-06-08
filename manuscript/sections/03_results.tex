@@ -300,71 +300,109 @@ CPU wall time.
 \subsection{Selectivity optimisation on multi-fascicle nerves}
 \label{sec:results-selectivity}
 
-\subsubsection*{Single-diameter regime.}
+\subsubsection*{Cross-model single-diameter sweep.}
 We applied the rectangular-pulse and warm-started waveform optimisers
 of Section~\ref{sec:methods-opt} to randomised Hussain-style
 multi-fascicle nerve realisations
-(Section~\ref{sec:methods-geom}) at $D = 5.7\,\mu\mathrm{m}$, a
-representative MRG fiber size used in the prior
-literature~\cite{hussain2024}.  Per realisation we ran the multi-start
-LBFGS rectangular optimiser to a budget of 30 inner iterations per
-restart with 2 restarts, followed by 100 iterations of the
-warm-started waveform Adam optimiser at learning rate $5\times 10^{-4}$
-with early-stopping patience 20.
+(Section~\ref{sec:methods-geom}) for all four implemented fibre
+models, at the representative diameters used in the
+benchmark / prior literature: MRG at $D=5.7\,\mu\mathrm{m}$ and
+$D=10\,\mu\mathrm{m}$, Sweeney at $D=10\,\mu\mathrm{m}$, Sundt at
+$D=1\,\mu\mathrm{m}$, and Rattay at $D=1\,\mu\mathrm{m}$.  Per fibre
+model we ran 25 randomised nerve realisations; for each realisation
+we ran the multi-start LBFGS rectangular optimiser (Adam-FD variant
+in this sweep) to a budget of up to 90 inner Adam iterations
+(early-stopping once $\mathrm{SI}\ge 1$ or the loss plateaus for 20
+iterations), followed by up to 100 iterations of the warm-started
+waveform Adam optimiser (learning rate $5\times 10^{-4}$,
+early-stopping patience 20).
 
-Across the 26 seeds completed at the time of writing (of a planned
-100-seed sweep currently running on the cluster), the rectangular
-optimiser achieves a mean selectivity index of
-$\mathrm{SI}=0.973$ (median $1.000$, range $0.870$--$1.000$);
-$77\,\%$ of seeds reach $\mathrm{SI}\ge 0.95$, and $65\,\%$ reach the
-theoretical maximum $\mathrm{SI}=1.000$ (all target fascicle fibres
-firing, all off-target fibres silent).  The warm-started waveform
-stage preserves the rectangular optimum on most seeds (median wave SI
-$= 0.975$); on a small subset ($\sim 30\,\%$) Adam destabilises the
-warm-started solution despite the conservative learning-rate and
-early-stop settings, and the wave-stage report defaults to the
-best-iter SI which is at minimum the warm-start (rect) value.
-Figure~\ref{fig:selectivity}\textbf{a} shows the SI distribution across
-baseline, rect-LBFGS and warm-started wave-Adam stages;
-Figure~\ref{fig:selectivity}\textbf{b} compares the wave and rect
-outcome on each individual seed.
-Figure~\ref{fig:selectivity-gallery} shows a representative cross-section
-per model and per seed: the divider angle is randomised per seed, so
-each panel corresponds to a different target/off-target fascicle layout
-and the optimised cuff configuration (per-contact polarities + amplitudes)
-adapts accordingly.  Target-fascicle fibers fire and off-target-fascicle
-fibers remain silent in every panel where $\mathrm{SI}\ge 0.95$, with the
-six-contact cuff balancing cathodic and anodic charge across opposing
-sides of the nerve.
+A critical design detail is the random target / off-target divider:
+on every seed the line that splits fascicles into the target group
+and the off-target group is drawn uniformly in $[0°,\,180°)$, so the
+sweep covers every possible cardiac-vs-non-cardiac fascicle
+orientation rather than baking in a single (e.g.\ dorsal-vs-ventral)
+configuration.  This randomisation, together with the
+rejection-sampled fascicle positions, gives 25 distinct
+geometric / topological problems per fibre model.
 
-The single-diameter sweep reported here uses the MRG model at
-$D=5.7\,\mu\mathrm{m}$.  An across-model extension that runs the same
-pipeline for each implemented model (MRG at $D=10\,\mu\mathrm{m}$,
-Sweeney at $D=10\,\mu\mathrm{m}$, Sundt at $D=1\,\mu\mathrm{m}$,
-Rattay at $D=1\,\mu\mathrm{m}$) and reports the per-model SI
-distribution as a violin in a single figure is a natural next step,
-addressing the question of how the achievable selectivity depends on
-the fibre biophysics.\needdata{Run the per-model sweeps for Sundt,
-Sweeney and Rattay and refresh Fig.~\ref{fig:selectivity} as a
-4-model violin once the 100-seed MRG sweep completes.}
+Across the 125 randomised realisations (5 models $\times$ 25 seeds)
+the rectangular optimiser achieves
+\textbf{median $\mathrm{SI}=1.000$ on every model}, with cross-model
+mean SI from $0.934$ (Sundt) to $0.979$ (Rattay), and between
+$64\,\%$ and $76\,\%$ of seeds reaching the theoretical maximum
+$\mathrm{SI}=1.000$ (all target fascicle fibres firing, all
+off-target fibres silent) per model (Table~\ref{tab:selectivity}).
+The warm-started waveform stage preserves the rectangular optimum on
+the majority of seeds; on a small subset ($\sim 25$--$35\,\%$
+depending on model) the wave Adam step destabilises the warm-start
+slightly, and the wave-stage report defaults to the best-iter SI
+which is at minimum the warm-start (rect) value.
+Figure~\ref{fig:selectivity}\textbf{a} shows the per-model SI
+distribution (one paired rect+wave violin per model);
+Figure~\ref{fig:selectivity}\textbf{b} the per-seed wave-vs-rect
+comparison across all 125 seeds.
+
+The model with the lowest mean SI is Sundt (mean $0.934$,
+$68\,\%\ge 0.95$).  Sundt's lower mean reflects two compounding
+factors: its peak AP voltage at the centre node is the lowest of
+the four models ($\sim 11\,\mathrm{mV}$, vs $\sim 23\,\mathrm{mV}$ for
+MRG), so the activation proxy operates closer to its sigmoid
+saturation; and its activation threshold at the 1.5\,mm cuff is the
+highest ($\sim 50\,\mathrm{mA}$, requiring per-model amp scaling of
+the rect optimiser as detailed in
+Section~\ref{sec:methods-opt}).  Even so, Sundt reaches
+$\mathrm{SI}\ge 0.95$ on the majority of seeds, and Rattay --- the
+other unmyelinated model --- achieves the \emph{highest} mean SI of
+the four, demonstrating that the cuff-design pipeline generalises
+across fibre biophysics.
+
+\begin{table}[h]
+  \centering
+  \caption{Per-model selectivity statistics across 25 randomised
+    Hussain-style nerves per model.  Each seed uses a uniformly random
+    divider angle in $[0°,\,180°)$ and a freshly reject-sampled
+    fascicle packing.  Wave column is the warm-started waveform-Adam
+    optimum; median SI is $1.000$ on every model.}
+  \label{tab:selectivity}
+  \begin{tabular}{lrrrrrr}
+    \toprule
+    Model           & D ($\mu$m) & rect mean SI & rect median & \%\,$\ge 0.95$ & \%\,$=1.0$ & wave mean SI \\
+    \midrule
+    MRG (myel.)     &  5.7 & 0.962 & 1.000 & 84\,\% & 72\,\% & 0.952 \\
+    MRG (myel.)     & 10.0 & 0.944 & 1.000 & 76\,\% & 68\,\% & 0.941 \\
+    Sweeney (myel.) & 10.0 & 0.956 & 1.000 & 80\,\% & 76\,\% & 0.950 \\
+    Sundt (unmyel.) &  1.0 & 0.934 & 1.000 & 68\,\% & 64\,\% & 0.928 \\
+    Rattay (unmyel.) & 1.0 & 0.979 & 1.000 & 88\,\% & 72\,\% & 0.958 \\
+    \midrule
+    \textbf{all 125 seeds} & --- & \textbf{0.955} & \textbf{1.000} & \textbf{79\,\%} & \textbf{70\,\%} & \textbf{0.946} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Figure~\ref{fig:selectivity-gallery} shows representative
+cross-sections per model and per seed: the random divider angle and
+the rejection-sampled fascicle positions give each panel a different
+target / off-target layout, and the optimised cuff configuration
+(per-contact polarities + amplitudes) adapts to it.
 
 \begin{figure}[h]
   \centering
-  \figmaybe[width=0.95\textwidth]{fig_selectivity_summary.png}
-  \caption{Selectivity optimisation across 26 of a planned 100-seed
-    sweep of randomised Hussain-style multi-fascicle nerve
-    realisations (MRG, $D = 5.7\,\mu\mathrm{m}$).
-    \textbf{(a)} Violin distribution of selectivity index across the
-    three optimisation stages: baseline (uniform-field cuff, all
-    fibres recruited indiscriminately), rectangular LBFGS optimum,
-    and warm-started waveform-Adam optimum.  Individual seeds shown
-    as jittered points; red bars mark per-stage medians.  Red dashed
-    line marks the $\mathrm{SI}=0.95$ acceptance criterion used in
-    the prior literature.
+  \figmaybe[width=0.98\textwidth]{fig_selectivity_summary.png}
+  \caption{Selectivity optimisation across 125 randomised
+    Hussain-style multi-fascicle nerve realisations spanning 5 fibre
+    model / diameter combinations (25 seeds each).
+    \textbf{(a)} Per-model paired-violin distributions: rectangular
+    LBFGS-FD (left of each pair) and warm-started waveform-Adam
+    (right of each pair).  Individual seeds shown as jittered points;
+    red bars mark per-stage medians; red dashed line marks the
+    $\mathrm{SI}=0.95$ acceptance criterion used in the prior
+    literature.
     \textbf{(b)} Per-seed scatter of warm-started waveform SI vs.\
-    rectangular SI; points on the dotted diagonal are seeds where
-    the waveform stage preserved the rect optimum exactly, points
-    above the diagonal are improvements, points below are regressions.}
+    rectangular SI, colour-coded by model.  Points on the dotted
+    diagonal are seeds where the waveform stage preserved the rect
+    optimum exactly; points above the diagonal are improvements,
+    below are regressions.}
   \label{fig:selectivity}
 \end{figure}
 

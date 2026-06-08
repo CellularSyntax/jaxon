@@ -24,11 +24,15 @@ against pyfibers on a single NVIDIA A16, jaxon achieves a
 and 122-fold at $N=10\,000$ Sweeney fibers (607\,s\,$\to$\,5.0\,s)},
 crossing parity at $N\approx 10$ and dominating thereafter.  As a
 demonstration of the differentiability advantage, we use jaxon to
-optimise spatially selective fascicular stimulation across randomised
-Hussain-style multi-fascicle nerve realisations: across the first
-seven of a planned 100-seed sweep, multi-start LBFGS over per-contact
-amplitudes achieves a mean selectivity index of
-\textbf{$\mathrm{SI}=0.965$} (median 0.987, three seeds at $\mathrm{SI}=1.000$).
+optimise spatially selective fascicular stimulation across 125
+randomised Hussain-style multi-fascicle nerve realisations spanning
+all four fibre models (25 seeds each, every seed with an independently
+randomised target / off-target divider angle): rectangular-pulse
+amplitude optimisation achieves \textbf{median $\mathrm{SI}=1.000$
+on every model}, with cross-model mean SI of $0.955$ and
+$70\,\%$ of seeds reaching the theoretical maximum
+$\mathrm{SI}=1.0$ (all target fibres firing, all off-target fibres
+silent).
 jaxon is open-source and designed to slot into existing peripheral nerve
 stimulation pipelines as a drop-in replacement for the NEURON forward
 solver, with the additional capability of gradient-based optimisation.

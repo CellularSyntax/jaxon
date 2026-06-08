@@ -13,13 +13,22 @@ and arbitrary waveforms.  The third capability is the conceptual
 contribution: previous PNS optimisation pipelines have been
 gradient-free, restricting selectivity search to grid sweeps or
 evolutionary methods that scale poorly with the dimensionality of
-the design space.  With jaxon, multi-start LBFGS over rectangular
-amplitudes routinely attains $\mathrm{SI} \ge 0.95$ on randomised
-multi-fascicle nerves where the gradient is informative; the same
-forward kernel supports autodiff over arbitrary per-contact waveforms,
-giving access to optimisation regimes (kHz block, charge-balanced
-chirps, anodic-leading patterns) that have so far been studied
-piecemeal in the literature.
+the design space.  With jaxon, rectangular-pulse amplitude optimisation
+achieves \textbf{median $\mathrm{SI}=1.000$ on every supported fibre
+model} (Section~\ref{sec:results-selectivity},
+Table~\ref{tab:selectivity}): across 125 randomised Hussain-style
+nerves spanning MRG (at both 5.7\,$\mu$m and 10\,$\mu$m), Sweeney,
+Sundt and Rattay, cross-model mean SI is $0.955$, $79\,\%$ of seeds
+reach $\mathrm{SI}\ge 0.95$, and $70\,\%$ reach the theoretical
+maximum $\mathrm{SI}=1.0$.  The fibre-model generalisation matters:
+the same optimisation pipeline applies to myelinated and unmyelinated
+fibres with no algorithmic change --- only the per-model amplitude
+scaling of Table~\ref{tab:opt-hparams} differs, reflecting the
+two-order-of-magnitude span of single-contact activation thresholds.
+The same forward kernel supports autodiff over arbitrary per-contact
+waveforms, giving access to optimisation regimes (kHz block,
+charge-balanced chirps, anodic-leading patterns) that have so far
+been studied piecemeal in the literature.
 
 \subsection{Comparison with prior work}
 

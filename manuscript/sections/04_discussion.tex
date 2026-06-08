@@ -6,9 +6,10 @@ fiber simulator that reproduces the canonical MRG, Sundt, Sweeney
 and Rattay axon models with $100\,\%$ of $1\,152$ threshold-test
 configurations under the $1\,\%$ error criterion vs.\ NEURON,
 achieves a $209\times$ throughput improvement over \texttt{pyfibers}
-at $N=1\,000$ MRG fibers (rising to $544\times$ at $N=100\,000$ MRG
-and to $\sim 1\,000\times$ at $N=100\,000$ on the unmyelinated
-C-fibre models) on a single A100 GPU, and exposes
+at $N=1\,000$ MRG fibers, rising to a geometric-mean speedup of
+$\sim 820\times$ at $N=100\,000$ across all five implemented axon
+models (peak $1\,377\times$ on Sweeney) on a single A100 GPU,
+and exposes
 end-to-end gradients with respect to per-contact stimulus amplitudes
 and arbitrary waveforms.  The third capability is the conceptual
 contribution: previous PNS optimisation pipelines have been

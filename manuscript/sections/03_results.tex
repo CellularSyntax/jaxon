@@ -329,12 +329,12 @@ spike-detection quantisation resolution.
 
 The principal performance motivation for the JAX implementation is
 the expectation that GPU vmap-batching will outperform CPU-parallel
-NEURON as the fiber count grows.  We benchmarked the four primary
-axon models at $N \in \{1, 10, 100, 1\,000, 10\,000, 100\,000\}$
-fibers on a single NVIDIA A100 GPU, against \texttt{pyfibers} running
-8-thread CPU-parallel on a matched Xeon host.  At the time of
-submission the MRG, Sundt and Rattay sweeps are complete; the
-Sweeney sweep is still in progress.
+NEURON as the fiber count grows.  We benchmarked all five
+implemented axon models (MRG with both the original and the
+interpolated parameter tables, Sweeney, Sundt and Rattay) at
+$N \in \{1, 10, 100, 1\,000, 10\,000, 100\,000\}$ fibers on a single
+NVIDIA A100 GPU, against \texttt{pyfibers} running 8-thread
+CPU-parallel on a matched Xeon host.
 Figure~\ref{fig:scaling} reports the per-model wall time (panel A)
 and the resulting jaxon-vs-pyfibers speedup (panel B);
 Table~\ref{tab:scaling} summarises the headline numbers.
@@ -349,15 +349,19 @@ model tested.  By $N=1\,000$ MRG, jaxon completes in $0.24\,\mathrm{s}$
 vs.\ \texttt{pyfibers}'s $49.3\,\mathrm{s}$ (a $209\times$ wall-time
 reduction); by $N=10\,000$ MRG, $0.78\,\mathrm{s}$ vs.\
 $525\,\mathrm{s}$ ($671\times$); by $N=100\,000$ MRG,
-$9.5\,\mathrm{s}$ vs.\ $5\,172\,\mathrm{s}$ ($544\times$).  The
-unmyelinated Sundt and Rattay C-fibres, whose longer time courses
-make \texttt{pyfibers} substantially slower per fiber, reach
-$1\,006\times$ and $929\times$ speedups respectively at $N=100\,000$
-($16.5$ vs.\ $16\,593\,\mathrm{s}$ and $15.1$ vs.\
-$14\,068\,\mathrm{s}$).  The geometric mean of the three completed
-models at $N=100\,000$ is $\sim 800\times$, taking what would have
-been roughly 10 CPU-hours of \texttt{pyfibers} time per forward pass
-down to under twenty seconds of GPU wall time.
+$9.5\,\mathrm{s}$ vs.\ $5\,172\,\mathrm{s}$ ($544\times$).  Sweeney,
+whose smaller per-fiber state vector fits more efficiently in GPU
+registers, achieves the largest single-model speedup at
+$N=100\,000$: $4.3\,\mathrm{s}$ vs.\ $5\,972\,\mathrm{s}$,
+a factor of $1\,377\times$.  The unmyelinated Sundt and Rattay
+C-fibres, whose longer time courses make \texttt{pyfibers}
+substantially slower per fiber, reach $1\,006\times$ and $929\times$
+speedups respectively at $N=100\,000$ ($16.5$ vs.\
+$16\,593\,\mathrm{s}$ and $15.1$ vs.\ $14\,068\,\mathrm{s}$).
+The geometric mean across all five models at $N=100\,000$ is
+$\sim 820\times$, taking what would have been multiple CPU-hours of
+\texttt{pyfibers} time per forward pass down to under twenty
+seconds of GPU wall time.
 For the fascicular selectivity sweeps reported in
 Section~\ref{sec:results-selectivity}, where $\sim 1\,000$ fibers per
 nerve realisation are simulated thousands of times during
@@ -372,10 +376,8 @@ reach on a single GPU-day.
     jaxon runs on a single NVIDIA A100 GPU; \texttt{pyfibers} runs
     8-thread CPU-parallel on a matched Xeon host.  All timings exclude
     JAX compile time (5--30\,s one-time per model, amortised over each
-    batched run).  Sweeney scaling on A100 is still in progress at the
-    time of submission; partial pyfibers timings to $N=1\,000$ are
-    consistent with the other myelinated row but the GPU sweep is
-    pending.}
+    batched run).  Geometric mean of the $N=100\,000$ speedups across
+    the five benchmarked models is $\sim 820\times$.}
   \label{tab:scaling}
   \begin{tabular}{lrrrrrr}
     \toprule
@@ -383,12 +385,13 @@ reach on a single GPU-day.
                             & \multicolumn{2}{c}{$N=10\,000$}
                             & \multicolumn{2}{c}{$N=100\,000$} \\
     \cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
-    Model    & pyf.\ (s) & speedup & pyf.\ (s) & speedup & pyf.\ (s) & speedup \\
+    Model      & pyf.\ (s) & speedup & pyf.\ (s) & speedup & pyf.\ (s) & speedup \\
     \midrule
-    MRG      &  49.3 & $209\times$ &  525 & $671\times$ &  $5\,172$ &  $544\times$ \\
-    Sundt    &   183 & $304\times$ & $1\,742$ & $985\times$ & $16\,593$ & $1\,006\times$ \\
-    Rattay   &   151 & $259\times$ & $1\,425$ & $868\times$ & $14\,068$ &  $929\times$ \\
-    Sweeney  &  ---  &      ---    & ---  &       ---   & ---       &      ---     \\
+    MRG        &  49.3 & $209\times$ &     525 & $671\times$ &  $5\,172$ &  $544\times$ \\
+    MRG-interp.&  58.0 & $246\times$ &     537 & $695\times$ &  $5\,021$ &  $527\times$ \\
+    Sweeney    &  62.6 & $268\times$ &     603 & $1\,322\times$ & $5\,972$ & $1\,377\times$ \\
+    Sundt      &   183 & $304\times$ & $1\,742$ &   $985\times$ & $16\,593$ & $1\,006\times$ \\
+    Rattay     &   151 & $259\times$ & $1\,425$ &   $868\times$ & $14\,068$ &   $929\times$ \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -397,9 +400,9 @@ reach on a single GPU-day.
   \centering
   \figmaybe[width=0.98\textwidth]{fig_scaling_allmodels.png}
   \caption{Forward-pass throughput on a single NVIDIA A100 GPU as a
-    function of fiber count $N$ for the three benchmarked models
-    whose A100 sweeps are complete at submission (MRG, Sundt, Rattay;
-    Sweeney pending).
+    function of fiber count $N$ for all five benchmarked axon models
+    (MRG, MRG with interpolated parameter tables, Sweeney, Sundt and
+    Rattay).
     \textbf{(a)} Absolute wall time per forward simulation.  Dashed
     coloured lines + open markers: \texttt{pyfibers} on 8-thread CPU.
     Solid coloured lines: jaxon on a single A100.  jaxon's curves are
@@ -407,8 +410,9 @@ reach on a single GPU-day.
     then scale linearly.  \texttt{pyfibers} scales linearly throughout.
     \textbf{(b)} Implied speedup; horizontal grey reference at
     $1\times$.  Crossover at $N \approx 10$ for every model; at
-    $N = 100\,000$ all three exceed $500\times$ speedup, with the
-    unmyelinated C-fibres exceeding $900\times$.}
+    $N = 100\,000$ all five exceed $500\times$ speedup, with Sweeney
+    reaching $1\,377\times$ and the unmyelinated Sundt / Rattay
+    C-fibres exceeding $900\times$.}
   \label{fig:scaling}
 \end{figure}
 

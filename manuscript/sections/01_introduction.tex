@@ -81,9 +81,10 @@ affirmatively.  Our contributions are:
   \item A batched forward solver that integrates $N$ fibers in
         parallel via \texttt{jax.vmap} over a shared scan, yielding
         a $209\times$ wall-time reduction over \texttt{pyfibers} at
-        $N=1\,000$ MRG and rising to $\sim 800\times$ (geometric
-        mean across MRG, Sundt and Rattay) at $N=100\,000$ on a
-        single NVIDIA A100 (Section~\ref{sec:results-scaling}).
+        $N=1\,000$ MRG and rising to $\sim 820\times$ geometric mean
+        (peak $1\,377\times$ on Sweeney) at $N=100\,000$ across all
+        five implemented axon models on a single NVIDIA A100
+        (Section~\ref{sec:results-scaling}).
   \item An end-to-end differentiable selectivity optimisation pipeline
         that uses LBFGS multi-start over per-contact amplitudes for
         rectangular pulses, and Adam over arbitrary

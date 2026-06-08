@@ -22,11 +22,12 @@ configs), 0.46\,\% (Sundt, 240), 0.06\,\% (Sweeney, 31), and 2.24\,\%
 width exceed $1\%$).  Conduction velocity matches NEURON to within
 $0.24\,\%$ across all models.  Benchmarking throughput
 against pyfibers on a single NVIDIA A100, jaxon achieves a
-\textbf{$544\times$ speedup at $N=100\,000$ MRG fibers
-($5{,}172$\,s\,$\to$\,9.5\,s), $1\,006\times$ at $N=100\,000$ Sundt
-C-fibers ($16{,}593$\,s\,$\to$\,16.5\,s), and $929\times$ at
-$N=100\,000$ Rattay C-fibers ($14{,}068$\,s\,$\to$\,15.1\,s)},
-crossing parity at $N\approx 10$ and dominating thereafter.  As a
+\textbf{geometric-mean speedup of $\sim 820\times$ at $N=100\,000$
+across all five implemented axon models}, ranging from $527\times$
+on MRG-interpolated to $1\,377\times$ on Sweeney
+($5\,972$\,s\,$\to$\,4.3\,s), with $1\,006\times$ on Sundt and
+$929\times$ on Rattay C-fibers; jaxon crosses parity with pyfibers
+at $N\approx 10$ and dominates thereafter.  As a
 demonstration of the differentiability advantage, we use jaxon to
 optimise spatially selective fascicular stimulation across 125
 randomised Hussain-style multi-fascicle nerve realisations spanning

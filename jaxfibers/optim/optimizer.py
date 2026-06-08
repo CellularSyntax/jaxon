@@ -691,6 +691,14 @@ def run_waveform_optimization(
     weights: np.ndarray | None = None,
     verbose: bool = True,
     early_stop_patience: int = 0,
+    # SI-based and loss-tolerance early stop (parallels the rect optimiser).
+    # Without these, the wave Adam ran the full 100 iters even when the
+    # warm-start already sat at SI=1.0: best_loss kept improving by ~1e-6
+    # each iter (microscopic refinement) so the patience counter never
+    # accumulated.  Bottom line: 5x cluster time wasted on iters that did
+    # nothing visible.
+    early_stop_si:       float = 1.0,
+    early_stop_loss_tol: float = 1e-5,
 ) -> dict:
     """Optimize arbitrary per-contact waveforms u[K, T] via autodiff.
 
@@ -775,7 +783,11 @@ def run_waveform_optimization(
         history["bce"].append(float(wbce(acts_val, tgt_j, w)))
         history["si"].append(si_now)
         history["acts"].append(acts_np)
-        if float(loss_val) < best_loss:
+        # Improvement now requires beating best_loss by > early_stop_loss_tol.
+        # Without the tol, microscopic 1e-6 wiggles count as "improvement" and
+        # the patience counter never accumulates (the wave Adam's fine-tuning
+        # never actually halts even when SI is already at the ceiling).
+        if float(loss_val) < best_loss - early_stop_loss_tol:
             best_loss = float(loss_val)
             best_u    = np.array(u)
             best_iter = i
@@ -799,6 +811,14 @@ def run_waveform_optimization(
                 f"peak={float(np.abs(u_np).max()):.3f} mA  dt={dt_ms:.0f}ms",
                 flush=True,
             )
+
+        # SI-based early stop: if the run has already hit (or beaten) the
+        # target selectivity, every subsequent iter is wasted cluster time.
+        if si_now >= early_stop_si:
+            if verbose:
+                print(f"  [early stop @ iter {i}] SI >= {early_stop_si:.3f}",
+                      flush=True)
+            break
 
         if early_stop_patience > 0 and stale >= early_stop_patience:
             if verbose:

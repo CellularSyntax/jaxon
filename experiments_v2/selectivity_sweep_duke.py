@@ -532,6 +532,13 @@ def _run_l1_discovery(seed_in: dict, n_iters: int, l1_lambda: float,
         amp_clip=AMP_CLIP,
         lr=ADAM_LR_MA, fd_eps=FD_EPS_MA,
         l1_lambda=l1_lambda,
+        # Same early-stop threshold as the probe-path Adam-FD: once SI
+        # reaches the experimental noise floor, additional iters are
+        # cosmetic wandering.  Empirically on sub-56, L1-discovery
+        # converged to SI=0.969 by iter 7 (matching the probe path) and
+        # then wandered to SI=0 by iter 14 -- best-iter tracking still
+        # saved the right amps but ~22 min of compute was wasted.
+        early_stop_si=EARLY_STOP_SI,
         verbose=verbose,
     )
     wall_s = time.time() - t0

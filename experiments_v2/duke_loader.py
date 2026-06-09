@@ -273,12 +273,25 @@ def load_duke_sample(
     contacts = ec.get("patches") or ec.get("contacts") or []
     contact_xyz_um = np.zeros((K, 3), dtype=np.float64)
     for i, p in enumerate(contacts[:K]):
-        # The Duke JSON stores positions in metres; defensively support
-        # both metres and µm by checking magnitude.
-        cx = float(p.get("x") or p.get("cx") or 0.0)
-        cy = float(p.get("y") or p.get("cy") or 0.0)
-        cz = float(p.get("z") or p.get("cz") or 0.0)
-        # If magnitudes look like metres (sub-mm), promote to µm.
+        # Duke FEM stores patches in CYLINDRICAL coordinates around the
+        # cuff axis: (R, phi, z) in metres / radians.  The earlier
+        # Cartesian read (p.get("x")...) silently returned 0 for every
+        # contact -- they all stacked at the centroid in the sanity
+        # figures, making it look like the cuff was at the nerve centre
+        # when it's actually on the perimeter.  The Ve_unit tensor is
+        # unaffected because the FEM solver used the correct
+        # cuff geometry; only the visualisation was wrong.
+        if "R" in p and "phi" in p:
+            R = float(p["R"])
+            phi = float(p["phi"])
+            z = float(p.get("z", 0.0))
+            cx, cy, cz = R * np.cos(phi), R * np.sin(phi), z
+        else:
+            # Legacy Cartesian fallback for any future bundle format.
+            cx = float(p.get("x") or p.get("cx") or 0.0)
+            cy = float(p.get("y") or p.get("cy") or 0.0)
+            cz = float(p.get("z") or p.get("cz") or 0.0)
+        # Promote metres → µm if magnitudes look like metres.
         if abs(cx) < 0.1 and abs(cy) < 0.1 and abs(cz) < 0.1:
             cx, cy, cz = cx * 1e6, cy * 1e6, cz * 1e6
         contact_xyz_um[i] = (cx, cy, cz)

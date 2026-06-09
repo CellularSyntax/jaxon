@@ -88,9 +88,16 @@ def _lite_load(sample_dir: Path) -> dict:
     K = len(contacts)
     contact_xyz = np.zeros((K, 3), dtype=np.float64)
     for i, p in enumerate(contacts):
-        cx = float(p.get("x") or p.get("cx") or 0.0)
-        cy = float(p.get("y") or p.get("cy") or 0.0)
-        cz = float(p.get("z") or p.get("cz") or 0.0)
+        if "R" in p and "phi" in p:
+            # Duke FEM cylindrical (R, phi, z), R/z in metres.
+            R = float(p["R"])
+            phi = float(p["phi"])
+            z = float(p.get("z", 0.0))
+            cx, cy, cz = R * np.cos(phi), R * np.sin(phi), z
+        else:
+            cx = float(p.get("x") or p.get("cx") or 0.0)
+            cy = float(p.get("y") or p.get("cy") or 0.0)
+            cz = float(p.get("z") or p.get("cz") or 0.0)
         if abs(cx) < 0.1 and abs(cy) < 0.1 and abs(cz) < 0.1:
             cx, cy, cz = cx * 1e6, cy * 1e6, cz * 1e6
         contact_xyz[i] = (cx, cy, cz)

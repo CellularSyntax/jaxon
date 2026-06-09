@@ -104,6 +104,13 @@ def run_rect_optimization(
     weights: np.ndarray | None = None,
     fd_eps: float = 5e-2,
     verbose: bool = True,
+    # L1 sparsity regularisation via proximal soft-thresholding step
+    # after each Adam update.  Drives small-magnitude amps exactly to
+    # zero so the optimiser can DISCOVER which contacts matter rather
+    # than relying on a hand-coded sparse init (bipolar / tripolar).
+    # Use l1_lambda > 0 for L1-discovery; default 0 disables it
+    # (backward-compatible).
+    l1_lambda: float = 0.0,
     # Early-stopping knobs.  Adam-FD often reaches SI=1.0 within the first
     # ~10 iters on the easy single-diameter problem, then runs another 90
     # iters with no improvement — waste of cluster time.
@@ -250,7 +257,19 @@ def run_rect_optimization(
         t0 = time.time()
         (loss_val, acts_val), grads = _fd_step(amps)
         updates, opt_state = optimizer.update(grads, opt_state)
-        amps = jnp.clip(optax.apply_updates(amps, updates), amp_clip[0], amp_clip[1])
+        amps = optax.apply_updates(amps, updates)
+        # L1 proximal soft-thresholding step.  Drives any amp with
+        # |amps[k]| < lr * l1_lambda to EXACTLY zero so the optimiser
+        # naturally discovers sparse spatial configurations (rather
+        # than relying on a hand-coded sparse init).  For l1_lambda=0
+        # this collapses to a no-op and the optimiser behaves exactly
+        # as before.
+        if l1_lambda > 0.0:
+            threshold = lr * l1_lambda
+            amps = jnp.sign(amps) * jnp.maximum(
+                jnp.abs(amps) - threshold, 0.0
+            )
+        amps = jnp.clip(amps, amp_clip[0], amp_clip[1])
 
         acts_np = np.array(acts_val)
         si_now  = selectivity_index(acts_np, target_mask)
@@ -268,14 +287,21 @@ def run_rect_optimization(
 
         if verbose and (i % max(1, n_steps // 20) == 0 or i == n_steps - 1):
             dt_ms   = (time.time() - t0) * 1000
-            amp_str = "  ".join(f"{a:+.2f}" for a in np.array(amps))
+            amps_np = np.array(amps)
+            amp_str = "  ".join(f"{a:+.2f}" for a in amps_np)
             fired_now = acts_np > 0.5
             nft = int(np.sum(fired_now & target_mask_bool))
             nfn = int(np.sum(fired_now & ~target_mask_bool))
+            # Active-contact count: contacts whose amplitude is non-zero
+            # after the L1 prox step.  With l1_lambda=0 this is always
+            # K; with L1 enabled the count shrinks as the optimiser
+            # discovers which contacts matter.
+            n_active = int(np.sum(amps_np != 0.0))
             print(
                 f"  [{i:3d}/{n_steps}] loss={float(loss_val):.4f}  "
                 f"SI={si_now:+.3f}  "
                 f"fired={nft}/{n_target_total}t+{nfn}/{n_nontarget_total}nt  "
+                f"active={n_active}/{K}  "
                 f"amps=[{amp_str}] mA  dt={dt_ms:.0f}ms",
                 flush=True,
             )

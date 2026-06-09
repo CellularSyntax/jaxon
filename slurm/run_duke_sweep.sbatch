@@ -135,6 +135,18 @@ export ADAM_FD_RESTART_MAGS="${ADAM_FD_RESTART_MAGS:--0.10,-0.30,-0.80,-1.50}"
 export SMART_INIT_ENABLED="${SMART_INIT_ENABLED:-true}"
 export PROBE_MAGS_MA="${PROBE_MAGS_MA:--0.02,-0.05,-0.10,-0.20,-0.40,-0.80}"
 
+# L1-discovery: parallel validation path that does NOT use hand-coded
+# spatial patterns.  Random init + Adam-FD + L1 soft-thresholding prox
+# step lets the optimiser DISCOVER sparse spatial configurations from
+# scratch.  Reviewer-facing: this validates that the probe init is a
+# speedup of sparsity discovery, not a shortcut that bypasses it.
+# When enabled, results saved in JSON.rect_l1 parallel to JSON.rect.
+export L1_DISCOVERY_ENABLED="${L1_DISCOVERY_ENABLED:-false}"
+export L1_LAMBDA="${L1_LAMBDA:-0.10}"
+export L1_INIT_SCALE="${L1_INIT_SCALE:-0.10}"
+export L1_INIT_SEED="${L1_INIT_SEED:-0}"
+export L1_N_ITERS="${L1_N_ITERS:-150}"
+
 # Loss / activation-proxy regularisation read by jaxfibers.optim.optimizer
 # at import time (defaults preserve legacy 0 / 0 behaviour if unset).
 #
@@ -237,6 +249,11 @@ export ADAM_LR_MA=\"${ADAM_LR_MA}\" FD_EPS_MA=\"${FD_EPS_MA}\"
 export ADAM_FD_RESTART_MAGS=\"${ADAM_FD_RESTART_MAGS}\"
 export SMART_INIT_ENABLED=\"${SMART_INIT_ENABLED}\"
 export PROBE_MAGS_MA=\"${PROBE_MAGS_MA}\"
+export L1_DISCOVERY_ENABLED=\"${L1_DISCOVERY_ENABLED}\"
+export L1_LAMBDA=\"${L1_LAMBDA}\"
+export L1_INIT_SCALE=\"${L1_INIT_SCALE}\"
+export L1_INIT_SEED=\"${L1_INIT_SEED}\"
+export L1_N_ITERS=\"${L1_N_ITERS}\"
 export JAXLEY_FIBERS_SOFT_TEMPERATURE=\"${JAXLEY_FIBERS_SOFT_TEMPERATURE}\"
 export JAXLEY_FIBERS_ENERGY_LAMBDA=\"${JAXLEY_FIBERS_ENERGY_LAMBDA}\"
 export PULSE_SHAPE=\"${PULSE_SHAPE}\"

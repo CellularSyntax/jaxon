@@ -66,6 +66,7 @@ from jaxfibers.optim.losses import activation_proxy_batch, selectivity_index
 from experiments_v2.utils import ensure_dir, save_json
 from experiments_v2.duke_loader import (
     load_duke_sample, divider_split_target_mask,
+    select_peripheral_cluster_target, cluster_target_mask,
 )
 
 # ─────────────────────────────────────────────── sample location ──────────────
@@ -104,8 +105,8 @@ MAX_FIBERS      = _env_int("MAX_FIBERS", 0)  # 0 = no subsample (full ~1000 fibr
 SUBSAMPLE_SEED  = _env_int("SUBSAMPLE_SEED", 0)
 DT              = _env_flt("DT", 0.005)
 T_STOP          = _env_flt("T_STOP", 3.0)
-DELAY_MS        = 1.0
-PW_MS           = 0.1
+DELAY_MS        = _env_flt("DELAY_MS", 1.0)
+PW_MS           = _env_flt("PW_MS",    0.1)
 SEED_START      = _env_int("SEED_START", 0)
 SEED_END        = _env_int("SEED_END", 25)
 N_OPT_RECT      = _env_int("N_OPT_RECT", 30)
@@ -114,6 +115,22 @@ N_OPT_WAVE      = _env_int("N_OPT_WAVE", 100)
 WAVE_LR         = _env_flt("WAVE_LR", 5e-4)
 WAVE_PATIENCE   = _env_int("WAVE_PATIENCE", 20)
 RECT_OPTIMIZER  = os.environ.get("RECT_OPTIMIZER", "adam_fd")  # adam_fd | lbfgs
+
+# Pulse shape (env-overrideable).  Charge-balanced biphasic is the
+# clinical default for any chronic implant -- monophasic deposits net
+# charge into tissue.  Options:
+#   monophasic     - single rectangular cathodic pulse, PW_MS wide.
+#                    Net charge ~ -|amp| * PW_MS.  Reference / legacy.
+#   biphasic_sym   - symmetric charge-balanced: +1 for PW_MS/2, then
+#                    -1 for PW_MS/2.  Net charge = 0.  Most common in
+#                    PNS selectivity research.
+#   biphasic_asym  - asymmetric charge-balanced: +1 for PW_MS (strong
+#                    cathodic), then -1/ASYM_RATIO for PW_MS*ASYM_RATIO
+#                    (weaker, longer anodic recharge).  Net charge = 0.
+#                    Reduces anodic-block side effects.  Default
+#                    ASYM_RATIO=4 matches typical clinical settings.
+PULSE_SHAPE = os.environ.get("PULSE_SHAPE", "biphasic_sym").strip().lower()
+ASYM_RATIO  = _env_flt("ASYM_RATIO", 4.0)
 
 # Per-Duke amplitude knobs.  Defaults below are tuned for MRG 5.7 µm
 # against the FEM Ve scale of the typical Duke bundle (peak Ve ≈ 800–
@@ -159,6 +176,84 @@ ADAM_FD_RESTART_MAGS = _parse_restart_mags(
 )
 
 
+# ── target-fascicle selection paradigm ────────────────────────────────
+# The original divider-line-through-centroid paradigm was replaced
+# after sanity-figure review showed it produced topologically
+# meaningless target/off-target splits.  See duke_loader:
+# select_peripheral_cluster_target for the cluster-based paradigm.
+#
+# Set TARGET_PARADIGM=cluster (default) for the peripheral-cluster
+# selection.  Set TARGET_PARADIGM=divider to fall back to the legacy
+# random-divider behaviour (kept available for reproducing pre-cluster
+# results).
+TARGET_PARADIGM         = os.environ.get("TARGET_PARADIGM", "cluster").strip().lower()
+CLUSTER_RADIUS_QUANTILE = _env_flt("CLUSTER_RADIUS_QUANTILE", 0.6)
+CLUSTER_WINDOW_DEG      = _env_flt("CLUSTER_WINDOW_DEG", 90.0)
+CLUSTER_N_MIN_TARGET    = _env_int("CLUSTER_N_MIN_TARGET", 50)
+CLUSTER_MIN_FASCICLES   = _env_int("CLUSTER_MIN_FASCICLES", 3)
+
+
+def _build_pulse_mask(t_grid: np.ndarray, delay_ms: float, pw_ms: float,
+                      shape: str, asym_ratio: float) -> np.ndarray:
+    """Construct the per-step pulse-mask waveform for one stim cycle.
+
+    Returns a length-T array with values in [-1, +1], normalised so
+    that the cathodic peak is +1 and the optimiser's ``amps[k]``
+    multiplier scales the whole shape.  All shapes are charge-balanced
+    *except* the monophasic reference.
+    """
+    shape = shape.strip().lower()
+    pulse = np.zeros_like(t_grid, dtype=np.float64)
+    if shape == "monophasic":
+        m = (t_grid >= delay_ms) & (t_grid < delay_ms + pw_ms)
+        pulse[m] = 1.0
+    elif shape == "biphasic_sym":
+        half = pw_ms / 2.0
+        cath = (t_grid >= delay_ms) & (t_grid < delay_ms + half)
+        anod = (t_grid >= delay_ms + half) & (t_grid < delay_ms + pw_ms)
+        pulse[cath] =  1.0
+        pulse[anod] = -1.0
+    elif shape == "biphasic_asym":
+        # Strong cathodic phase, weaker long anodic recharge.  Charge
+        # balanced: anodic_amp * anodic_dur == cathodic_amp * cathodic_dur
+        cath_dur = pw_ms
+        anod_dur = pw_ms * float(asym_ratio)
+        anod_amp = -1.0 / float(asym_ratio)
+        cath = (t_grid >= delay_ms) & (t_grid < delay_ms + cath_dur)
+        anod = ((t_grid >= delay_ms + cath_dur)
+                & (t_grid < delay_ms + cath_dur + anod_dur))
+        pulse[cath] = 1.0
+        pulse[anod] = anod_amp
+    else:
+        raise ValueError(
+            f"Unknown PULSE_SHAPE={shape!r}; expected one of "
+            f"'monophasic', 'biphasic_sym', 'biphasic_asym'"
+        )
+    return pulse
+
+
+def _class_balanced_weights(target_mask: np.ndarray) -> np.ndarray:
+    """Per-fibre weights that give equal *class* weight to target and
+    off-target populations.  Without this, an imbalanced split (e.g.
+    400 target / 600 off-target on a Duke nerve) makes the loss
+    dominated by whichever class is larger and the optimiser has
+    little incentive to spare the smaller class -- in extreme cases
+    the global minimum of the uniform-weight loss is just "fire
+    everything" rather than the selective config.
+
+    Returns a length-n_fibres float64 vector that sums to 1.0.
+    """
+    target_mask = np.asarray(target_mask, dtype=bool)
+    n_t = int(target_mask.sum())
+    n_nt = int((~target_mask).sum())
+    n_total = int(target_mask.size)
+    if n_t == 0 or n_nt == 0:
+        # Degenerate -- fall back to uniform.  This shouldn't happen
+        # on a valid cluster-target split with n_min_target_fibers >= 50.
+        return (np.ones(n_total, dtype=np.float64) / max(n_total, 1))
+    return np.where(target_mask, 0.5 / n_t, 0.5 / n_nt).astype(np.float64)
+
+
 def _firing_summary(acts, target_mask) -> dict:
     """Compute per-group firing counts from ``acts`` (sigmoid-like activation
     proxy in [0,1], > 0.5 ≈ fired).  Distinguishing oversaturated (everything
@@ -199,20 +294,56 @@ def _build_seed(duke: dict, seed: int, verbose: bool = True) -> dict:
     solver statics, baseline SI.  All compute-light steps — the heavy
     Ve_unit + geometry come from ``duke`` and are seed-independent."""
     label = f"[{SAMPLE_NAME} | seed {seed:4d}]"
-    # Random divider angle, reproducible per seed (uniform on [0, 180)°).
-    divider_deg = float(
-        np.random.default_rng(seed + 1_000_003).uniform(0.0, 180.0)
-    )
     nerve = duke["nerve_geom"]
-    target_mask = divider_split_target_mask(
-        nerve, duke["fasc_id"], duke["fasc_meta"], divider_deg
-    )
-    n_tgt = int(target_mask.sum())
-    n_tgt_fasc = sum(1 for f in nerve.fascicles if f.is_target)
-    if verbose:
-        print(f"{label} divider={divider_deg:5.1f}°  "
-              f"targets={n_tgt}/{nerve.n_fibers} "
-              f"({n_tgt_fasc}/{len(nerve.fascicles)} fascicles)", flush=True)
+
+    # Target/off-target mask.  The cluster paradigm is the default;
+    # divider is kept as a fallback for reproducing pre-cluster runs.
+    cluster_info: dict | None = None
+    divider_deg = 0.0
+    if TARGET_PARADIGM == "cluster":
+        cluster_info = select_peripheral_cluster_target(
+            duke["fasc_meta"], duke["fasc_id"],
+            duke["nerve_outline_xy_um"],
+            radius_quantile=CLUSTER_RADIUS_QUANTILE,
+            angular_window_deg=CLUSTER_WINDOW_DEG,
+            n_min_target_fibers=CLUSTER_N_MIN_TARGET,
+        )
+        if not cluster_info["target_ids"]:
+            if verbose:
+                print(f"{label} SKIP: no peripheral cluster meets "
+                      f"n_min_target_fibers={CLUSTER_N_MIN_TARGET} "
+                      f"(best cluster had {cluster_info['n_target_fibers']} "
+                      f"fibres)", flush=True)
+            return None  # signal "skip this sample"
+        target_mask = cluster_target_mask(
+            nerve, duke["fasc_id"], duke["fasc_meta"],
+            cluster_info["target_ids"],
+        )
+        n_tgt = int(target_mask.sum())
+        n_tgt_fasc = len(cluster_info["target_ids"])
+        if verbose:
+            print(f"{label} cluster target: "
+                  f"sector {cluster_info['window_start_deg']:.0f}-"
+                  f"{cluster_info['window_end_deg']:.0f}°  "
+                  f"target_fascs={cluster_info['target_ids']}  "
+                  f"targets={n_tgt}/{nerve.n_fibers} "
+                  f"({n_tgt_fasc}/{len(nerve.fascicles)} fascicles)",
+                  flush=True)
+    else:
+        # Legacy random-divider paradigm.
+        divider_deg = float(
+            np.random.default_rng(seed + 1_000_003).uniform(0.0, 180.0)
+        )
+        target_mask = divider_split_target_mask(
+            nerve, duke["fasc_id"], duke["fasc_meta"], divider_deg
+        )
+        n_tgt = int(target_mask.sum())
+        n_tgt_fasc = sum(1 for f in nerve.fascicles if f.is_target)
+        if verbose:
+            print(f"{label} divider={divider_deg:5.1f}°  "
+                  f"targets={n_tgt}/{nerve.n_fibers} "
+                  f"({n_tgt_fasc}/{len(nerve.fascicles)} fascicles)",
+                  flush=True)
 
     geoms = duke["geoms"]
     fs_batch = stack_fiber_statics(geoms, DT)
@@ -220,9 +351,13 @@ def _build_seed(duke: dict, seed: int, verbose: bool = True) -> dict:
 
     N_STEPS = int(T_STOP / DT)
     t_grid  = (np.arange(N_STEPS) + 1) * DT
-    pulse_mask = np.where(
-        (t_grid >= DELAY_MS) & (t_grid < DELAY_MS + PW_MS), 1.0, 0.0,
-    ).astype(np.float64)
+    pulse_mask = _build_pulse_mask(
+        t_grid, DELAY_MS, PW_MS, PULSE_SHAPE, ASYM_RATIO
+    )
+    # Class-balanced per-fibre weights so the loss isn't dominated by
+    # whichever of target / off-target is larger.  See _class_balanced_weights
+    # docstring for the motivation.
+    weights = _class_balanced_weights(target_mask)
 
     # Baseline (zero stimulation)
     m_max_zero = activation_proxy_batch(
@@ -233,8 +368,9 @@ def _build_seed(duke: dict, seed: int, verbose: bool = True) -> dict:
 
     return dict(
         seed=seed, label=label, divider_deg=divider_deg,
+        cluster_info=cluster_info,
         nerve=nerve, geoms=geoms,
-        target_mask=target_mask,
+        target_mask=target_mask, weights=weights,
         Ve_unit=duke["Ve_unit"], node_indices=duke["node_indices"],
         fs_batch=fs_batch, s0_batch=s0_batch,
         pulse_mask=pulse_mask, N_STEPS=N_STEPS,
@@ -281,6 +417,7 @@ def _run_one_seed(seed_in: dict, verbose: bool = True) -> dict:
                 pulse_mask=seed_in["pulse_mask"],
                 node_indices=seed_in["node_indices"],
                 target_mask=seed_in["target_mask"],
+                weights=seed_in["weights"],
                 dt=DT, n_steps=n_iters,
                 amp_init_mA=init_mag, amp_clip=AMP_CLIP,
                 lr=ADAM_LR_MA, fd_eps=FD_EPS_MA,
@@ -338,6 +475,7 @@ def _run_one_seed(seed_in: dict, verbose: bool = True) -> dict:
             pulse_mask=seed_in["pulse_mask"],
             node_indices=seed_in["node_indices"],
             target_mask=seed_in["target_mask"],
+            weights=seed_in["weights"],
             dt=DT, n_restarts=N_RESTARTS_RECT, n_steps=N_OPT_RECT,
             amp_init_mA=AMP_INIT_MA, amp_clip=AMP_CLIP,
             rng_seed=seed_in["seed"], verbose=verbose,
@@ -385,6 +523,7 @@ def _run_one_seed(seed_in: dict, verbose: bool = True) -> dict:
             Ve_unit=jnp.asarray(seed_in["Ve_unit"], dtype=jnp.float64),
             node_indices=seed_in["node_indices"],
             target_mask=seed_in["target_mask"],
+            weights=seed_in["weights"],
             dt=DT, T=seed_in["N_STEPS"], n_steps=N_OPT_WAVE, u_init=u_init,
             lr=WAVE_LR, early_stop_patience=WAVE_PATIENCE, u_clip=AMP_CLIP,
             verbose=verbose,
@@ -418,11 +557,31 @@ def _package_result(seed_in: dict, rect_res: dict, rect_t: float,
     si_rect_signed = float(selectivity_index(rect_res["final_acts"], target_mask))
     si_wave_signed = float(wave_res["best_si"])
     nerve = seed_in["nerve"]
+    cluster_info = seed_in.get("cluster_info")
+    # Sanitised cluster snapshot (centroid tuple → list for JSON).
+    cluster_snapshot = None
+    if cluster_info is not None:
+        cluster_snapshot = {
+            "target_ids":            list(cluster_info["target_ids"]),
+            "peripheral_ids":        list(cluster_info["peripheral_ids"]),
+            "window_start_deg":      float(cluster_info["window_start_deg"]),
+            "window_end_deg":        float(cluster_info["window_end_deg"]),
+            "nerve_centroid_xy_um":  list(cluster_info["nerve_centroid_xy_um"]),
+            "r_threshold_um":        float(cluster_info["r_threshold_um"]),
+            "n_target_fibers":       int(cluster_info["n_target_fibers"]),
+            "radius_quantile":       float(CLUSTER_RADIUS_QUANTILE),
+            "angular_window_deg":    float(CLUSTER_WINDOW_DEG),
+        }
     return {
         "sample":   SAMPLE_NAME,
         "seed":     seed_in["seed"],
-        "divider_deg": seed_in["divider_deg"],
-        "si_baseline": float(seed_in["si_baseline"]),
+        "target_paradigm": TARGET_PARADIGM,
+        "cluster":         cluster_snapshot,
+        "divider_deg":     seed_in["divider_deg"],
+        "pulse_shape":     PULSE_SHAPE,
+        "pulse_pw_ms":     float(PW_MS),
+        "pulse_asym_ratio": float(ASYM_RATIO) if PULSE_SHAPE == "biphasic_asym" else None,
+        "si_baseline":     float(seed_in["si_baseline"]),
         "rect": {
             "optimizer":   rect_res["optimizer"],
             "n_restarts":  rect_res["n_restarts"],
@@ -477,6 +636,20 @@ def main():
     )
     print(f"[duke sweep] Loaded {SAMPLE_NAME} in {time.time() - t_load:.1f}s. "
           f"Output dir: {OUT}", flush=True)
+    print(f"[duke sweep] target_paradigm={TARGET_PARADIGM}  "
+          f"pulse_shape={PULSE_SHAPE}  PW={PW_MS:.3f} ms", flush=True)
+
+    # Cluster-paradigm pre-flight: skip the whole sample cleanly if it
+    # has fewer than CLUSTER_MIN_FASCICLES fascicles -- the cluster
+    # selector is degenerate there and we don't want to burn 90 minutes
+    # of GPU time on something we'd throw out anyway.
+    if TARGET_PARADIGM == "cluster":
+        n_fasc = len(duke["fasc_meta"])
+        if n_fasc < CLUSTER_MIN_FASCICLES:
+            print(f"[duke sweep] SKIP {SAMPLE_NAME}: n_fasc={n_fasc} < "
+                  f"CLUSTER_MIN_FASCICLES={CLUSTER_MIN_FASCICLES}",
+                  flush=True)
+            return
 
     seeds = list(range(SEED_START, SEED_END))
     for s in seeds:
@@ -486,6 +659,11 @@ def main():
                   flush=True)
             continue
         seed_in = _build_seed(duke, s, verbose=True)
+        if seed_in is None:
+            # _build_seed returns None when the cluster selector finds
+            # no acceptable target; nothing to optimise.  Skip cleanly.
+            print(f"[seed {s}] no target -> no JSON written", flush=True)
+            continue
         result = _run_one_seed(seed_in, verbose=True)
         save_json(result, out_path)
         print(f"[seed {s}] -> {out_path}", flush=True)

@@ -125,6 +125,39 @@ export FD_EPS_MA="${FD_EPS_MA:-0.030}"
 # ~4x the rect wall-time of a single-start run.
 export ADAM_FD_RESTART_MAGS="${ADAM_FD_RESTART_MAGS:--0.10,-0.30,-0.80,-1.50}"
 
+# Loss / activation-proxy regularisation read by jaxfibers.optim.optimizer
+# at import time (defaults preserve legacy 0 / 0 behaviour if unset).
+#
+# JAXLEY_FIBERS_SOFT_TEMPERATURE > 0 switches the activation proxy from
+# binary-ish min(m_first, m_last) to a sigmoid surrogate that is
+# gradient-informative even when no fibre has crossed binary threshold.
+# 0.1 gives the FD optimiser a smooth landscape on Duke nerves where
+# the all-sub-threshold init regime would otherwise zero the gradient.
+export JAXLEY_FIBERS_SOFT_TEMPERATURE="${JAXLEY_FIBERS_SOFT_TEMPERATURE:-0.1}"
+# JAXLEY_FIBERS_ENERGY_LAMBDA > 0 adds an amplitude-energy penalty to
+# wq_loss.  A small value (1e-3 mA²) discourages the all-fire trivial
+# minimum without preventing the optimiser from exploring high-amp
+# solutions when they are necessary.
+export JAXLEY_FIBERS_ENERGY_LAMBDA="${JAXLEY_FIBERS_ENERGY_LAMBDA:-1e-3}"
+
+# Pulse waveform: clinical implants are charge-balanced biphasic
+# (any net DC charge corrodes electrodes and damages tissue), so the
+# Duke sweep defaults to symmetric biphasic.  Options:
+#   monophasic, biphasic_sym (default), biphasic_asym
+export PULSE_SHAPE="${PULSE_SHAPE:-biphasic_sym}"
+export PW_MS="${PW_MS:-0.1}"           # cathodic pulse width
+export ASYM_RATIO="${ASYM_RATIO:-4.0}" # anodic/cathodic duration ratio (asym only)
+
+# Target-fascicle selection: cluster paradigm replaces the legacy
+# random divider-through-centroid.  See duke_loader and
+# duke_target_sanity for the geometry rationale.  Override
+# TARGET_PARADIGM=divider to reproduce pre-cluster behaviour.
+export TARGET_PARADIGM="${TARGET_PARADIGM:-cluster}"
+export CLUSTER_RADIUS_QUANTILE="${CLUSTER_RADIUS_QUANTILE:-0.6}"
+export CLUSTER_WINDOW_DEG="${CLUSTER_WINDOW_DEG:-90.0}"
+export CLUSTER_N_MIN_TARGET="${CLUSTER_N_MIN_TARGET:-50}"
+export CLUSTER_MIN_FASCICLES="${CLUSTER_MIN_FASCICLES:-3}"
+
 # Where the Duke FEM bundles live.  Default = duke_meshes/ (the
 # 18-swine + 20-human bundle from the FEM pipeline).  Earlier bundles
 # lived under duke_Ves/ and either name is accepted on disk; override
@@ -192,6 +225,16 @@ export AMP_INIT_MA=\"${AMP_INIT_MA}\"
 export AMP_CLIP_LO=\"${AMP_CLIP_LO}\" AMP_CLIP_HI=\"${AMP_CLIP_HI}\"
 export ADAM_LR_MA=\"${ADAM_LR_MA}\" FD_EPS_MA=\"${FD_EPS_MA}\"
 export ADAM_FD_RESTART_MAGS=\"${ADAM_FD_RESTART_MAGS}\"
+export JAXLEY_FIBERS_SOFT_TEMPERATURE=\"${JAXLEY_FIBERS_SOFT_TEMPERATURE}\"
+export JAXLEY_FIBERS_ENERGY_LAMBDA=\"${JAXLEY_FIBERS_ENERGY_LAMBDA}\"
+export PULSE_SHAPE=\"${PULSE_SHAPE}\"
+export PW_MS=\"${PW_MS}\"
+export ASYM_RATIO=\"${ASYM_RATIO}\"
+export TARGET_PARADIGM=\"${TARGET_PARADIGM}\"
+export CLUSTER_RADIUS_QUANTILE=\"${CLUSTER_RADIUS_QUANTILE}\"
+export CLUSTER_WINDOW_DEG=\"${CLUSTER_WINDOW_DEG}\"
+export CLUSTER_N_MIN_TARGET=\"${CLUSTER_N_MIN_TARGET}\"
+export CLUSTER_MIN_FASCICLES=\"${CLUSTER_MIN_FASCICLES}\"
 bash \"${PROJECT_ROOT}/slurm/setup_env.sh\"
 python -u experiments_v2/selectivity_sweep_duke.py
 "; then

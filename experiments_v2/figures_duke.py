@@ -399,7 +399,15 @@ def _bar_strip_panel(ax, rows: list[dict], field_template: str,
         ax.set_ylim(*ylim)
     if log:
         ax.set_yscale("log")
-    ax.set_xlim(-bar_w * 1.1, (len(SPECIES) - 1) * group_w + bar_w * 1.1)
+    # Leftmost bar centre is at -bar_w (m_idx=0, offset -1), rightmost at
+    # (n_species-1)*group_w + bar_w.  Bars have width bar_w*0.9 so each
+    # half-width is 0.45*bar_w.  Pad by an extra bar_w on each side so
+    # the strip-plot jitter and IQR caps are not clipped.
+    half_bar = 0.5 * bar_w * 0.9
+    left_edge  = -bar_w - half_bar
+    right_edge = (len(SPECIES) - 1) * group_w + bar_w + half_bar
+    pad = bar_w
+    ax.set_xlim(left_edge - pad, right_edge + pad)
 
 
 def make_metrics_fig(rows: list[dict]) -> Path:

@@ -133,7 +133,7 @@ export ADAM_FD_RESTART_MAGS="${ADAM_FD_RESTART_MAGS:--0.10,-0.30,-0.80,-1.50}"
 # spatial pattern that is already target-aligned at iter 0.  Set
 # SMART_INIT_ENABLED=false to fall back to the multi-restart path.
 export SMART_INIT_ENABLED="${SMART_INIT_ENABLED:-true}"
-export PROBE_MAGS_MA="${PROBE_MAGS_MA:--0.05,-0.15,-0.30,-0.60,-1.00,-1.50}"
+export PROBE_MAGS_MA="${PROBE_MAGS_MA:--0.02,-0.05,-0.10,-0.20,-0.40,-0.80}"
 
 # Loss / activation-proxy regularisation read by jaxfibers.optim.optimizer
 # at import time (defaults preserve legacy 0 / 0 behaviour if unset).

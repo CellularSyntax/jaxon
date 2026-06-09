@@ -195,7 +195,7 @@ SMART_INIT_ENABLED = os.environ.get("SMART_INIT_ENABLED", "true").strip().lower(
 # for the target-preferring contacts.  Span 30x to cover both
 # tightly-coupled and weakly-coupled anatomies.
 PROBE_MAGS_MA = _parse_restart_mags(
-    os.environ.get("PROBE_MAGS_MA", "-0.05,-0.15,-0.30,-0.60,-1.00,-1.50")
+    os.environ.get("PROBE_MAGS_MA", "-0.02,-0.05,-0.10,-0.20,-0.40,-0.80")
 )
 
 

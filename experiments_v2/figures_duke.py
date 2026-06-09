@@ -708,27 +708,8 @@ def _draw_pulse_trace(ax, pulse_shape: str, pw_ms: float,
     ax.set_xlabel("time (ms)", fontsize=11)
     ax.set_ylabel("amplitude\n(× amp$_k$)", fontsize=10)
     ax.set_xlim(0, t[-1])
-    # Generous y-headroom so phase annotations live ENTIRELY above
-    # the pulse trace -- no in-data labels, no overlap with tick
-    # labels or with the recharge bar.
-    ax.set_ylim(p2_amp - 0.3, p1_amp * 1.9)
+    ax.set_ylim(p2_amp - 0.2, p1_amp + 0.2)
     ax.tick_params(labelsize=10)
-    # Phase annotations -- labelled with thin pointer lines (annotate
-    # arrows) from the headroom region down to the phase midpoints.
-    ax.annotate(
-        f"strong phase ({pw_ms*1000:.0f} µs, 1.0× amp)",
-        xy=(p1_dur * 0.5, p1_amp), xycoords="data",
-        xytext=(p1_dur * 0.5, p1_amp * 1.75), textcoords="data",
-        ha="center", va="bottom", fontsize=11, color=PALETTE["grey"],
-        arrowprops=dict(arrowstyle="-", color=PALETTE["grey"], lw=0.8),
-    )
-    ax.annotate(
-        f"recharge ({p2_dur:.1f} ms, {1.0/asym_ratio:.2f}× amp)",
-        xy=(p1_dur + p2_dur * 0.5, p2_amp), xycoords="data",
-        xytext=(p1_dur + p2_dur * 0.5, p1_amp * 1.4), textcoords="data",
-        ha="center", va="bottom", fontsize=11, color=PALETTE["grey"],
-        arrowprops=dict(arrowstyle="-", color=PALETTE["grey"], lw=0.8),
-    )
 
 
 def _make_xsection_legend(out_path: Path) -> Path:

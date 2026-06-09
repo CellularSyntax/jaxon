@@ -1023,6 +1023,7 @@ def _run_one_seed(seed_in: dict, verbose: bool = True) -> dict:
                 dt=DT, n_steps=n_iters,
                 amp_init_mA=init_mag, amp_clip=AMP_CLIP,
                 lr=ADAM_LR_MA, fd_eps=FD_EPS_MA,
+                early_stop_si=EARLY_STOP_SI,
                 verbose=verbose,
             )
             run_loss_hist = np.asarray(adam_res["history"]["loss"])
@@ -1154,6 +1155,12 @@ def _run_one_seed(seed_in: dict, verbose: bool = True) -> dict:
             weights=seed_in["weights"],
             dt=DT, T=seed_in["N_STEPS"], n_steps=N_OPT_WAVE, u_init=u_init,
             lr=WAVE_LR, early_stop_patience=WAVE_PATIENCE, u_clip=AMP_CLIP,
+            # Same SI-based early stop as rect + L1: once we reach the
+            # experimental noise floor (~SI 0.95), more autodiff iters
+            # don't yield meaningful improvement.  Cuts ~60 min/seed on
+            # already-converged samples without affecting saved results
+            # (best-iter logic captures the actual best iter regardless).
+            early_stop_si=EARLY_STOP_SI,
             verbose=verbose,
         )
         wave_t = time.time() - t0

@@ -215,6 +215,16 @@ L1_INIT_SCALE  = _env_flt("L1_INIT_SCALE",  0.10)   # random uniform [-S, +S] mA
 L1_INIT_SEED   = _env_int("L1_INIT_SEED",   0)      # rng seed for random init
 L1_N_ITERS     = _env_int("L1_N_ITERS",     150)    # more than probe path
 
+# PROBE_L1_LAMBDA: L1 prox strength APPLIED TO THE PROBE-BASED rect path.
+# Adam-FD from a sparse probe init (e.g. tripolar with 9 zeros) tends to
+# drift the zero contacts in a coherent direction over a few iters, which
+# breaks the charge balance of the focal pattern and floods off-target
+# fibres.  Adding the L1 soft-thresholding prox step after each Adam
+# update keeps near-zero contacts at exactly zero, preserving sparsity.
+# Set to 0 to disable (legacy behaviour).  0.10 is a sensible default
+# matching the L1-discovery path.
+PROBE_L1_LAMBDA = _env_flt("PROBE_L1_LAMBDA", 0.10)
+
 
 # ── target-fascicle selection paradigm ────────────────────────────────
 # The original divider-line-through-centroid paradigm was replaced
@@ -308,47 +318,32 @@ def _class_balanced_weights(target_mask: np.ndarray) -> np.ndarray:
     return np.where(target_mask, 0.5 / n_t, 0.5 / n_nt).astype(np.float64)
 
 
-def _sparse_tripolar_pattern(spatial_contrast: np.ndarray,
-                              contact_xyz_um: np.ndarray,
-                              verbose: bool = False,
-                              label: str = "") -> np.ndarray:
-    """Construct a sparse tripolar pattern on the most target-preferring
-    angular column.
-
-    The dense bipolar pattern returned by _smart_spatial_pattern puts
-    non-zero current on all K contacts; for tightly-clustered peripheral
-    targets this means even weakly-target-preferring contacts (e.g. the
-    top/bottom angular positions at contrast ~±0.4) still inject ~40 %
-    of the peak amplitude.  Their phase-2 cathodic current under
-    biphasic stim can activate off-target fibres that should have been
-    untouched.  Adam-FD has no native mechanism to zero out contacts
-    once optimisation starts from a dense init.
-
-    This builder constructs an alternative that the user can interpret
-    geometrically:
-      - cluster the K contacts into angular columns (contacts at the
-        same (x, y) projection, distinguished only by axial z)
-      - pick the column with the highest mean target-preferring contrast
-      - put a tripolar pattern on it (middle cathodic, outer anodic for
-        axial confinement, charge balanced spatially)
-      - everything at every other angular column is exactly 0
-
-    For the 12-contact Duke MultiContact (4 angles × 3 axial rows) this
-    yields a 3-nonzero-entry pattern that drives current at a single
-    angular position with z-axis guards.  The probe scales this pattern
-    by a magnitude and tests it alongside the dense bipolar pattern; the
-    optimizer then picks whichever performs better.
+def _phi_to_compass(phi_deg: float) -> str:
+    """Convert a phi angle (atan2(y,x), degrees, [-180, 180]) to an
+    8-point compass label (E, NE, N, NW, W, SW, S, SE).  Used to name
+    the per-column tripolar patterns so log lines and JSON keys are
+    self-describing (`tripolar_W`, `tripolar_S`, ...).
     """
-    K = int(len(spatial_contrast))
-    contact_xy = np.asarray(contact_xyz_um, dtype=np.float64)[:, :2]
-    if contact_xy.shape[0] != K:
-        # Mismatched contacts (shouldn't happen for Duke); fall back to
-        # a dummy pattern of zeros so the probe just ignores this option.
-        return np.zeros(K, dtype=np.float64)
+    # Normalize to [0, 360) where 0 = +x (east), 90 = +y (north).
+    phi = float(phi_deg) % 360.0
+    # 8-point compass, centred on the nominal direction.
+    compass = ["E", "NE", "N", "NW", "W", "SW", "S", "SE"]
+    idx = int(np.round(phi / 45.0)) % 8
+    return compass[idx]
 
-    # Cluster contacts into angular columns by (x, y) proximity (50 µm tol).
+
+def _angular_column_groups(contact_xyz_um: np.ndarray,
+                            xy_tol_um: float = 50.0) -> list[list[int]]:
+    """Cluster contacts into angular columns by (x, y) proximity.
+
+    Returns a list of column groups (list of contact indices), one per
+    distinct angular position.  Within a column, contacts differ only
+    in z (axial position).
+    """
+    K = int(contact_xyz_um.shape[0])
+    contact_xy = np.asarray(contact_xyz_um, dtype=np.float64)[:, :2]
     assigned = np.zeros(K, dtype=bool)
-    angular_groups: list[list[int]] = []
+    groups: list[list[int]] = []
     for i in range(K):
         if assigned[i]:
             continue
@@ -359,54 +354,95 @@ def _sparse_tripolar_pattern(spatial_contrast: np.ndarray,
                 continue
             d_xy = float(np.hypot(contact_xy[i, 0] - contact_xy[j, 0],
                                    contact_xy[i, 1] - contact_xy[j, 1]))
-            if d_xy < 50.0:
+            if d_xy < xy_tol_um:
                 group.append(j)
                 assigned[j] = True
-        angular_groups.append(group)
+        groups.append(group)
+    return groups
 
-    if not angular_groups:
-        return np.zeros(K, dtype=np.float64)
 
-    # Pick the column with the highest mean target-preferring contrast.
-    group_scores = [(grp, float(np.mean([spatial_contrast[k] for k in grp])))
-                    for grp in angular_groups]
-    best_group, best_score = max(group_scores, key=lambda g: g[1])
-
-    # Sort the column by z so we know which is "middle".
-    contact_z = np.asarray(contact_xyz_um, dtype=np.float64)[:, 2]
-    best_group_sorted = sorted(best_group, key=lambda k: float(contact_z[k]))
-    n_col = len(best_group_sorted)
-
-    pattern = np.zeros(K, dtype=np.float64)
+def _tripolar_pattern_for_column(column: list[int], n_contacts: int,
+                                  contact_z_um: np.ndarray) -> np.ndarray:
+    """Build a single-column tripolar (or bipolar / monopolar) spatial
+    pattern of length ``n_contacts``.  All contacts not in ``column``
+    are zero.  Within the column: outer anodic guards, middle cathodic,
+    charge-balanced.  Caller scales by a signed magnitude.
+    """
+    column_sorted = sorted(column, key=lambda k: float(contact_z_um[k]))
+    n_col = len(column_sorted)
+    pattern = np.zeros(n_contacts, dtype=np.float64)
     if n_col == 1:
-        # Monopolar: single cathodic contact.
-        pattern[best_group_sorted[0]] = -1.0
+        pattern[column_sorted[0]] = -1.0
     elif n_col == 2:
-        # Bipolar-in-z: one cathodic, one anodic guard.
-        pattern[best_group_sorted[0]] =  1.0
-        pattern[best_group_sorted[1]] = -1.0
+        pattern[column_sorted[0]] =  1.0
+        pattern[column_sorted[1]] = -1.0
     else:
-        # Tripolar (or wider): outer anodic guards, middle cathodic,
-        # charge-balanced across the column.
-        mid = n_col // 2
+        mid     = n_col // 2
         n_outer = n_col - 1
-        outer_amp = 1.0 / float(n_outer)  # so sum of outer = +1 = -middle
-        for idx, k in enumerate(best_group_sorted):
-            if idx == mid:
-                pattern[k] = -1.0
-            else:
-                pattern[k] = outer_amp
+        outer_amp = 1.0 / float(n_outer)   # so sum(outer) = +1 = -middle
+        for idx, k in enumerate(column_sorted):
+            pattern[k] = -1.0 if idx == mid else outer_amp
+    return pattern
+
+
+def _sparse_tripolar_patterns_per_column(
+        spatial_contrast: np.ndarray,
+        contact_xyz_um: np.ndarray,
+        verbose: bool = False,
+        label: str = "") -> dict[str, np.ndarray]:
+    """Build one tripolar pattern *per angular column* (N, E, S, W, ...).
+
+    The target fascicle cluster may lie close to ANY angular position
+    around the nerve cross-section, so probing only the "best contrast"
+    column (the previous behaviour) was brittle -- the contrast metric
+    uses |Ve| and doesn't always pick the right side.  By emitting one
+    pattern per column we let the magnitude probe decide which spatial
+    configuration is best for this anatomy, on the same footing as the
+    bipolar pattern.
+
+    Returns a dict mapping ``f"tripolar_{compass}"`` (e.g.
+    ``"tripolar_W"``) to a length-K spatial pattern.  Caller adds these
+    into ``spatial_patterns`` for the magnitude probe.
+    """
+    K = int(len(spatial_contrast))
+    contact_xy = np.asarray(contact_xyz_um, dtype=np.float64)[:, :2]
+    contact_z  = np.asarray(contact_xyz_um, dtype=np.float64)[:, 2]
+    if contact_xy.shape[0] != K:
+        return {}
+
+    groups = _angular_column_groups(contact_xyz_um, xy_tol_um=50.0)
+    if not groups:
+        return {}
+
+    patterns: dict[str, np.ndarray] = {}
+    diagnostics: list[str] = []
+    used_names: dict[str, int] = {}
+    for grp in groups:
+        # Mean phi of the column → compass name.
+        mean_x = float(np.mean([contact_xy[k, 0] for k in grp]))
+        mean_y = float(np.mean([contact_xy[k, 1] for k in grp]))
+        phi_deg = float(np.degrees(np.arctan2(mean_y, mean_x)))
+        compass = _phi_to_compass(phi_deg)
+        # Disambiguate collisions (two columns rounding to the same compass
+        # bin, rare but possible on irregular cuffs) by appending an index.
+        name = f"tripolar_{compass}"
+        if name in patterns:
+            used_names[compass] = used_names.get(compass, 1) + 1
+            name = f"tripolar_{compass}{used_names[compass]}"
+
+        pattern = _tripolar_pattern_for_column(grp, K, contact_z)
+        patterns[name] = pattern
+
+        col_score = float(np.mean([spatial_contrast[k] for k in grp]))
+        diagnostics.append(
+            f"{name} (phi={phi_deg:+.0f}°, mean contrast={col_score:+.3f})"
+        )
 
     if verbose:
-        # Build a compact diagnostic string.
-        nz = [(int(k), float(pattern[k])) for k in range(K) if pattern[k] != 0]
-        ang_xy = ", ".join(f"({contact_xy[k,0]:+.0f},{contact_xy[k,1]:+.0f})"
-                            for k in best_group)
-        print(f"{label} Sparse tripolar pattern: "
-              f"column at {ang_xy} (mean contrast {best_score:+.3f}); "
-              f"nonzero entries: {nz}", flush=True)
-
-    return pattern
+        diag = "; ".join(diagnostics)
+        print(f"{label} Tripolar patterns (one per column): {diag}",
+              flush=True)
+    return patterns
 
 
 def _run_l1_discovery(seed_in: dict, n_iters: int, l1_lambda: float,
@@ -811,14 +847,15 @@ def _run_one_seed(seed_in: dict, verbose: bool = True) -> dict:
             seed_in["Ve_unit"], seed_in["target_mask"],
             verbose=verbose, label=label,
         )
-        spatial_tripolar = _sparse_tripolar_pattern(
+        tripolar_patterns_by_col = _sparse_tripolar_patterns_per_column(
             spatial_bipolar, seed_in["contact_xyz_um"],
             verbose=verbose, label=label,
         )
-        spatial_patterns = {
-            "bipolar":  spatial_bipolar,
-            "tripolar": spatial_tripolar,
-        }
+        # All columns become first-class probe candidates: the target
+        # fascicle cluster may lie close to ANY angular position around
+        # the nerve cross-section, so the probe needs to test each one.
+        spatial_patterns = {"bipolar": spatial_bipolar}
+        spatial_patterns.update(tripolar_patterns_by_col)
         # For backward-compat with downstream JSON code that expects a
         # single canonical "spatial pattern" we keep the dense bipolar
         # as the headline for plotting; the actual init used is captured
@@ -857,6 +894,10 @@ def _run_one_seed(seed_in: dict, verbose: bool = True) -> dict:
             amps_init_vector=amps_init_vec,
             amp_clip=AMP_CLIP,
             lr=ADAM_LR_MA, fd_eps=FD_EPS_MA,
+            # L1 prox preserves the zeros of the sparse probe init so
+            # Adam-FD doesn't drift zero contacts in a coherent
+            # direction (which breaks charge balance and floods nt).
+            l1_lambda=PROBE_L1_LAMBDA,
             verbose=verbose,
         )
         loss_hist = np.asarray(adam_res["history"]["loss"])
@@ -879,9 +920,10 @@ def _run_one_seed(seed_in: dict, verbose: bool = True) -> dict:
                 "best_pattern_name": best_pattern_name,
                 "best_mag_mA":       best_mag,
                 "best_score":        best_score,
+                "probe_l1_lambda":   float(PROBE_L1_LAMBDA),
                 "spatial_patterns":  {
-                    "bipolar":  spatial_bipolar.tolist(),
-                    "tripolar": spatial_tripolar.tolist(),
+                    name: pat.tolist()
+                    for name, pat in spatial_patterns.items()
                 },
                 "amps_init_vector":  amps_init_vec.tolist(),
                 "probe_history":     probe_hist,

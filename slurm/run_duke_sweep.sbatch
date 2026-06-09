@@ -146,6 +146,10 @@ export L1_LAMBDA="${L1_LAMBDA:-0.10}"
 export L1_INIT_SCALE="${L1_INIT_SCALE:-0.10}"
 export L1_INIT_SEED="${L1_INIT_SEED:-0}"
 export L1_N_ITERS="${L1_N_ITERS:-150}"
+# L1 prox strength applied to the probe-based rect path itself, to
+# preserve the zeros of sparse tripolar / bipolar inits and prevent
+# Adam-FD from drifting them off charge balance.
+export PROBE_L1_LAMBDA="${PROBE_L1_LAMBDA:-0.10}"
 
 # Loss / activation-proxy regularisation read by jaxfibers.optim.optimizer
 # at import time (defaults preserve legacy 0 / 0 behaviour if unset).
@@ -254,6 +258,7 @@ export L1_LAMBDA=\"${L1_LAMBDA}\"
 export L1_INIT_SCALE=\"${L1_INIT_SCALE}\"
 export L1_INIT_SEED=\"${L1_INIT_SEED}\"
 export L1_N_ITERS=\"${L1_N_ITERS}\"
+export PROBE_L1_LAMBDA=\"${PROBE_L1_LAMBDA}\"
 export JAXLEY_FIBERS_SOFT_TEMPERATURE=\"${JAXLEY_FIBERS_SOFT_TEMPERATURE}\"
 export JAXLEY_FIBERS_ENERGY_LAMBDA=\"${JAXLEY_FIBERS_ENERGY_LAMBDA}\"
 export PULSE_SHAPE=\"${PULSE_SHAPE}\"

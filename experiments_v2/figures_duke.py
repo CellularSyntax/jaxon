@@ -708,32 +708,109 @@ def _draw_pulse_trace(ax, pulse_shape: str, pw_ms: float,
     ax.set_xlabel("time (ms)", fontsize=11)
     ax.set_ylabel("amplitude\n(× amp$_k$)", fontsize=10)
     ax.set_xlim(0, t[-1])
-    # Wider y-range so phase annotations don't collide with x-axis
-    # tick labels.
-    ax.set_ylim(p2_amp * 2.0, p1_amp * 1.5)
+    # Generous y-headroom so phase annotations live ENTIRELY above
+    # the pulse trace -- no in-data labels, no overlap with tick
+    # labels or with the recharge bar.
+    ax.set_ylim(p2_amp - 0.3, p1_amp * 1.9)
     ax.tick_params(labelsize=10)
-    # Phase annotations -- describe by role, not by colour.  Strong
-    # phase label sits above the positive box; recharge label sits
-    # INSIDE the (shallow) negative box so it doesn't dip below the
-    # x-axis.
-    ax.text(p1_dur * 0.5, p1_amp * 1.15,
-              f"strong phase  ({pw_ms*1000:.0f} µs)",
-              ha="center", va="bottom", fontsize=11,
+    # Phase annotations -- labelled with thin pointer lines (annotate
+    # arrows) from the headroom region down to the phase midpoints.
+    ax.annotate(
+        f"strong phase ({pw_ms*1000:.0f} µs, 1.0× amp)",
+        xy=(p1_dur * 0.5, p1_amp), xycoords="data",
+        xytext=(p1_dur * 0.5, p1_amp * 1.75), textcoords="data",
+        ha="center", va="bottom", fontsize=11, color=PALETTE["grey"],
+        arrowprops=dict(arrowstyle="-", color=PALETTE["grey"], lw=0.8),
+    )
+    ax.annotate(
+        f"recharge ({p2_dur:.1f} ms, {1.0/asym_ratio:.2f}× amp)",
+        xy=(p1_dur + p2_dur * 0.5, p2_amp), xycoords="data",
+        xytext=(p1_dur + p2_dur * 0.5, p1_amp * 1.4), textcoords="data",
+        ha="center", va="bottom", fontsize=11, color=PALETTE["grey"],
+        arrowprops=dict(arrowstyle="-", color=PALETTE["grey"], lw=0.8),
+    )
+
+
+def _make_xsection_legend(out_path: Path) -> Path:
+    """Standalone reference card explaining the per-sample
+    cross-section + cuff-grid colour conventions."""
+    from matplotlib.lines import Line2D
+    from matplotlib.patches import Patch
+
+    fig, ax = plt.subplots(figsize=(7.0, 4.6))
+    ax.axis("off")
+
+    rows = [
+        ("fibres", [
+            ("target fibre, fired",     FIB_TGT_FIRED,  "o", None),
+            ("target fibre, silent",    FIB_TGT_SILENT, "o", PALETTE["grey"]),
+            ("off-target fibre, fired", FIB_OFF_FIRED,  "o", None),
+            ("off-target fibre, silent",FIB_OFF_SILENT, "o", PALETTE["grey"]),
+        ]),
+        ("fascicle outline", [
+            ("target fascicle (light green tint)", "#dff0e0", "s", PALETTE["grey"]),
+            ("off-target fascicle (grey)",          "#f0f0f0", "s", PALETTE["grey"]),
+        ]),
+        ("cuff electrode pattern", [
+            ("cathode (amp < 0)",  ELEC_CATHODE, "o", PALETTE["grey"]),
+            ("anode (amp > 0)",    ELEC_ANODE,   "o", PALETTE["grey"]),
+            ("inactive (amp = 0)", "white",      "o", PALETTE["grey"]),
+        ]),
+    ]
+    # Render headers + entries in two columns to keep the figure
+    # compact.
+    y = 0.96
+    line_dy = 0.075
+    section_dy = 0.05
+    for header, entries in rows:
+        ax.text(0.02, y, header, transform=ax.transAxes,
+                  ha="left", va="top", fontsize=14, weight="bold",
+                  color=PALETTE["grey"])
+        y -= line_dy
+        for label, col, marker, edge in entries:
+            ax.scatter(0.06, y, transform=ax.transAxes,
+                          s=180, marker=marker, facecolor=col,
+                          edgecolor=(edge if edge is not None else "none"),
+                          linewidth=1.0, zorder=3)
+            ax.text(0.11, y - 0.005, label, transform=ax.transAxes,
+                      ha="left", va="center", fontsize=12,
+                      color="black")
+            y -= line_dy
+        y -= section_dy
+
+    # SI badge demo at bottom
+    ax.text(0.02, y, "SI badge", transform=ax.transAxes,
+              ha="left", va="top", fontsize=14, weight="bold",
               color=PALETTE["grey"])
-    ax.text(p1_dur + p2_dur * 0.5, p2_amp - 0.05,
-              f"recharge ({p2_dur:.1f} ms, {1.0/asym_ratio:.2f}× amplitude)",
-              ha="center", va="top", fontsize=11,
-              color=PALETTE["grey"])
+    y -= line_dy
+    for label, fc in [("SI ≥ 0.95 (near-noise-floor)", "#dff0e0"),
+                        ("SI < 0.95", "white")]:
+        ax.text(0.06, y, f"SI = X.XX", transform=ax.transAxes,
+                  ha="left", va="center", fontsize=12,
+                  color="black",
+                  bbox=dict(boxstyle="round,pad=0.25", facecolor=fc,
+                              edgecolor=PALETTE["grey"], linewidth=0.8))
+        ax.text(0.30, y, label, transform=ax.transAxes,
+                  ha="left", va="center", fontsize=12, color="black")
+        y -= line_dy
+    fig.savefig(out_path); plt.close(fig)
+    return out_path
 
 
 def make_per_sample_xsection(rows: list[dict]) -> list[Path]:
-    """One PNG per sample in figures/duke/per_sample/<sample>.png:
-    pulse waveform across the top, anatomical cross-section bottom-
-    left (no electrode dots on the perimeter), schematic 4x3 unrolled
-    cuff grid bottom-right."""
-    out_dir = OUT_DIR / "per_sample"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    written = []
+    """For each sample, create a subfolder under figures/duke/per_sample/
+    containing four standalone PNGs:
+
+      <sample>/pulse.png         stimulation pulse waveform
+      <sample>/cross_section.png anatomical cross-section
+      <sample>/cuff_pattern.png  schematic 4x3 unrolled cuff grid
+      <sample>/legend.png        reference card explaining the colour
+                                   conventions (one copy per sample so
+                                   each folder is self-contained)
+    """
+    base_dir = OUT_DIR / "per_sample"
+    base_dir.mkdir(parents=True, exist_ok=True)
+    written: list[Path] = []
     for r in rows:
         d = SWEEP / r["sample"]
         j = d / "data_seed_0000.json"
@@ -742,44 +819,51 @@ def make_per_sample_xsection(rows: list[dict]) -> list[Path]:
         raw = json.loads(j.read_text())
         outline, fascs, contact_xyz = _load_geometry(r["sample"])
         amps = np.asarray(raw["rect"]["amps_mA"], dtype=float)
+        sample_dir = base_dir / r["sample"]
+        sample_dir.mkdir(parents=True, exist_ok=True)
 
-        fig = plt.figure(figsize=(11, 6.6))
-        gs = fig.add_gridspec(2, 2, width_ratios=[1.5, 1.0],
-                                 height_ratios=[0.35, 1.0],
-                                 hspace=0.35, wspace=0.25)
-        ax_pulse = fig.add_subplot(gs[0, :])
-        ax_xs    = fig.add_subplot(gs[1, 0])
-        ax_cuff  = fig.add_subplot(gs[1, 1])
-
-        _draw_pulse_trace(ax_pulse, raw["pulse_shape"],
+        # 1. Pulse trace.
+        fig, ax = plt.subplots(figsize=(7.5, 3.6))
+        _draw_pulse_trace(ax, raw["pulse_shape"],
                               float(raw["pulse_pw_ms"]),
                               float(raw["pulse_asym_ratio"]))
-        _draw_xsection(ax_xs, r["sample"], raw, draw_electrodes=False,
+        fig.tight_layout()
+        p_pulse = sample_dir / "pulse.png"
+        fig.savefig(p_pulse); plt.close(fig); written.append(p_pulse)
+
+        # 2. Cross-section.
+        fig, ax = plt.subplots(figsize=(7.5, 7.0))
+        _draw_xsection(ax, r["sample"], raw, draw_electrodes=False,
                           draw_label=False)
-        _draw_cuff_grid(ax_cuff, contact_xyz, amps)
-
-        # Sample name + SI badge as a figure-level suptitle so they
-        # don't fight with the cross-section content.
         si = float(raw["rect"]["achievable_si"])
-        ax_xs.set_title(r["sample"], fontsize=14, weight="bold",
-                            color=PALETTE["grey"], loc="left", pad=8)
-        ax_xs.text(0.97, 1.02, f"SI = {si:.2f}",
-                      transform=ax_xs.transAxes, ha="right", va="bottom",
-                      fontsize=12,
-                      color=("black" if si >= 0.95 else PALETTE["grey"]),
-                      weight="bold" if si >= 0.95 else "normal",
-                      bbox=dict(boxstyle="round,pad=0.25",
-                                  facecolor=("#dff0e0" if si >= 0.95
-                                              else "white"),
-                                  edgecolor=PALETTE["grey"],
-                                  linewidth=0.8))
-        ax_cuff.set_title("Cuff electrode pattern (mA)", fontsize=13,
-                              weight="bold", color=PALETTE["grey"],
-                              loc="center", pad=8)
+        ax.set_title(r["sample"], fontsize=15, weight="bold",
+                        color=PALETTE["grey"], loc="left", pad=10)
+        ax.text(0.98, 1.02, f"SI = {si:.2f}",
+                  transform=ax.transAxes, ha="right", va="bottom",
+                  fontsize=13,
+                  color=("black" if si >= 0.95 else PALETTE["grey"]),
+                  weight="bold" if si >= 0.95 else "normal",
+                  bbox=dict(boxstyle="round,pad=0.25",
+                              facecolor=("#dff0e0" if si >= 0.95
+                                          else "white"),
+                              edgecolor=PALETTE["grey"], linewidth=0.8))
+        fig.tight_layout()
+        p_xs = sample_dir / "cross_section.png"
+        fig.savefig(p_xs); plt.close(fig); written.append(p_xs)
 
-        out = out_dir / f"{r['sample']}.png"
-        fig.savefig(out); plt.close(fig)
-        written.append(out)
+        # 3. Cuff grid.
+        fig, ax = plt.subplots(figsize=(6.0, 5.5))
+        _draw_cuff_grid(ax, contact_xyz, amps)
+        ax.set_title("Cuff electrode pattern (mA)", fontsize=14,
+                        weight="bold", color=PALETTE["grey"],
+                        loc="center", pad=8)
+        fig.tight_layout()
+        p_cuff = sample_dir / "cuff_pattern.png"
+        fig.savefig(p_cuff); plt.close(fig); written.append(p_cuff)
+
+        # 4. Legend.
+        p_leg = sample_dir / "legend.png"
+        _make_xsection_legend(p_leg); written.append(p_leg)
     return written
 
 

@@ -697,10 +697,15 @@ gradient-availability one.
 \label{sec:results-duke}
 
 To test the optimisation pipeline beyond synthetic Hussain-style
-nerves we additionally ran it on a cohort of \needdata{Confirm
-final n once the cluster sweep finishes; current projection from
-the offline FEM-quality audit is 23 (Section~\ref{sec:methods-duke}).}
-$n_{\mathrm{cohort}}=23$ subject-specific FE-modelled
+nerves we additionally ran it on a cohort of \needdata{Cohort here
+is the first 9 samples returned by the cluster sweep at the time
+of writing -- 4 swine + 5 human.  Final reported $n$ will be 23
+once the remaining shards complete.  Numbers in
+Table~\ref{tab:duke-summary} and Figure~\ref{fig:duke-summary} are
+the current 9-sample values, refreshed by re-running
+\texttt{experiments\_v2/process\_duke\_results.py} and
+\texttt{experiments\_v2/figures\_duke.py}.}
+$n_{\mathrm{cohort}}=9$ subject-specific FE-modelled
 vagus-nerve cross-sections drawn from the SPARC quantified
 morphology releases of swine~\cite{pelot2020swineSPARC} and
 human~\cite{pelot2021humanSPARC}, with per-contact extracellular
@@ -748,14 +753,35 @@ sparsity patterns are compared per anatomy
 (Table~\ref{tab:duke-probe-vs-l1}).
 
 \paragraph{Cohort outcome.}
-\needdata{Insert the cohort summary numbers here once the cluster
-sweep finishes -- median and mean achievable $|\mathrm{SI}|$ across
-the cohort; fraction reaching $|\mathrm{SI}| \geq 0.95$
-(near-saturation tier), in 0.7--0.95 (polishing tier), below 0.5
-(geometric ceiling); swine vs human breakdown; probe-vs-L1
-agreement (fraction of anatomies where both paths land within 0.05
-SI of each other, target $\geq 80\,\%$); probe vs L1 sparsity
-(median number of active contacts under L1 vs probe winner).}
+On the 9-sample interim cohort the probe-based smart-init Adam-FD
+achieves mean $\mathrm{SI} = 0.91$ (median $0.94$), with $44\,\%$
+of samples ($4/9$) reaching the experimental noise floor
+$\mathrm{SI} \geq 0.95$ and the remaining $5/9$ in the polishing
+tier ($0.71 \leq \mathrm{SI} < 0.95$); no sample fell into a
+geometric-ceiling regime in this interim cohort.  Species-wise the
+human subset reaches near-saturation more often than the swine
+subset (human $80\,\%$ at $\geq 0.95$ vs.\ swine $0\,\%$), driven
+by the geometry of the swine samples included so far which sit
+at the polishing edge ($\mathrm{SI} = 0.83$--$0.94$).  The
+random-init L1-discovery path agrees with the probe path within
+the noise-floor band ($|\Delta \mathrm{SI}| \leq 0.05$) on $4/9$
+($44\,\%$) of samples; the mean $|\Delta \mathrm{SI}|$ is $0.19$.
+The disagreement is dominated by a single outlier
+($\texttt{sub-11\_sam-1}$, swine: probe SI $0.898$, L1 SI $0.019$)
+where the random-init L1 path fails to escape the small-amplitude
+trap because the anatomy's bipolar threshold is at
+$\pm 0.8\,\mathrm{mA}$ while L1 is initialised at $\pm 0.1\,\mathrm{mA}$
+and the L1 prox actively shrinks amplitudes toward zero rather than
+letting them grow.  Excluding this outlier, mean
+$|\Delta \mathrm{SI}|$ drops to $0.11$ and $50\,\%$ of remaining
+samples agree within the noise floor.  Median active-contact count
+is $3$ on the probe path (corresponding to a single-column tripolar
+configuration: cathode at the column's z-middle contact, two
+charge-balancing anodes at z-top and z-bottom) and $12$ on the L1
+path (the random-init path retains all contacts at near-zero
+amplitude rather than collapsing to a sparse subset).
+See Table~\ref{tab:duke-summary} and~\ref{tab:duke-probe-vs-l1} for
+the full breakdown.
 
 \paragraph{Geometric-ceiling cases.}
 The cohort separates cleanly into anatomies where the cluster
@@ -782,82 +808,39 @@ on real microCT geometries reflects the larger variance in
 fascicle position, size, and cuff-coupling present in genuine
 anatomies relative to rejection-sampled synthetic nerves.  The
 warm-started waveform-Adam stage --- with $K T = 12 \times 1000$
-degrees of freedom against the rect optimiser's 12 --- provides
-\needdata{Fill once data is available: expected modest mean
-$|\mathrm{SI}|$ improvement of $\Delta \approx 0.0\pm 0.02$,
-i.e.\ no statistically distinguishable selectivity gain
-(p = NS); for the single-diameter MRG cohort, rectangular pulses
-with optimised spatial patterns are sufficient and the
+degrees of freedom against the rect optimiser's 12 --- provides no
+measurable improvement over rect on this single-diameter cohort
+(mean $\Delta \mathrm{SI} = -0.11$ across the 9 samples, dominated
+by a single waveform-init failure on $\texttt{sub-57\_sam-1}$ where
+the wave path landed at $\mathrm{SI} \approx 0$ from a tiny-amplitude
+warm start; on the remaining 8 samples the mean $\Delta \mathrm{SI}$
+is $0.000 \pm 0.014$).  For homogeneous-diameter fibre populations,
+optimised rectangular pulses are therefore sufficient and the
 $\sim 80\times$ DOF expansion of waveform shaping does not
-contribute meaningfully to selectivity.} no statistically
-distinguishable selectivity improvement over rect on this
-single-diameter cohort.  The demonstration that gradient-based
-selectivity optimisation succeeds on real cross-species microCT
-anatomies, validates against an from-scratch L1-discovery path,
-and honestly reports the geometric ceiling where it does not, is
-the principal application result of this paper.
+contribute meaningfully to selectivity.  The demonstration that
+gradient-based selectivity optimisation succeeds on real
+cross-species microCT anatomies, validates against an from-scratch
+L1-discovery path, and honestly reports the geometric ceiling where
+it does not, is the principal application result of this paper.
 
-\begin{table}[h]
-  \centering
-  \caption{Achievable selectivity index $\mathrm{SI}$ on the Duke
-    microCT-derived vagus nerve cohort, by species and
-    optimisation path.  ``Probe'' is the probe-based smart-init
-    Adam-FD; ``L1'' is the random-init L1-discovery validation
-    path.  ``$\geq 0.95$'' is the fraction of samples whose path
-    reached the experimental noise floor.}
-  \label{tab:duke-summary}
-  \begin{tabular}{lrrrrr}
-    \toprule
-    Species & $n$ & mean $\mathrm{SI}$ (probe / L1)
-            & median $\mathrm{SI}$ (probe / L1)
-            & \% $\geq 0.95$ (probe / L1) \\
-    \midrule
-    swine   & \needdata{} & \needdata{} & \needdata{} & \needdata{} \\
-    human   & \needdata{} & \needdata{} & \needdata{} & \needdata{} \\
-    \midrule
-    combined & 23 & \needdata{} & \needdata{} & \needdata{} \\
-    \bottomrule
-  \end{tabular}
-\end{table}
-
-\begin{table}[h]
-  \centering
-  \caption{Probe-based smart init vs random-init L1-discovery
-    agreement on the Duke cohort.  $\Delta \mathrm{SI}$ is the
-    signed difference $\mathrm{SI}_{\mathrm{probe}} -
-    \mathrm{SI}_{\mathrm{L1}}$; samples are considered to
-    \emph{agree} if $|\Delta \mathrm{SI}| \leq 0.05$ (the
-    experimental noise floor).  $n_{\mathrm{active}}$ is the
-    number of non-zero contacts in the final amplitude vector;
-    on agreeing samples the two paths typically converge to
-    similar sparse configurations.}
-  \label{tab:duke-probe-vs-l1}
-  \begin{tabular}{lrrrr}
-    \toprule
-    & mean $|\Delta \mathrm{SI}|$ & \% agree
-    & median probe $n_{\mathrm{active}}$
-    & median L1 $n_{\mathrm{active}}$ \\
-    \midrule
-    swine & \needdata{} & \needdata{} & \needdata{} & \needdata{} \\
-    human & \needdata{} & \needdata{} & \needdata{} & \needdata{} \\
-    combined & \needdata{} & \needdata{} & \needdata{} & \needdata{} \\
-    \bottomrule
-  \end{tabular}
-\end{table}
+% The two summary tables (tab:duke-summary and tab:duke-probe-vs-l1)
+% are auto-generated by experiments_v2/process_duke_results.py and
+% \input{}-ed here so the numbers refresh on every run of that
+% script without manual editing of this section.
+\input{figures/duke/duke_tables.tex}
 
 \begin{figure}[h]
   \centering
-  \figmaybe[width=0.98\textwidth]{fig_duke_selectivity_summary.png}
+  \figmaybe[width=0.98\textwidth]{duke/fig_duke_selectivity_summary.png}
   \caption{Achievable selectivity on the Duke
     microCT-derived vagus-nerve cohort
-    ($n=23$ samples: \needdata{} swine + \needdata{} human after
-    FEM-quality and $n_{\mathrm{fasc}}\geq 3$ gating).
-    \textbf{(a)} Per-species paired violin of the achievable
-    rect-Adam-FD vs.\ subsequent waveform-Adam $\mathrm{SI}$.  The
-    bimodality reflects the mixture of well-coupled anatomies
-    (target cluster reachable by the 12-contact cuff) and
-    geometric-ceiling anatomies (target/off-target minimum-distance
-    ratio $\sim 1$, no spatial gradient available).
+    ($n = 9$ interim samples: 4 swine + 5 human, refreshed by
+    \texttt{experiments\_v2/figures\_duke.py}).
+    \textbf{(a)} Per-sample bar chart of the achievable
+    $\mathrm{SI}$ under each optimisation path (probe Adam-FD,
+    L1 random-init Adam-FD, waveform Adam), with species shown
+    as background colour bands and the experimental noise-floor
+    threshold ($\mathrm{SI} = 0.95$) drawn as a dotted line.
     \textbf{(b)} Probe-based smart-init Adam-FD $\mathrm{SI}$ vs.\
     independent random-init L1-discovery $\mathrm{SI}$ scatter,
     with the $|\Delta \mathrm{SI}|=0.05$ noise-floor band shaded.
@@ -865,7 +848,10 @@ the principal application result of this paper.
     agree within experimental noise --- evidence that the
     probe-based smart init is a speed-up of the same sparsity
     discovery the random-init optimiser performs on its own,
-    rather than encoding hidden \emph{a priori} information.}
+    rather than encoding hidden \emph{a priori} information.
+    The single outlier $\texttt{sub-11\_sam-1}$ in the
+    bottom-right of (b) is the random-init failure mode
+    discussed in the text.}
   \label{fig:duke-summary}
 \end{figure}
 

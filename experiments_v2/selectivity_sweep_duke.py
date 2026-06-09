@@ -55,7 +55,7 @@ import jax.numpy as jnp
 jax.config.update("jax_enable_x64", True)
 
 from jaxfibers.stim.batch_solve import (
-    stack_fiber_statics, initial_states_batch,
+    stack_fiber_statics, initial_states_batch, batch_integrate_m_max,
 )
 from jaxfibers.optim.optimizer import (
     run_rect_optimization,
@@ -175,6 +175,29 @@ ADAM_FD_RESTART_MAGS = _parse_restart_mags(
     os.environ.get("ADAM_FD_RESTART_MAGS", "-0.10,-0.30,-0.80,-1.50")
 )
 
+# Smart init replaces the multi-restart strategy entirely on the
+# default path.  Instead of running 4 full Adam-FD passes at different
+# magnitudes (~50 min/sample), we:
+#   1. Compute a per-contact target/off-target Ve-contrast pattern
+#      (one numpy operation, no GPU).
+#   2. Scale that pattern by each candidate magnitude in PROBE_MAGS_MA
+#      and run a single forward pass per candidate (~30 s each on
+#      A100 → ~3 min total for 6 candidates).
+#   3. Pick the magnitude with the highest (target_fired - off_fired)
+#      fraction and run a SINGLE Adam-FD from that init
+#      (~10-20 min, often early-stops).
+# Total ~15-25 min/sample vs ~50 min for 4-restart.  Set
+# SMART_INIT_ENABLED=false to fall back to the multi-restart path.
+SMART_INIT_ENABLED = os.environ.get("SMART_INIT_ENABLED", "true").strip().lower() in (
+    "1", "true", "yes", "y", "on",
+)
+# Probe magnitudes (signed mA).  Sign convention: negative = cathodic
+# for the target-preferring contacts.  Span 30x to cover both
+# tightly-coupled and weakly-coupled anatomies.
+PROBE_MAGS_MA = _parse_restart_mags(
+    os.environ.get("PROBE_MAGS_MA", "-0.05,-0.15,-0.30,-0.60,-1.00,-1.50")
+)
+
 
 # ── target-fascicle selection paradigm ────────────────────────────────
 # The original divider-line-through-centroid paradigm was replaced
@@ -252,6 +275,121 @@ def _class_balanced_weights(target_mask: np.ndarray) -> np.ndarray:
         # on a valid cluster-target split with n_min_target_fibers >= 50.
         return (np.ones(n_total, dtype=np.float64) / max(n_total, 1))
     return np.where(target_mask, 0.5 / n_t, 0.5 / n_nt).astype(np.float64)
+
+
+def _smart_spatial_pattern(Ve_unit: np.ndarray,
+                            target_mask: np.ndarray) -> np.ndarray:
+    """Compute the per-contact target/off-target Ve contrast pattern.
+
+    For each contact k:
+        contrast[k] = (mean|Ve[k, target]| - mean|Ve[k, off]|) /
+                       (mean|Ve[k, target]| + mean|Ve[k, off]| + eps)
+
+    contrast[k] > 0  : contact reaches target more than off-target
+                       → should be cathodic (negative amps).
+    contrast[k] < 0  : contact reaches off-target more than target
+                       → should be anodic (positive amps; guard).
+
+    Returns a length-K vector in [-1, +1].  Multiply by a NEGATIVE
+    magnitude (mA) to get the actual amps init vector: amps = mag *
+    contrast with mag < 0 puts cathodic current on target-preferring
+    contacts and anodic current on off-target-preferring contacts —
+    the optimal guard-pattern start.
+    """
+    Ve_unit = np.asarray(Ve_unit)
+    target_mask = np.asarray(target_mask, dtype=bool)
+    K = Ve_unit.shape[0]
+    if int(target_mask.sum()) == 0 or int((~target_mask).sum()) == 0:
+        return np.zeros(K, dtype=np.float64)
+    # Per-fiber peak Ve magnitude across compartments.
+    Ve_abs_max = np.max(np.abs(Ve_unit), axis=2)          # [K, n_fibers]
+    mean_tgt = Ve_abs_max[:, target_mask].mean(axis=1)    # [K]
+    mean_off = Ve_abs_max[:, ~target_mask].mean(axis=1)   # [K]
+    contrast = (mean_tgt - mean_off) / (mean_tgt + mean_off + 1e-10)
+    return contrast.astype(np.float64)
+
+
+def _magnitude_probe(spatial_pattern: np.ndarray,
+                      probe_mags_mA: list,
+                      target_mask: np.ndarray,
+                      fs_batch, s0_batch, Ve_unit_j, pulse_mask_j,
+                      node_idx_j, dt: float,
+                      label: str = "",
+                      verbose: bool = True) -> tuple:
+    """Per-magnitude single-forward sweep to find the best init.
+
+    For each ``mag`` in ``probe_mags_mA``, evaluate the single-forward
+    activation under ``amps = mag * spatial_pattern`` (no Adam steps,
+    no FD perturbations -- just one forward per magnitude, ~30 s on
+    A100).  Pick the magnitude that maximises the selectivity score
+    ``(fraction_target_fired - fraction_off_fired)``.
+
+    Returns
+    -------
+    (amps_vec, best_mag, best_score, best_acts, probe_history)
+    where probe_history is a list of dicts (one per probed magnitude)
+    for downstream bookkeeping.
+    """
+    target_mask_bool = np.asarray(target_mask, dtype=bool)
+    n_t = int(target_mask_bool.sum())
+    n_off = int((~target_mask_bool).sum())
+
+    @jax.jit
+    def _fwd(amps):
+        # amps [K]  *  pulse_mask [T]  →  u [K, T]
+        u = amps[:, None] * pulse_mask_j[None, :]
+        # Per-fibre Ve trajectory: -sum_k u_kt * Ve_unit_kfn  → [F, T, n_c]
+        Ve_seq = jnp.einsum("kt,kfn->ftn", -u, Ve_unit_j)
+        m_max = batch_integrate_m_max(fs_batch, s0_batch, Ve_seq, dt)
+        return activation_proxy_batch(m_max, node_idx_j)
+
+    if verbose:
+        print(f"{label} Magnitude probe: {len(probe_mags_mA)} candidates "
+              f"× single forward", flush=True)
+
+    best_score = -float("inf")
+    best_mag = float(probe_mags_mA[0])
+    best_amps: np.ndarray | None = None
+    best_acts: np.ndarray | None = None
+    history: list[dict] = []
+    for mag in probe_mags_mA:
+        amps_vec = float(mag) * spatial_pattern    # [K]
+        amps_j = jnp.asarray(amps_vec, dtype=jnp.float64)
+        t0 = time.time()
+        acts = _fwd(amps_j)
+        acts_np = np.asarray(acts)
+        dt_ms = (time.time() - t0) * 1000.0
+        fired = acts_np > 0.5
+        nft = int(np.sum(fired & target_mask_bool))
+        nfn = int(np.sum(fired & ~target_mask_bool))
+        target_frac = nft / max(n_t, 1)
+        off_frac = nfn / max(n_off, 1)
+        score = target_frac - off_frac
+        history.append({
+            "mag_mA":          float(mag),
+            "amps_vec":        amps_vec.tolist(),
+            "n_fired_target":  nft,
+            "n_fired_off":     nfn,
+            "target_frac":     float(target_frac),
+            "off_frac":        float(off_frac),
+            "score":           float(score),
+            "wall_ms":         float(dt_ms),
+        })
+        if verbose:
+            print(f"  probe mag={float(mag):+.3f} mA  "
+                  f"fired={nft}/{n_t}t+{nfn}/{n_off}nt "
+                  f"({100*target_frac:.0f}%T, {100*off_frac:.0f}%NT)  "
+                  f"score={score:+.3f}  dt={dt_ms:.0f}ms",
+                  flush=True)
+        if score > best_score:
+            best_score = score
+            best_mag = float(mag)
+            best_amps = amps_vec.copy()
+            best_acts = acts_np
+    if verbose:
+        print(f"{label} Probe winner: mag={best_mag:+.3f} mA  "
+              f"score={best_score:+.3f}", flush=True)
+    return best_amps, best_mag, float(best_score), best_acts, history
 
 
 def _firing_summary(acts, target_mask) -> dict:
@@ -391,7 +529,84 @@ def _run_one_seed(seed_in: dict, verbose: bool = True) -> dict:
               f"opt={RECT_OPTIMIZER}", flush=True)
 
     rect_t0 = time.time()
-    if RECT_OPTIMIZER == "adam_fd":
+    if RECT_OPTIMIZER == "adam_fd" and SMART_INIT_ENABLED:
+        # ── Smart init path ─────────────────────────────────────────
+        # (1) per-contact spatial pattern from target/off-target Ve contrast,
+        # (2) magnitude probe over PROBE_MAGS_MA (single forwards),
+        # (3) ONE Adam-FD run from amps_init = best_mag × spatial_pattern.
+        n_iters = max(N_OPT_RECT * 3, 30)
+        if verbose:
+            print(f"{label} Smart init path: spatial-contrast pattern + "
+                  f"{len(PROBE_MAGS_MA)}-magnitude probe + 1×Adam-FD "
+                  f"({n_iters} iters)", flush=True)
+
+        spatial = _smart_spatial_pattern(seed_in["Ve_unit"],
+                                         seed_in["target_mask"])
+        if verbose:
+            patt_str = "  ".join(f"{c:+.2f}" for c in spatial)
+            print(f"{label} Spatial contrast [{spatial.min():+.3f},"
+                  f"{spatial.max():+.3f}] mean={spatial.mean():+.3f}: "
+                  f"[{patt_str}]", flush=True)
+
+        amps_init_vec, best_mag, best_score, _probe_acts, probe_hist = \
+            _magnitude_probe(
+                spatial, PROBE_MAGS_MA, seed_in["target_mask"],
+                seed_in["fs_batch"], seed_in["s0_batch"],
+                jnp.asarray(seed_in["Ve_unit"], dtype=jnp.float64),
+                jnp.asarray(seed_in["pulse_mask"], dtype=jnp.float64),
+                jnp.asarray(seed_in["node_indices"], dtype=jnp.int32),
+                DT, label=label, verbose=verbose,
+            )
+
+        if verbose:
+            init_str = "  ".join(f"{a:+.2f}" for a in amps_init_vec)
+            print(f"{label} Rect Adam-FD ({n_iters} iters) from smart "
+                  f"init  [{init_str}] mA ...", flush=True)
+
+        adam_res = run_rect_optimization(
+            fiber_statics_batch=seed_in["fs_batch"],
+            state0_batch=seed_in["s0_batch"],
+            Ve_unit=seed_in["Ve_unit"],
+            pulse_mask=seed_in["pulse_mask"],
+            node_indices=seed_in["node_indices"],
+            target_mask=seed_in["target_mask"],
+            weights=seed_in["weights"],
+            dt=DT, n_steps=n_iters,
+            amps_init_vector=amps_init_vec,
+            amp_clip=AMP_CLIP,
+            lr=ADAM_LR_MA, fd_eps=FD_EPS_MA,
+            verbose=verbose,
+        )
+        loss_hist = np.asarray(adam_res["history"]["loss"])
+        best_iter = int(np.argmin(loss_hist))
+        best_amps = np.asarray(adam_res["history"]["amps"][best_iter])
+        best_acts = np.asarray(adam_res["history"]["acts"][best_iter])
+        rect_res = {
+            "optimizer":         "Adam-FD-smart",
+            "amps":              best_amps,
+            "loss_history":      loss_hist,
+            "final_loss":        float(loss_hist[best_iter]),
+            "final_acts":        best_acts,
+            "best_iter":         best_iter,
+            "best_restart":      0,
+            "restart_mags":      [best_mag],
+            "n_restarts":        1,
+            "n_steps":           n_iters,
+            "smart_init": {
+                "enabled":          True,
+                "best_mag_mA":      best_mag,
+                "best_score":       best_score,
+                "spatial_pattern":  spatial.tolist(),
+                "amps_init_vector": amps_init_vec.tolist(),
+                "probe_history":    probe_hist,
+            },
+            "all_final_losses": np.asarray([float(loss_hist[-1])]),
+        }
+        if verbose:
+            print(f"{label} Smart-init Adam-FD done: best_loss="
+                  f"{float(loss_hist[best_iter]):.4f} @ iter {best_iter}",
+                  flush=True)
+    elif RECT_OPTIMIZER == "adam_fd":
         n_iters = max(N_OPT_RECT * 3, 30)
         mags = ADAM_FD_RESTART_MAGS
         if verbose:

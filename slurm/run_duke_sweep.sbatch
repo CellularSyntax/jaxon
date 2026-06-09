@@ -125,6 +125,16 @@ export FD_EPS_MA="${FD_EPS_MA:-0.030}"
 # ~4x the rect wall-time of a single-start run.
 export ADAM_FD_RESTART_MAGS="${ADAM_FD_RESTART_MAGS:--0.10,-0.30,-0.80,-1.50}"
 
+# Smart init: instead of running 4 full Adam-FD restarts at different
+# magnitudes (~50 min/sample), compute a per-contact Ve-contrast pattern
+# from the target/off-target geometry, probe magnitudes with single
+# forwards (~3 min total), and run ONE Adam-FD from that informed
+# starting point.  Roughly 3x faster than multi-restart, with a
+# spatial pattern that is already target-aligned at iter 0.  Set
+# SMART_INIT_ENABLED=false to fall back to the multi-restart path.
+export SMART_INIT_ENABLED="${SMART_INIT_ENABLED:-true}"
+export PROBE_MAGS_MA="${PROBE_MAGS_MA:--0.05,-0.15,-0.30,-0.60,-1.00,-1.50}"
+
 # Loss / activation-proxy regularisation read by jaxfibers.optim.optimizer
 # at import time (defaults preserve legacy 0 / 0 behaviour if unset).
 #
@@ -225,6 +235,8 @@ export AMP_INIT_MA=\"${AMP_INIT_MA}\"
 export AMP_CLIP_LO=\"${AMP_CLIP_LO}\" AMP_CLIP_HI=\"${AMP_CLIP_HI}\"
 export ADAM_LR_MA=\"${ADAM_LR_MA}\" FD_EPS_MA=\"${FD_EPS_MA}\"
 export ADAM_FD_RESTART_MAGS=\"${ADAM_FD_RESTART_MAGS}\"
+export SMART_INIT_ENABLED=\"${SMART_INIT_ENABLED}\"
+export PROBE_MAGS_MA=\"${PROBE_MAGS_MA}\"
 export JAXLEY_FIBERS_SOFT_TEMPERATURE=\"${JAXLEY_FIBERS_SOFT_TEMPERATURE}\"
 export JAXLEY_FIBERS_ENERGY_LAMBDA=\"${JAXLEY_FIBERS_ENERGY_LAMBDA}\"
 export PULSE_SHAPE=\"${PULSE_SHAPE}\"

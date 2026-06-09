@@ -99,6 +99,7 @@ def run_rect_optimization(
     n_steps: int = 100,
     lr: float = 8e-2,
     amp_init_mA: float = -0.4,
+    amps_init_vector: np.ndarray | None = None,
     amp_clip: tuple[float, float] = (-2.5, 2.5),
     weights: np.ndarray | None = None,
     fd_eps: float = 5e-2,
@@ -200,17 +201,28 @@ def run_rect_optimization(
     # contact polarity requires a discrete jump that small steps don't
     # take).  The bipolar init starts inside the mixed-polarity basin
     # where field steering is possible.
-    ve_tgt_sum  = jnp.where(tgt_j[None, :, None], jnp.abs(Ve_unit_j), 0.0).sum((1, 2))
-    ve_tgt_mean = ve_tgt_sum / jnp.maximum(tgt_j.sum(), 1.0)   # [K]
-    ve_range    = ve_tgt_mean.max() - ve_tgt_mean.min()
-    ve_norm     = (ve_tgt_mean - ve_tgt_mean.min()) / (ve_range + 1e-10)   # [K] in [0,1]
-    amps0 = jnp.clip(
-        (2.0 * ve_norm - 1.0) * jnp.abs(amp_init_mA) * jnp.sign(amp_init_mA),
-        amp_clip[0], amp_clip[1],
-    ).astype(jnp.float64)
+    if amps_init_vector is not None:
+        # Caller provided a full pre-computed amps0 (e.g. from a smart
+        # spatial-contrast init + magnitude probe); we use it verbatim,
+        # clipped to the configured range.  amp_init_mA is ignored in
+        # this branch.
+        amps0 = jnp.clip(
+            jnp.asarray(amps_init_vector, dtype=jnp.float64),
+            amp_clip[0], amp_clip[1],
+        )
+    else:
+        ve_tgt_sum  = jnp.where(tgt_j[None, :, None], jnp.abs(Ve_unit_j), 0.0).sum((1, 2))
+        ve_tgt_mean = ve_tgt_sum / jnp.maximum(tgt_j.sum(), 1.0)   # [K]
+        ve_range    = ve_tgt_mean.max() - ve_tgt_mean.min()
+        ve_norm     = (ve_tgt_mean - ve_tgt_mean.min()) / (ve_range + 1e-10)   # [K] in [0,1]
+        amps0 = jnp.clip(
+            (2.0 * ve_norm - 1.0) * jnp.abs(amp_init_mA) * jnp.sign(amp_init_mA),
+            amp_clip[0], amp_clip[1],
+        ).astype(jnp.float64)
     # `jnp.sign(amp_init_mA)` keeps backward-compat with cathodic-only callers
     # who set amp_init_mA = -0.4 (negative).  Closest contact ends up at the
     # given amp_init_mA (cathodic), farthest at −amp_init_mA (anodic).
+    amps0 = amps0.astype(jnp.float64)
 
     optimizer = optax.chain(optax.clip_by_global_norm(1.0), optax.adam(lr))
     opt_state = optimizer.init(amps0)

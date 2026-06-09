@@ -155,7 +155,7 @@ export JAXLEY_FIBERS_ENERGY_LAMBDA="${JAXLEY_FIBERS_ENERGY_LAMBDA:-1e-3}"
 # Duke sweep defaults to symmetric biphasic.  Options:
 #   monophasic, biphasic_sym (default), biphasic_asym
 export PULSE_SHAPE="${PULSE_SHAPE:-biphasic_sym}"
-export PW_MS="${PW_MS:-0.1}"           # cathodic pulse width
+export PW_MS="${PW_MS:-1.0}"           # cathodic pulse width
 export ASYM_RATIO="${ASYM_RATIO:-4.0}" # anodic/cathodic duration ratio (asym only)
 
 # Target-fascicle selection: cluster paradigm replaces the legacy

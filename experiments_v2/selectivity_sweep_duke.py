@@ -106,7 +106,7 @@ SUBSAMPLE_SEED  = _env_int("SUBSAMPLE_SEED", 0)
 DT              = _env_flt("DT", 0.005)
 T_STOP          = _env_flt("T_STOP", 3.0)
 DELAY_MS        = _env_flt("DELAY_MS", 1.0)
-PW_MS           = _env_flt("PW_MS",    0.1)
+PW_MS           = _env_flt("PW_MS",    1.0)
 SEED_START      = _env_int("SEED_START", 0)
 SEED_END        = _env_int("SEED_END", 25)
 N_OPT_RECT      = _env_int("N_OPT_RECT", 30)
@@ -226,6 +226,20 @@ def _build_pulse_mask(t_grid: np.ndarray, delay_ms: float, pw_ms: float,
     *except* the monophasic reference.
     """
     shape = shape.strip().lower()
+    # Verify the chosen pulse fits inside the t_grid window; otherwise
+    # the integrator silently truncates the anodic phase and the
+    # waveform is no longer charge-balanced.
+    pulse_end_ms = delay_ms + pw_ms
+    if shape == "biphasic_asym":
+        pulse_end_ms = delay_ms + pw_ms * (1.0 + float(asym_ratio))
+    t_max = float(t_grid[-1])
+    if pulse_end_ms > t_max:
+        raise ValueError(
+            f"Pulse ends at t={pulse_end_ms:.3f} ms (shape={shape!r}, "
+            f"delay={delay_ms:.3f}, PW={pw_ms:.3f}, asym_ratio={asym_ratio}) "
+            f"but t_grid only extends to {t_max:.3f} ms.  Increase T_STOP "
+            f"or shorten the pulse."
+        )
     pulse = np.zeros_like(t_grid, dtype=np.float64)
     if shape == "monophasic":
         m = (t_grid >= delay_ms) & (t_grid < delay_ms + pw_ms)

@@ -278,7 +278,9 @@ def _class_balanced_weights(target_mask: np.ndarray) -> np.ndarray:
 
 
 def _smart_spatial_pattern(Ve_unit: np.ndarray,
-                            target_mask: np.ndarray) -> np.ndarray:
+                            target_mask: np.ndarray,
+                            verbose: bool = False,
+                            label: str = "") -> np.ndarray:
     """Compute the per-contact target/off-target Ve contrast pattern.
 
     For each contact k:
@@ -305,7 +307,28 @@ def _smart_spatial_pattern(Ve_unit: np.ndarray,
     Ve_abs_max = np.max(np.abs(Ve_unit), axis=2)          # [K, n_fibers]
     mean_tgt = Ve_abs_max[:, target_mask].mean(axis=1)    # [K]
     mean_off = Ve_abs_max[:, ~target_mask].mean(axis=1)   # [K]
-    contrast = (mean_tgt - mean_off) / (mean_tgt + mean_off + 1e-10)
+    raw_contrast = (mean_tgt - mean_off) / (mean_tgt + mean_off + 1e-10)
+    # The raw contrast is mathematically in [-1, +1] but in practice it
+    # is often much smaller (typical Duke geometry gives raw spreads of
+    # ~±0.05-0.15 because each fascicle is reached by *all* contacts to
+    # some degree).  Stretching to the full [-1, +1] range gives the
+    # magnitude probe a meaningful per-contact scale: amps = mag * pattern
+    # then spans [-|mag|, +|mag|] as intended.  Without this stretch the
+    # probe at mag=-0.05 produces amps near ±0.005 mA, which is
+    # sub-threshold for every fibre at every magnitude tried -- the
+    # entire probe trace then reports score = 0 and the first (smallest)
+    # magnitude wins by default.
+    rng = float(raw_contrast.max() - raw_contrast.min())
+    if rng > 1e-10:
+        contrast = 2.0 * (raw_contrast - raw_contrast.min()) / rng - 1.0
+    else:
+        contrast = np.zeros_like(raw_contrast)
+    if verbose:
+        print(f"{label} Raw contrast: range "
+              f"[{float(raw_contrast.min()):+.4f}, "
+              f"{float(raw_contrast.max()):+.4f}]  "
+              f"span={rng:.4f}  (normalised to [-1, +1])",
+              flush=True)
     return contrast.astype(np.float64)
 
 
@@ -541,7 +564,8 @@ def _run_one_seed(seed_in: dict, verbose: bool = True) -> dict:
                   f"({n_iters} iters)", flush=True)
 
         spatial = _smart_spatial_pattern(seed_in["Ve_unit"],
-                                         seed_in["target_mask"])
+                                         seed_in["target_mask"],
+                                         verbose=verbose, label=label)
         if verbose:
             patt_str = "  ".join(f"{c:+.2f}" for c in spatial)
             print(f"{label} Spatial contrast [{spatial.min():+.3f},"

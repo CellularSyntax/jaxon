@@ -126,14 +126,17 @@ def _gather_all_rows() -> list[dict]:
 # ── Plot 1: scatter of all thresholds ────────────────────────────────────────
 
 def make_fig1_scatter(rows: list[dict]) -> Path:
+    """All thresholds are plotted as ABSOLUTE values (|mA|) so cathodic
+    and anodic responses live in the same positive quadrant -- the
+    validation question is whether the magnitudes agree, not the
+    polarity (the sign is set deterministically by the pulse-shape key
+    in the JSON and is identical between jaxon and pyfibers by
+    construction).
+    """
     fig, ax = plt.subplots(figsize=(5.5, 5.5))
-    # Plot per model so the colour legend is readable.  Drop NaN/non-finite
-    # entries before plotting -- a few SD rows in the Sundt and Rattay
-    # bundles contain NaN thresholds where the bisection didn't converge
-    # within the allotted current range.
     all_jax, all_py = [], []
     for m in MODELS:
-        pairs = [(r["pyfibers_mA"], r["jax_mA"]) for r in rows
+        pairs = [(abs(r["pyfibers_mA"]), abs(r["jax_mA"])) for r in rows
                   if r["model"] == m
                   and np.isfinite(r["pyfibers_mA"])
                   and np.isfinite(r["jax_mA"])
@@ -158,13 +161,14 @@ def make_fig1_scatter(rows: list[dict]) -> Path:
     r2 = 1.0 - ss_res / ss_tot
     mape = float(np.median(np.abs((y_all - x_all) / x_all))) * 100.0
 
-    ax.set_xlabel("pyFibers / NEURON threshold (mA)")
-    ax.set_ylabel("jaxon threshold (mA)")
+    ax.set_xlabel("pyFibers / NEURON threshold $|$mA$|$")
+    ax.set_ylabel("jaxon threshold $|$mA$|$")
+    ax.set_xscale("log"); ax.set_yscale("log")
     ax.set_title(f"Activation thresholds (n = {len(x_all)} finite pairs)\n"
                   f"$R^2$ = {r2:.5f},  median $|{{\\rm err}}|$ = {mape:.2f}%")
     ax.legend(loc="upper left", frameon=False)
     ax.set_aspect("equal", adjustable="datalim")
-    ax.grid(True, alpha=0.3)
+    ax.grid(True, alpha=0.3, which="both")
     fig.tight_layout()
     out = OUT_DIR / "fig1_scatter_thresholds.png"
     fig.savefig(out, dpi=200)
@@ -174,16 +178,34 @@ def make_fig1_scatter(rows: list[dict]) -> Path:
 
 # ── Plot 2: violin |err_pct| per model ───────────────────────────────────────
 
-def _violin(ax, groups: list[np.ndarray], labels: list[str],
-             colours: list[str] | None = None) -> None:
-    parts = ax.violinplot(groups, showmedians=True, showextrema=False,
-                            widths=0.85)
-    if colours is not None:
-        for body, col in zip(parts["bodies"], colours):
-            body.set_facecolor(col)
-            body.set_alpha(0.55)
-            body.set_edgecolor("black")
-    parts["cmedians"].set_edgecolor("black")
+def _boxplot_with_scatter(ax, groups: list[np.ndarray], labels: list[str],
+                            colours: list[str] | None = None,
+                            rng_seed: int = 0) -> None:
+    """Boxplot with median + IQR, individual points jittered over the top.
+    Reads better than a violin on log-scaled error data because the box
+    bounds are exact percentiles and the scatter shows the distribution
+    shape directly."""
+    if colours is None:
+        colours = ["lightsteelblue"] * len(groups)
+    bp = ax.boxplot(
+        groups, widths=0.55, showfliers=False, patch_artist=True,
+        boxprops=dict(linewidth=1.0),
+        medianprops=dict(color="black", linewidth=1.5),
+        whiskerprops=dict(linewidth=1.0),
+        capprops=dict(linewidth=1.0),
+    )
+    for patch, col in zip(bp["boxes"], colours):
+        patch.set_facecolor(col); patch.set_alpha(0.45)
+        patch.set_edgecolor("black")
+    # Jittered scatter on top.
+    rng = np.random.default_rng(rng_seed)
+    for i, (arr, col) in enumerate(zip(groups, colours)):
+        if arr.size == 0:
+            continue
+        jitter = rng.uniform(-0.18, 0.18, size=arr.size)
+        ax.scatter(np.full(arr.size, i + 1) + jitter, arr,
+                    s=9, alpha=0.45, color=col, edgecolors="none",
+                    zorder=3)
     ax.set_xticks(range(1, len(labels) + 1))
     ax.set_xticklabels(labels, rotation=20, ha="right")
 
@@ -198,7 +220,7 @@ def make_fig2_by_model(rows: list[dict]) -> Path:
         groups.append(arr); labels.append(f"{m}\n(n={arr.size})")
         cols.append(MODEL_COLOURS[m])
     fig, ax = plt.subplots(figsize=(6.5, 4.0))
-    _violin(ax, groups, labels, cols)
+    _boxplot_with_scatter(ax, groups, labels, cols)
     ax.set_ylabel(r"$|\mathrm{err}|$  (%)")
     ax.set_ylim(bottom=1e-4)
     ax.set_title("Threshold |err| by model")
@@ -224,7 +246,7 @@ def make_fig3_by_pulse(rows: list[dict]) -> Path:
         groups.append(arr)
         labels.append(f"{PULSE_PRETTY.get(p, p)}\n(n={arr.size})")
     fig, ax = plt.subplots(figsize=(8.0, 4.0))
-    _violin(ax, groups, labels)
+    _boxplot_with_scatter(ax, groups, labels)
     ax.set_ylabel(r"$|\mathrm{err}|$  (%)")
     ax.set_ylim(bottom=1e-4)
     ax.set_title("Threshold |err| by pulse shape (all models pooled)")
@@ -251,7 +273,7 @@ def make_fig4a_by_diameter(rows: list[dict]) -> Path:
         groups.append(arr)
         labels.append(f"{lab}\n(n={arr.size})")
     fig, ax = plt.subplots(figsize=(7.5, 4.2))
-    _violin(ax, groups, labels)
+    _boxplot_with_scatter(ax, groups, labels)
     ax.set_ylabel(r"$|\mathrm{err}|$  (%)")
     ax.set_ylim(bottom=1e-4)
     ax.set_title("Threshold |err| by fibre diameter (all models pooled)")

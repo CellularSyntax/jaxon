@@ -380,16 +380,28 @@ def _magnitude_probe(spatial_pattern: np.ndarray,
         m_max = batch_integrate_m_max(fs_batch, s0_batch, Ve_seq, dt)
         return activation_proxy_batch(m_max, node_idx_j)
 
+    # Dual-polarity probe: the contrast pattern's sign can be wrong for
+    # some geometries (the |Ve| metric in _smart_spatial_pattern doesn't
+    # distinguish "contact reaches target with positive Ve" from "contact
+    # reaches target with negative Ve" -- but only the former activates
+    # the target when cathodic).  Testing both +|mag| and -|mag| × pattern
+    # always finds the right polarity for the anatomy.  Strict signed
+    # comparison ensures we pick the most positive-selective candidate,
+    # never an anti-selective one even if its |score| is large.
+    unique_abs = sorted({abs(float(m)) for m in probe_mags_mA})
+    signed_candidates = []
+    for m_abs in unique_abs:
+        signed_candidates.extend([-m_abs, +m_abs])
     if verbose:
-        print(f"{label} Magnitude probe: {len(probe_mags_mA)} candidates "
-              f"× single forward", flush=True)
+        print(f"{label} Magnitude probe: {len(signed_candidates)} candidates "
+              f"× single forward (both polarities)", flush=True)
 
     best_score = -float("inf")
-    best_mag = float(probe_mags_mA[0])
+    best_mag = float(signed_candidates[0])
     best_amps: np.ndarray | None = None
     best_acts: np.ndarray | None = None
     history: list[dict] = []
-    for mag in probe_mags_mA:
+    for mag in signed_candidates:
         amps_vec = float(mag) * spatial_pattern    # [K]
         amps_j = jnp.asarray(amps_vec, dtype=jnp.float64)
         t0 = time.time()

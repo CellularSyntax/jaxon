@@ -126,6 +126,17 @@ def run_rect_optimization(
     early_stop_si:        float = 1.0,   # stop as soon as SI >= this value
     early_stop_patience:  int   = 20,    # stop if best_loss hasn't moved for this many iters
     early_stop_loss_tol:  float = 1e-5,  # "moved" means improved by > this
+    # SI-stagnation early stop.  Tracks the hard-firing-count selectivity
+    # index (NOT the soft-sigmoid loss) -- on energy-regularised samples
+    # the soft loss can creep down indefinitely as amp magnitudes shrink
+    # without changing which fibres fire, defeating the loss-patience
+    # stop.  Stops when best_si hasn't improved by > early_stop_si_tol
+    # for this many consecutive iters AND we're already at a respectable
+    # SI (> early_stop_si_floor).  Set early_stop_si_patience=0 to
+    # disable.
+    early_stop_si_patience: int   = 10,
+    early_stop_si_tol:      float = 0.01,
+    early_stop_si_floor:    float = 0.85,
 ) -> dict:
     """Optimize per-contact rectangular pulse amplitudes via FD gradient.
 
@@ -272,7 +283,9 @@ def run_rect_optimization(
                   flush=True)
         print("  [iter 0] XLA compile — first call only ...", flush=True)
 
-    stale_iters = 0
+    stale_iters    = 0
+    best_si        = -float("inf")
+    stale_si_iters = 0
     stopped_at  = n_steps
     stop_reason = "max iters"
     for i in range(n_steps):
@@ -318,6 +331,15 @@ def run_rect_optimization(
             stale_iters = 0
         else:
             stale_iters += 1
+        # SI-stagnation tracking (hard firing-count metric, separate from
+        # the soft-sigmoid loss).  Catches the case where the loss creeps
+        # down via energy-regularization-driven amplitude shrinkage while
+        # the actual selectivity is fully saturated.
+        if float(si_now) > best_si + early_stop_si_tol:
+            best_si = float(si_now)
+            stale_si_iters = 0
+        else:
+            stale_si_iters += 1
 
         if verbose and (i % max(1, n_steps // 20) == 0 or i == n_steps - 1):
             dt_ms   = (time.time() - t0) * 1000
@@ -353,6 +375,17 @@ def run_rect_optimization(
             if verbose:
                 print(f"  [early stop @ iter {i}] {stop_reason} "
                       f"(best_loss={best_loss:.4f})", flush=True)
+            break
+        if (early_stop_si_patience > 0
+                and best_si >= early_stop_si_floor
+                and stale_si_iters >= early_stop_si_patience):
+            stopped_at = i + 1
+            stop_reason = (f"SI plateau: no SI improvement > "
+                            f"{early_stop_si_tol:.3f} for "
+                            f"{stale_si_iters} iters at SI={best_si:.3f}")
+            if verbose:
+                print(f"  [early stop @ iter {i}] {stop_reason}",
+                      flush=True)
             break
 
     return {

@@ -111,6 +111,15 @@ def run_rect_optimization(
     # Use l1_lambda > 0 for L1-discovery; default 0 disables it
     # (backward-compatible).
     l1_lambda: float = 0.0,
+    # Hard zero-freeze mask.  When provided as a length-K boolean array,
+    # any True entry forces that contact's amplitude to remain at exactly
+    # zero throughout optimization (and its Adam moment estimates are
+    # never updated).  Used by the probe-based smart-init path to lock in
+    # the sparse pattern selected by the magnitude probe -- without this,
+    # Adam-FD drifts the zero contacts by ~lr per step in a coherent
+    # direction, breaking the charge balance of the focal pattern.  L1
+    # prox alone is too weak to pin (would need lambda ~3).
+    freeze_zero_mask: jnp.ndarray | np.ndarray | None = None,
     # Early-stopping knobs.  Adam-FD often reaches SI=1.0 within the first
     # ~10 iters on the easy single-diameter problem, then runs another 90
     # iters with no improvement — waste of cluster time.
@@ -234,9 +243,18 @@ def run_rect_optimization(
     optimizer = optax.chain(optax.clip_by_global_norm(1.0), optax.adam(lr))
     opt_state = optimizer.init(amps0)
     amps      = amps0
+    # Apply the freeze mask to the init too -- if the caller passed an
+    # init vector with non-zero values at frozen indices (e.g. numerical
+    # noise from a packed pattern), we still want them at exactly zero
+    # before the first FD evaluation.
+    if freeze_zero_mask is not None:
+        freeze_mask_j = jnp.asarray(freeze_zero_mask, dtype=jnp.bool_)
+        amps = jnp.where(freeze_mask_j, 0.0, amps)
+    else:
+        freeze_mask_j = None
     history   = {"loss": [], "bce": [], "si": [], "amps": [], "acts": []}
     best_loss = float("inf")
-    best_amps = np.array(amps0)
+    best_amps = np.array(amps)
 
     if verbose:
         amp_init_str = "  ".join(f"{a:+.2f}" for a in np.array(amps0))
@@ -248,6 +266,10 @@ def run_rect_optimization(
             flush=True,
         )
         print(f"  init amps=[{amp_init_str}] mA", flush=True)
+        if freeze_mask_j is not None:
+            n_frozen = int(np.sum(np.asarray(freeze_zero_mask)))
+            print(f"  freeze_zero_mask: {n_frozen}/{K} contacts pinned at 0 mA",
+                  flush=True)
         print("  [iter 0] XLA compile — first call only ...", flush=True)
 
     stale_iters = 0
@@ -256,6 +278,13 @@ def run_rect_optimization(
     for i in range(n_steps):
         t0 = time.time()
         (loss_val, acts_val), grads = _fd_step(amps)
+        # Zero out gradients at frozen indices BEFORE the optimizer step
+        # so Adam's moment estimates (m, v) never accumulate momentum on
+        # the frozen contacts -- otherwise they would re-emerge as soon
+        # as the freeze mask was relaxed and produce hysteresis-like
+        # artefacts even within a single run.
+        if freeze_mask_j is not None:
+            grads = jnp.where(freeze_mask_j, 0.0, grads)
         updates, opt_state = optimizer.update(grads, opt_state)
         amps = optax.apply_updates(amps, updates)
         # L1 proximal soft-thresholding step.  Drives any amp with
@@ -269,6 +298,11 @@ def run_rect_optimization(
             amps = jnp.sign(amps) * jnp.maximum(
                 jnp.abs(amps) - threshold, 0.0
             )
+        # Hard zero-freeze (belt and suspenders -- if anything leaks
+        # through the gradient mask via clip_by_global_norm's rescaling,
+        # this catches it).
+        if freeze_mask_j is not None:
+            amps = jnp.where(freeze_mask_j, 0.0, amps)
         amps = jnp.clip(amps, amp_clip[0], amp_clip[1])
 
         acts_np = np.array(acts_val)

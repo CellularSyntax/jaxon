@@ -222,15 +222,10 @@ L1_INIT_SCALE  = _env_flt("L1_INIT_SCALE",  0.10)   # random uniform [-S, +S] mA
 L1_INIT_SEED   = _env_int("L1_INIT_SEED",   0)      # rng seed for random init
 L1_N_ITERS     = _env_int("L1_N_ITERS",     150)    # more than probe path
 
-# PROBE_L1_LAMBDA: L1 prox strength APPLIED TO THE PROBE-BASED rect path.
-# Adam-FD from a sparse probe init (e.g. tripolar with 9 zeros) tends to
-# drift the zero contacts in a coherent direction over a few iters, which
-# breaks the charge balance of the focal pattern and floods off-target
-# fibres.  Adding the L1 soft-thresholding prox step after each Adam
-# update keeps near-zero contacts at exactly zero, preserving sparsity.
-# Set to 0 to disable (legacy behaviour).  0.10 is a sensible default
-# matching the L1-discovery path.
-PROBE_L1_LAMBDA = _env_flt("PROBE_L1_LAMBDA", 0.10)
+# NOTE: PROBE_L1_LAMBDA was replaced by a hard freeze_zero_mask passed
+# to run_rect_optimization (zeros stay at exactly zero throughout the
+# probe-path Adam-FD).  L1 prox at sensible lambdas is too weak to pin
+# given the per-step Adam update magnitude (~lr=0.005 mA per iter).
 
 
 # ── target-fascicle selection paradigm ────────────────────────────────
@@ -889,6 +884,18 @@ def _run_one_seed(seed_in: dict, verbose: bool = True) -> dict:
             print(f"{label} Rect Adam-FD ({n_iters} iters) from smart "
                   f"init  [{init_str}] mA ...", flush=True)
 
+        # Hard freeze on contacts the probe winner left at exactly zero.
+        # Without this the Adam-FD step drifts the zeros by ~lr=0.005 mA
+        # per iter in a coherent direction (since the FD gradient sees
+        # tiny apparent improvements from adding global drive) -- after
+        # ~5 iters the accumulated unbalanced current floods every nt
+        # fibre and the probe winner's selectivity is destroyed.  L1
+        # prox at default lambda is too weak to pin (would need
+        # lambda~3 to overcome the Adam step).  The hard freeze is
+        # cleaner and matches the user's intent: the probe winner
+        # SELECTED a sparse pattern; the optimiser should polish the
+        # non-zero amps without re-activating the zeros.
+        probe_freeze_mask = np.abs(amps_init_vec) < 1e-9
         adam_res = run_rect_optimization(
             fiber_statics_batch=seed_in["fs_batch"],
             state0_batch=seed_in["s0_batch"],
@@ -901,10 +908,7 @@ def _run_one_seed(seed_in: dict, verbose: bool = True) -> dict:
             amps_init_vector=amps_init_vec,
             amp_clip=AMP_CLIP,
             lr=ADAM_LR_MA, fd_eps=FD_EPS_MA,
-            # L1 prox preserves the zeros of the sparse probe init so
-            # Adam-FD doesn't drift zero contacts in a coherent
-            # direction (which breaks charge balance and floods nt).
-            l1_lambda=PROBE_L1_LAMBDA,
+            freeze_zero_mask=probe_freeze_mask,
             verbose=verbose,
         )
         loss_hist = np.asarray(adam_res["history"]["loss"])
@@ -927,7 +931,7 @@ def _run_one_seed(seed_in: dict, verbose: bool = True) -> dict:
                 "best_pattern_name": best_pattern_name,
                 "best_mag_mA":       best_mag,
                 "best_score":        best_score,
-                "probe_l1_lambda":   float(PROBE_L1_LAMBDA),
+                "n_frozen_contacts": int(np.sum(probe_freeze_mask)),
                 "spatial_patterns":  {
                     name: pat.tolist()
                     for name, pat in spatial_patterns.items()

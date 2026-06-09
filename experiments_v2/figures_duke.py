@@ -462,12 +462,11 @@ ELEC_ANODE   = "#D55E00"   # orange
 
 
 def _load_geometry(sample_dir_name: str):
-    """Return (outline_xy, fascicles_list_of_polygons, contact_xy_um, target_fasc_ids).
+    """Return (outline_xy, fascicles, contact_xyz_um).
 
     Outline is an (N, 2) array in um.  Fascicles is a list of dicts
-    {polygon, id}.  contact_xy_um is a (K, 2) array.  target_fasc_ids
-    is read from the sweep JSON's ``cluster.target_ids`` field via the
-    caller.
+    {polygon, id}.  contact_xyz_um is a (K, 3) array of contact
+    positions in um (x, y, z).
     """
     d = DUKE_VES / sample_dir_name
     nx = json.loads((d / "nerve_xsec.json").read_text())
@@ -476,17 +475,21 @@ def _load_geometry(sample_dir_name: str):
                     polygon=np.asarray(f["polygon_xy_um"], dtype=float))
                 for f in nx["fascicles"]]
     ec = json.loads((d / "electrode_config.json").read_text())
-    # Cylindrical (R [m], phi [rad], z [m]) → Cartesian xy [um].
-    contact_xy = np.array([
+    # Cylindrical (R [m], phi [rad], z [m]) → Cartesian xyz [um].
+    contact_xyz = np.array([
         [p["R"] * np.cos(p["phi"]) * 1e6,
-         p["R"] * np.sin(p["phi"]) * 1e6]
+         p["R"] * np.sin(p["phi"]) * 1e6,
+         p["z"] * 1e6]
         for p in ec.get("patches", [])
     ], dtype=float)
-    return outline, fascs, contact_xy
+    return outline, fascs, contact_xyz
 
 
-def _draw_xsection(ax, sample_dir_name: str, raw: dict) -> None:
-    outline, fascs, contact_xy = _load_geometry(sample_dir_name)
+def _draw_xsection(ax, sample_dir_name: str, raw: dict,
+                     draw_electrodes: bool = True,
+                     draw_label: bool = True) -> None:
+    outline, fascs, contact_xyz = _load_geometry(sample_dir_name)
+    contact_xy = contact_xyz[:, :2]
     fiber_x = np.asarray(raw["nerve"]["fiber_x_um"], dtype=float)
     fiber_y = np.asarray(raw["nerve"]["fiber_y_um"], dtype=float)
     tgt = np.asarray(raw["nerve"]["target_mask"], dtype=bool)
@@ -519,7 +522,7 @@ def _draw_xsection(ax, sample_dir_name: str, raw: dict) -> None:
                           edgecolors="none", zorder=4, alpha=0.95)
 
     # Electrodes -- signed amp gives colour; |amp| gives size.
-    if contact_xy.size and amps.size:
+    if draw_electrodes and contact_xy.size and amps.size:
         K = min(len(contact_xy), len(amps))
         radii = 0.5 * (np.abs(amps[:K]) ** 0.5) * 90.0 + 22.0
         for k in range(K):
@@ -541,19 +544,243 @@ def _draw_xsection(ax, sample_dir_name: str, raw: dict) -> None:
     for spine in ax.spines.values():
         spine.set_visible(False)
 
-    # Top-left: sample name; top-right: SI badge.
+    # Top-left: sample name; top-right: SI badge.  Skipped when the
+    # composite per-sample figure draws its own headings.
     name = _short(raw.get("sample", sample_dir_name))
     si = float(raw["rect"]["achievable_si"])
-    ax.text(0.03, 0.97, name, transform=ax.transAxes,
-              ha="left", va="top", fontsize=11, weight="bold",
+    if draw_label:
+        ax.text(0.03, 0.97, name, transform=ax.transAxes,
+                  ha="left", va="top", fontsize=11, weight="bold",
+                  color=PALETTE["grey"])
+        ax.text(0.97, 0.97, f"SI = {si:.2f}", transform=ax.transAxes,
+                  ha="right", va="top", fontsize=11,
+                  color=("black" if si >= 0.95 else PALETTE["grey"]),
+                  weight="bold" if si >= 0.95 else "normal",
+                  bbox=dict(boxstyle="round,pad=0.25",
+                              facecolor=("#dff0e0" if si >= 0.95 else "white"),
+                              edgecolor=PALETTE["grey"], linewidth=0.8))
+
+
+def _contact_to_grid(contact_xyz: np.ndarray) -> tuple[np.ndarray, list[str], list[float]]:
+    """Map each of the K contacts to a (column_idx, row_idx) cell in a
+    4-column-by-3-row grid where columns are angular positions
+    (E, N, W, S in CCW order) and rows are z-levels (z_max on top,
+    z_min on bottom).
+
+    Returns
+    -------
+    cell_of_contact : (K, 2) int array with [column_idx, row_idx]
+    col_labels      : list of 4 strings, left-to-right ('E', 'N', 'W', 'S')
+    row_z_values    : list of 3 floats, top-to-bottom (z_max, z_mid, z_min)
+    """
+    K = contact_xyz.shape[0]
+    # Bin each contact's phi into one of {0, 90, 180, 270} deg.
+    phi_deg = np.degrees(np.arctan2(contact_xyz[:, 1], contact_xyz[:, 0])) % 360.0
+    angle_bin = (np.round(phi_deg / 90.0).astype(int)) % 4
+    # angle_bin: 0 = E (phi 0°), 1 = N (90°), 2 = W (180°), 3 = S (270°).
+    col_labels = ["E", "N", "W", "S"]
+
+    # Determine the three unique z levels.
+    z = contact_xyz[:, 2]
+    uniq = np.sort(np.unique(np.round(z, 3)))
+    if uniq.size != 3:
+        # Fall back: just rank by z.
+        order = np.argsort(z)
+        rank = np.empty(K, dtype=int); rank[order] = np.arange(K) // (K // 3)
+        rank = np.clip(rank, 0, 2)
+    else:
+        # Row 0 = highest z (top), row 2 = lowest z (bottom).
+        z_top, z_mid, z_bot = uniq[2], uniq[1], uniq[0]
+        row_of = lambda zi: (
+            0 if abs(zi - z_top) < 1e-3 else
+            2 if abs(zi - z_bot) < 1e-3 else 1
+        )
+        rank = np.array([row_of(zi) for zi in z], dtype=int)
+
+    cell = np.column_stack([angle_bin, rank])
+    row_z_values = [float(uniq[2]) if uniq.size == 3 else float(z.max()),
+                     float(uniq[1]) if uniq.size == 3 else float(np.median(z)),
+                     float(uniq[0]) if uniq.size == 3 else float(z.min())]
+    return cell, col_labels, row_z_values
+
+
+def _draw_cuff_grid(ax, contact_xyz: np.ndarray, amps_mA: np.ndarray) -> None:
+    """Draw the unrolled 4×3 cuff schematic with each cell coloured by
+    the signed amplitude in mA (blue cathode, orange anode, white
+    inactive).  Cell size encodes |amp|; centre prints the signed amp."""
+    cell, col_labels, row_z_values = _contact_to_grid(contact_xyz)
+    K = contact_xyz.shape[0]
+    amps = amps_mA[:K]
+    max_abs = max(0.5, float(np.max(np.abs(amps))))
+
+    # Grid geometry
+    ncols, nrows = 4, 3
+    spacing_x, spacing_y = 1.0, 1.0
+    for c_idx in range(ncols):
+        for r_idx in range(nrows):
+            ax.plot(c_idx * spacing_x, -(r_idx * spacing_y),
+                      "o", markersize=8, markerfacecolor="white",
+                      markeredgecolor="#cfcfcf", markeredgewidth=1.0,
+                      zorder=1)
+    # Plot each contact's circle.
+    for k in range(K):
+        c_idx, r_idx = int(cell[k, 0]), int(cell[k, 1])
+        x_pos = c_idx * spacing_x
+        y_pos = -(r_idx * spacing_y)
+        amp = float(amps[k])
+        rel = abs(amp) / max_abs if max_abs > 0 else 0.0
+        size = 22.0 + 60.0 * rel
+        if amp < -1e-9:
+            facecolor = ELEC_CATHODE
+        elif amp > 1e-9:
+            facecolor = ELEC_ANODE
+        else:
+            facecolor = "white"
+        ax.scatter(x_pos, y_pos, s=size**2 * 0.4,
+                      facecolor=facecolor, edgecolor=PALETTE["grey"],
+                      linewidth=1.2, alpha=0.9, zorder=3)
+        if abs(amp) > 1e-9:
+            ax.text(x_pos, y_pos,
+                      f"{amp:+.2f}", ha="center", va="center",
+                      fontsize=9,
+                      color=("white" if abs(amp) / max_abs > 0.45
+                              else "black"),
+                      weight="bold", zorder=4)
+
+    # Column labels (angular position) at the top, just above the
+    # first row of circles.
+    for c_idx, label in enumerate(col_labels):
+        ax.text(c_idx * spacing_x, 0.55, label,
+                  ha="center", va="center", fontsize=13,
+                  color=PALETTE["grey"], weight="bold")
+    # Row labels (z direction) on the left.
+    row_pretty = ["+z (top)", "z = 0 (middle)", "-z (bottom)"]
+    for r_idx, label in enumerate(row_pretty):
+        ax.text(-0.75, -(r_idx * spacing_y), label,
+                  ha="right", va="center", fontsize=11,
+                  color=PALETTE["grey"])
+
+    # Tight axis -- leave a bit more headroom at the top so the
+    # column labels and the panel title don't overlap.
+    ax.set_xlim(-1.7, ncols * spacing_x - 0.4)
+    ax.set_ylim(-(nrows - 1) * spacing_y - 0.6, 1.3)
+    ax.set_aspect("equal")
+    ax.set_xticks([]); ax.set_yticks([])
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+
+
+def _draw_pulse_trace(ax, pulse_shape: str, pw_ms: float,
+                         asym_ratio: float) -> None:
+    """Render the unit-amplitude biphasic_asym waveform that the
+    optimiser used.  The y-axis is fractional amplitude (×amp_k for
+    each electrode), the x-axis is time in ms.
+
+    Phase 1 (cathodic): unit amplitude, duration pw_ms.
+    Phase 2 (anodic recharge): -1/asym_ratio amplitude, duration
+    pw_ms * asym_ratio (so the integrated charge is balanced).
+    """
+    if pulse_shape != "biphasic_asym":
+        ax.text(0.5, 0.5, f"pulse: {pulse_shape}", transform=ax.transAxes,
+                  ha="center", va="center", fontsize=12,
+                  color=PALETTE["grey"])
+        return
+    # Pulse-mask convention: phase 1 = +1 (the strong "active" phase --
+    # cathodic at the cathode, anodic at the anode, since the actual
+    # delivered current is amp_k * pulse[t] and amp_k carries the
+    # signed polarity).  Phase 2 = -1/asym_ratio (charge-recharge of
+    # the opposite polarity).
+    p1_amp = 1.0
+    p2_amp = -1.0 / max(asym_ratio, 1e-6)
+    p1_dur = pw_ms
+    p2_dur = pw_ms * asym_ratio
+    t = [0.0, 0.0, p1_dur, p1_dur, p1_dur + p2_dur,
+            p1_dur + p2_dur, p1_dur + p2_dur + 0.3 * (p1_dur + p2_dur)]
+    a = [0.0, p1_amp, p1_amp, p2_amp, p2_amp, 0.0, 0.0]
+    # Neutral grey fill -- colour-coding by sign here would conflict
+    # with the cathode/anode colours used elsewhere in the figure
+    # (the SIGN of the pulse mask is not the polarity of the
+    # delivered current; that depends on each electrode's amp_k).
+    ax.plot(t, a, color="black", lw=1.8, zorder=3)
+    ax.fill_between(t, a, 0, alpha=0.20, color=PALETTE["grey"],
+                       linewidth=0, zorder=2)
+    ax.axhline(0, color=PALETTE["grey"], lw=0.8, zorder=1)
+    ax.set_xlabel("time (ms)", fontsize=11)
+    ax.set_ylabel("amplitude\n(× amp$_k$)", fontsize=10)
+    ax.set_xlim(0, t[-1])
+    # Wider y-range so phase annotations don't collide with x-axis
+    # tick labels.
+    ax.set_ylim(p2_amp * 2.0, p1_amp * 1.5)
+    ax.tick_params(labelsize=10)
+    # Phase annotations -- describe by role, not by colour.  Strong
+    # phase label sits above the positive box; recharge label sits
+    # INSIDE the (shallow) negative box so it doesn't dip below the
+    # x-axis.
+    ax.text(p1_dur * 0.5, p1_amp * 1.15,
+              f"strong phase  ({pw_ms*1000:.0f} µs)",
+              ha="center", va="bottom", fontsize=11,
               color=PALETTE["grey"])
-    ax.text(0.97, 0.97, f"SI = {si:.2f}", transform=ax.transAxes,
-              ha="right", va="top", fontsize=11,
-              color=("black" if si >= 0.95 else PALETTE["grey"]),
-              weight="bold" if si >= 0.95 else "normal",
-              bbox=dict(boxstyle="round,pad=0.25",
-                          facecolor=("#dff0e0" if si >= 0.95 else "white"),
-                          edgecolor=PALETTE["grey"], linewidth=0.8))
+    ax.text(p1_dur + p2_dur * 0.5, p2_amp - 0.05,
+              f"recharge ({p2_dur:.1f} ms, {1.0/asym_ratio:.2f}× amplitude)",
+              ha="center", va="top", fontsize=11,
+              color=PALETTE["grey"])
+
+
+def make_per_sample_xsection(rows: list[dict]) -> list[Path]:
+    """One PNG per sample in figures/duke/per_sample/<sample>.png:
+    pulse waveform across the top, anatomical cross-section bottom-
+    left (no electrode dots on the perimeter), schematic 4x3 unrolled
+    cuff grid bottom-right."""
+    out_dir = OUT_DIR / "per_sample"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    written = []
+    for r in rows:
+        d = SWEEP / r["sample"]
+        j = d / "data_seed_0000.json"
+        if not j.exists():
+            continue
+        raw = json.loads(j.read_text())
+        outline, fascs, contact_xyz = _load_geometry(r["sample"])
+        amps = np.asarray(raw["rect"]["amps_mA"], dtype=float)
+
+        fig = plt.figure(figsize=(11, 6.6))
+        gs = fig.add_gridspec(2, 2, width_ratios=[1.5, 1.0],
+                                 height_ratios=[0.35, 1.0],
+                                 hspace=0.35, wspace=0.25)
+        ax_pulse = fig.add_subplot(gs[0, :])
+        ax_xs    = fig.add_subplot(gs[1, 0])
+        ax_cuff  = fig.add_subplot(gs[1, 1])
+
+        _draw_pulse_trace(ax_pulse, raw["pulse_shape"],
+                              float(raw["pulse_pw_ms"]),
+                              float(raw["pulse_asym_ratio"]))
+        _draw_xsection(ax_xs, r["sample"], raw, draw_electrodes=False,
+                          draw_label=False)
+        _draw_cuff_grid(ax_cuff, contact_xyz, amps)
+
+        # Sample name + SI badge as a figure-level suptitle so they
+        # don't fight with the cross-section content.
+        si = float(raw["rect"]["achievable_si"])
+        ax_xs.set_title(r["sample"], fontsize=14, weight="bold",
+                            color=PALETTE["grey"], loc="left", pad=8)
+        ax_xs.text(0.97, 1.02, f"SI = {si:.2f}",
+                      transform=ax_xs.transAxes, ha="right", va="bottom",
+                      fontsize=12,
+                      color=("black" if si >= 0.95 else PALETTE["grey"]),
+                      weight="bold" if si >= 0.95 else "normal",
+                      bbox=dict(boxstyle="round,pad=0.25",
+                                  facecolor=("#dff0e0" if si >= 0.95
+                                              else "white"),
+                                  edgecolor=PALETTE["grey"],
+                                  linewidth=0.8))
+        ax_cuff.set_title("Cuff electrode pattern (mA)", fontsize=13,
+                              weight="bold", color=PALETTE["grey"],
+                              loc="center", pad=8)
+
+        out = out_dir / f"{r['sample']}.png"
+        fig.savefig(out); plt.close(fig)
+        written.append(out)
+    return written
 
 
 def _xsection_gallery(samples: list[tuple[str, dict]],
@@ -672,6 +899,7 @@ def main() -> None:
         make_summary_fig(rows),
     ]
     paths.extend(make_xsection_galleries(rows))
+    paths.extend(make_per_sample_xsection(rows))
     for p in paths:
         print(f"  -> {p}")
 

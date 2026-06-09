@@ -208,7 +208,7 @@ def make_fig1_scatter(rows: list[dict]) -> Path:
                         edgecolor=PALETTE["grey"], linewidth=0.8))
 
     ax.set_xlabel("PyFibers / NEURON threshold (|mA|)")
-    ax.set_ylabel("Jaxon threshold (|mA|)")
+    ax.set_ylabel("JAXON threshold (|mA|)")
     ax.set_xlim(0, hi + pad); ax.set_ylim(0, hi + pad)
     ax.set_aspect("equal")
     ax.legend(loc="lower right", frameon=False)
@@ -327,7 +327,7 @@ def make_fig4b_scaling() -> Path:
         ax_t.plot(N, py,       color=col, ls="--", marker="x",
                     label=f"PyFibers {model}", lw=2)
         ax_t.plot(N, jax_run,  color=col, ls="-",  marker="o",
-                    label=f"Jaxon {model}",     lw=2)
+                    label=f"JAXON {model}",     lw=2)
         ax_s.plot(N, py / jax_run, color=col, marker="o", label=model, lw=2)
 
     for ax in (ax_t, ax_s):
@@ -337,7 +337,7 @@ def make_fig4b_scaling() -> Path:
     ax_t.set_ylabel("wall-clock (s)")
     ax_t.legend(fontsize=10, ncol=2, frameon=False)
     ax_s.axhline(1.0, color=PALETTE["grey"], ls=":", lw=1)
-    ax_s.set_ylabel("speedup  (PyFibers / Jaxon)")
+    ax_s.set_ylabel("speedup  (PyFibers / JAXON)")
     ax_s.legend(fontsize=11, frameon=False)
 
     fig.tight_layout()
@@ -374,7 +374,7 @@ def make_fig5_cv() -> Path:
             ax.plot(diams, py_v, ls="--", marker="x", color=col,
                       label=f"PyFibers {m}", lw=2)
             ax.plot(diams, jax_v, ls="-",  marker="o", color=col,
-                      label=f"Jaxon {m}",     lw=2)
+                      label=f"JAXON {m}",     lw=2)
             any_plotted = True
         ax.set_xlabel(r"fibre diameter ($\mu$m)")
         ax.set_ylabel("conduction velocity (m/s)")
@@ -444,7 +444,7 @@ def make_fig6_strength_duration() -> Path:
     from matplotlib.lines import Line2D
     engine_handles = [
         Line2D([0], [0], color="black", marker="o", linestyle="-",
-                 lw=1.8, label="Jaxon"),
+                 lw=1.8, label="JAXON"),
         Line2D([0], [0], color="black", marker="x", linestyle="--",
                  lw=1.8, label="PyFibers"),
     ]

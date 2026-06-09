@@ -244,6 +244,18 @@ CLUSTER_WINDOW_DEG      = _env_flt("CLUSTER_WINDOW_DEG", 90.0)
 CLUSTER_N_MIN_TARGET    = _env_int("CLUSTER_N_MIN_TARGET", 50)
 CLUSTER_MIN_FASCICLES   = _env_int("CLUSTER_MIN_FASCICLES", 3)
 
+# FEM_Z_STD_MIN: minimum per-channel mean of per-fiber std along z
+# (mV/mA) required to consider a sample's FEM data adequate.  Tripolar
+# patterns rely on Ve differing between the column's z-middle contact
+# and its z-top/z-bottom guards; when those three Ve fields are nearly
+# identical (poor mesh resolution between contact heights), tripolar
+# cancels to ~zero and fires nothing.  Working sample sub-54_sam-2 has
+# z_std ~ 250, broken sub-53_sam-2 has ~ 62.  150 is a safe threshold;
+# the dataset audit at experiments_v2/duke_fem_quality.py shows a clean
+# gap between 117 (highest fail) and 150 (lowest pass).  Set to 0 to
+# disable the check (legacy behaviour).
+FEM_Z_STD_MIN = _env_flt("FEM_Z_STD_MIN", 150.0)
+
 
 def _build_pulse_mask(t_grid: np.ndarray, delay_ms: float, pw_ms: float,
                       shape: str, asym_ratio: float) -> np.ndarray:
@@ -1258,6 +1270,27 @@ def main():
                   f"CLUSTER_MIN_FASCICLES={CLUSTER_MIN_FASCICLES}",
                   flush=True)
             return
+
+    # FEM mesh-quality pre-flight: skip samples whose Ve_unit lacks
+    # sufficient z-variation for tripolar patterns to function.  See
+    # FEM_Z_STD_MIN docstring above and the standalone audit at
+    # experiments_v2/duke_fem_quality.py for the methodology.  This
+    # catches the early-batch human FEM bundles (sub-46/47/50/53/...)
+    # where the mesh was too coarse between contact z-levels.
+    if FEM_Z_STD_MIN > 0.0:
+        Ve_z_std_per_chan = duke["Ve_unit"].std(axis=2).mean(axis=1)  # [K]
+        z_std_mean = float(Ve_z_std_per_chan.mean())
+        if z_std_mean < FEM_Z_STD_MIN:
+            print(f"[duke sweep] SKIP {SAMPLE_NAME}: FEM z-variation "
+                  f"insufficient (mean per-channel z-std = {z_std_mean:.1f} "
+                  f"< FEM_Z_STD_MIN = {FEM_Z_STD_MIN:.1f} mV/mA).  Tripolar "
+                  f"patterns will cancel to ~0 on this anatomy -- regenerate "
+                  f"FEM with finer z-resolution between contact heights.",
+                  flush=True)
+            return
+        print(f"[duke sweep] FEM mesh quality: per-channel z-std mean = "
+              f"{z_std_mean:.1f} mV/mA (threshold {FEM_Z_STD_MIN:.1f}) -- OK",
+              flush=True)
 
     seeds = list(range(SEED_START, SEED_END))
     for s in seeds:

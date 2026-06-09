@@ -152,6 +152,11 @@ export L1_N_ITERS="${L1_N_ITERS:-150}"
 # skipped at sample load time.  See experiments_v2/duke_fem_quality.py
 # for the dataset-wide audit.
 export FEM_Z_STD_MIN="${FEM_Z_STD_MIN:-150.0}"
+# EARLY_STOP_SI: stop probe-path Adam-FD when SI reaches this threshold.
+# Defensible value: 0.95 (matches experimental noise floor +/- 0.05 on
+# selectivity measurements, FD gradient noise floor, and observed
+# behaviour where SI >= 0.95 samples don't polish further).
+export EARLY_STOP_SI="${EARLY_STOP_SI:-0.95}"
 
 # Loss / activation-proxy regularisation read by jaxfibers.optim.optimizer
 # at import time (defaults preserve legacy 0 / 0 behaviour if unset).
@@ -261,6 +266,7 @@ export L1_INIT_SCALE=\"${L1_INIT_SCALE}\"
 export L1_INIT_SEED=\"${L1_INIT_SEED}\"
 export L1_N_ITERS=\"${L1_N_ITERS}\"
 export FEM_Z_STD_MIN=\"${FEM_Z_STD_MIN}\"
+export EARLY_STOP_SI=\"${EARLY_STOP_SI}\"
 export JAXLEY_FIBERS_SOFT_TEMPERATURE=\"${JAXLEY_FIBERS_SOFT_TEMPERATURE}\"
 export JAXLEY_FIBERS_ENERGY_LAMBDA=\"${JAXLEY_FIBERS_ENERGY_LAMBDA}\"
 export PULSE_SHAPE=\"${PULSE_SHAPE}\"

@@ -256,6 +256,27 @@ CLUSTER_MIN_FASCICLES   = _env_int("CLUSTER_MIN_FASCICLES", 3)
 # disable the check (legacy behaviour).
 FEM_Z_STD_MIN = _env_flt("FEM_Z_STD_MIN", 150.0)
 
+# EARLY_STOP_SI: if Adam-FD reaches SI >= this threshold during the
+# probe-path rect optimization, stop immediately.  Defensible value: 0.95.
+# Three independent arguments converge here:
+#  (1) Experimental noise floor: animal cuff experiments show ±0.03-0.05
+#      SI trial-to-trial variability, so SI deltas below 0.05 are not
+#      experimentally distinguishable.  Stopping at 0.95 means "SI is
+#      indistinguishable from the 1.0 ceiling within experimental noise".
+#  (2) FD-gradient noise floor: with fd_eps=0.03 mA, near saturation the
+#      FD signal is ~0.003-0.005 per mA, giving Adam updates of order
+#      0.0005 mA / iter and expected SI changes < 0.02 per 50 iters --
+#      below the FD noise floor of the optimisation itself.
+#  (3) Observed sweep behaviour: samples with probe SI >= 0.95 produce
+#      no Adam-FD improvement (sub-54/56/57 in the early shards), while
+#      samples in 0.85-0.94 (sub-10 at 0.870 -> 0.894) DO polish.  So
+#      0.95 protects the polishing window while skipping converged
+#      cases.
+# Lower threshold (e.g. 0.9) would cut polishing for borderline samples;
+# higher (0.97) leaves more cosmetic-wandering iters running.  Set to
+# 1.0 to disable.
+EARLY_STOP_SI = _env_flt("EARLY_STOP_SI", 0.95)
+
 
 def _build_pulse_mask(t_grid: np.ndarray, delay_ms: float, pw_ms: float,
                       shape: str, asym_ratio: float) -> np.ndarray:
@@ -921,6 +942,7 @@ def _run_one_seed(seed_in: dict, verbose: bool = True) -> dict:
             amp_clip=AMP_CLIP,
             lr=ADAM_LR_MA, fd_eps=FD_EPS_MA,
             freeze_zero_mask=probe_freeze_mask,
+            early_stop_si=EARLY_STOP_SI,
             verbose=verbose,
         )
         loss_hist = np.asarray(adam_res["history"]["loss"])

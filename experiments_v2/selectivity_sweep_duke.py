@@ -291,6 +291,107 @@ def _class_balanced_weights(target_mask: np.ndarray) -> np.ndarray:
     return np.where(target_mask, 0.5 / n_t, 0.5 / n_nt).astype(np.float64)
 
 
+def _sparse_tripolar_pattern(spatial_contrast: np.ndarray,
+                              contact_xyz_um: np.ndarray,
+                              verbose: bool = False,
+                              label: str = "") -> np.ndarray:
+    """Construct a sparse tripolar pattern on the most target-preferring
+    angular column.
+
+    The dense bipolar pattern returned by _smart_spatial_pattern puts
+    non-zero current on all K contacts; for tightly-clustered peripheral
+    targets this means even weakly-target-preferring contacts (e.g. the
+    top/bottom angular positions at contrast ~±0.4) still inject ~40 %
+    of the peak amplitude.  Their phase-2 cathodic current under
+    biphasic stim can activate off-target fibres that should have been
+    untouched.  Adam-FD has no native mechanism to zero out contacts
+    once optimisation starts from a dense init.
+
+    This builder constructs an alternative that the user can interpret
+    geometrically:
+      - cluster the K contacts into angular columns (contacts at the
+        same (x, y) projection, distinguished only by axial z)
+      - pick the column with the highest mean target-preferring contrast
+      - put a tripolar pattern on it (middle cathodic, outer anodic for
+        axial confinement, charge balanced spatially)
+      - everything at every other angular column is exactly 0
+
+    For the 12-contact Duke MultiContact (4 angles × 3 axial rows) this
+    yields a 3-nonzero-entry pattern that drives current at a single
+    angular position with z-axis guards.  The probe scales this pattern
+    by a magnitude and tests it alongside the dense bipolar pattern; the
+    optimizer then picks whichever performs better.
+    """
+    K = int(len(spatial_contrast))
+    contact_xy = np.asarray(contact_xyz_um, dtype=np.float64)[:, :2]
+    if contact_xy.shape[0] != K:
+        # Mismatched contacts (shouldn't happen for Duke); fall back to
+        # a dummy pattern of zeros so the probe just ignores this option.
+        return np.zeros(K, dtype=np.float64)
+
+    # Cluster contacts into angular columns by (x, y) proximity (50 µm tol).
+    assigned = np.zeros(K, dtype=bool)
+    angular_groups: list[list[int]] = []
+    for i in range(K):
+        if assigned[i]:
+            continue
+        group = [i]
+        assigned[i] = True
+        for j in range(i + 1, K):
+            if assigned[j]:
+                continue
+            d_xy = float(np.hypot(contact_xy[i, 0] - contact_xy[j, 0],
+                                   contact_xy[i, 1] - contact_xy[j, 1]))
+            if d_xy < 50.0:
+                group.append(j)
+                assigned[j] = True
+        angular_groups.append(group)
+
+    if not angular_groups:
+        return np.zeros(K, dtype=np.float64)
+
+    # Pick the column with the highest mean target-preferring contrast.
+    group_scores = [(grp, float(np.mean([spatial_contrast[k] for k in grp])))
+                    for grp in angular_groups]
+    best_group, best_score = max(group_scores, key=lambda g: g[1])
+
+    # Sort the column by z so we know which is "middle".
+    contact_z = np.asarray(contact_xyz_um, dtype=np.float64)[:, 2]
+    best_group_sorted = sorted(best_group, key=lambda k: float(contact_z[k]))
+    n_col = len(best_group_sorted)
+
+    pattern = np.zeros(K, dtype=np.float64)
+    if n_col == 1:
+        # Monopolar: single cathodic contact.
+        pattern[best_group_sorted[0]] = -1.0
+    elif n_col == 2:
+        # Bipolar-in-z: one cathodic, one anodic guard.
+        pattern[best_group_sorted[0]] =  1.0
+        pattern[best_group_sorted[1]] = -1.0
+    else:
+        # Tripolar (or wider): outer anodic guards, middle cathodic,
+        # charge-balanced across the column.
+        mid = n_col // 2
+        n_outer = n_col - 1
+        outer_amp = 1.0 / float(n_outer)  # so sum of outer = +1 = -middle
+        for idx, k in enumerate(best_group_sorted):
+            if idx == mid:
+                pattern[k] = -1.0
+            else:
+                pattern[k] = outer_amp
+
+    if verbose:
+        # Build a compact diagnostic string.
+        nz = [(int(k), float(pattern[k])) for k in range(K) if pattern[k] != 0]
+        ang_xy = ", ".join(f"({contact_xy[k,0]:+.0f},{contact_xy[k,1]:+.0f})"
+                            for k in best_group)
+        print(f"{label} Sparse tripolar pattern: "
+              f"column at {ang_xy} (mean contrast {best_score:+.3f}); "
+              f"nonzero entries: {nz}", flush=True)
+
+    return pattern
+
+
 def _smart_spatial_pattern(Ve_unit: np.ndarray,
                             target_mask: np.ndarray,
                             verbose: bool = False,
@@ -346,26 +447,24 @@ def _smart_spatial_pattern(Ve_unit: np.ndarray,
     return contrast.astype(np.float64)
 
 
-def _magnitude_probe(spatial_pattern: np.ndarray,
+def _magnitude_probe(spatial_patterns: dict,
                       probe_mags_mA: list,
                       target_mask: np.ndarray,
                       fs_batch, s0_batch, Ve_unit_j, pulse_mask_j,
                       node_idx_j, dt: float,
                       label: str = "",
                       verbose: bool = True) -> tuple:
-    """Per-magnitude single-forward sweep to find the best init.
+    """For each (pattern, mag) combination, evaluate one forward and
+    pick the configuration with the highest selectivity score.
 
-    For each ``mag`` in ``probe_mags_mA``, evaluate the single-forward
-    activation under ``amps = mag * spatial_pattern`` (no Adam steps,
-    no FD perturbations -- just one forward per magnitude, ~30 s on
-    A100).  Pick the magnitude that maximises the selectivity score
-    ``(fraction_target_fired - fraction_off_fired)``.
+    ``spatial_patterns`` is a dict mapping a short pattern name (e.g.
+    ``"bipolar"``, ``"tripolar"``) to a length-K spatial pattern.  All
+    pattern × signed-magnitude combinations are tested; strict signed
+    comparison on ``(target_frac - off_frac)`` picks the best.
 
     Returns
     -------
-    (amps_vec, best_mag, best_score, best_acts, probe_history)
-    where probe_history is a list of dicts (one per probed magnitude)
-    for downstream bookkeeping.
+    (amps_vec, best_mag, best_score, best_acts, probe_history, best_pattern_name)
     """
     target_mask_bool = np.asarray(target_mask, dtype=bool)
     n_t = int(target_mask_bool.sum())
@@ -385,60 +484,77 @@ def _magnitude_probe(spatial_pattern: np.ndarray,
     # distinguish "contact reaches target with positive Ve" from "contact
     # reaches target with negative Ve" -- but only the former activates
     # the target when cathodic).  Testing both +|mag| and -|mag| × pattern
-    # always finds the right polarity for the anatomy.  Strict signed
-    # comparison ensures we pick the most positive-selective candidate,
-    # never an anti-selective one even if its |score| is large.
+    # always finds the right polarity for the anatomy.
     unique_abs = sorted({abs(float(m)) for m in probe_mags_mA})
-    signed_candidates = []
+    signed_mags = []
     for m_abs in unique_abs:
-        signed_candidates.extend([-m_abs, +m_abs])
+        signed_mags.extend([-m_abs, +m_abs])
+
+    active_patterns = {name: p for name, p in spatial_patterns.items()
+                        if np.any(np.asarray(p) != 0)}
     if verbose:
-        print(f"{label} Magnitude probe: {len(signed_candidates)} candidates "
-              f"× single forward (both polarities)", flush=True)
+        names = ", ".join(active_patterns.keys()) or "<none>"
+        n_total = len(active_patterns) * len(signed_mags)
+        print(f"{label} Magnitude probe: {n_total} candidates "
+              f"({len(active_patterns)} patterns × "
+              f"{len(signed_mags)} signed mags) -- patterns: [{names}]",
+              flush=True)
 
     best_score = -float("inf")
-    best_mag = float(signed_candidates[0])
+    best_mag = float(signed_mags[0]) if signed_mags else 0.0
+    best_pattern_name = next(iter(active_patterns.keys())) if active_patterns else "none"
     best_amps: np.ndarray | None = None
     best_acts: np.ndarray | None = None
     history: list[dict] = []
-    for mag in signed_candidates:
-        amps_vec = float(mag) * spatial_pattern    # [K]
-        amps_j = jnp.asarray(amps_vec, dtype=jnp.float64)
-        t0 = time.time()
-        acts = _fwd(amps_j)
-        acts_np = np.asarray(acts)
-        dt_ms = (time.time() - t0) * 1000.0
-        fired = acts_np > 0.5
-        nft = int(np.sum(fired & target_mask_bool))
-        nfn = int(np.sum(fired & ~target_mask_bool))
-        target_frac = nft / max(n_t, 1)
-        off_frac = nfn / max(n_off, 1)
-        score = target_frac - off_frac
-        history.append({
-            "mag_mA":          float(mag),
-            "amps_vec":        amps_vec.tolist(),
-            "n_fired_target":  nft,
-            "n_fired_off":     nfn,
-            "target_frac":     float(target_frac),
-            "off_frac":        float(off_frac),
-            "score":           float(score),
-            "wall_ms":         float(dt_ms),
-        })
+    for pattern_name, spatial_pattern in active_patterns.items():
         if verbose:
-            print(f"  probe mag={float(mag):+.3f} mA  "
-                  f"fired={nft}/{n_t}t+{nfn}/{n_off}nt "
-                  f"({100*target_frac:.0f}%T, {100*off_frac:.0f}%NT)  "
-                  f"score={score:+.3f}  dt={dt_ms:.0f}ms",
+            n_nz = int(np.sum(spatial_pattern != 0))
+            print(f"{label}  -- pattern '{pattern_name}' "
+                  f"({n_nz}/{len(spatial_pattern)} non-zero entries) --",
                   flush=True)
-        if score > best_score:
-            best_score = score
-            best_mag = float(mag)
-            best_amps = amps_vec.copy()
-            best_acts = acts_np
+        for mag in signed_mags:
+            amps_vec = float(mag) * np.asarray(spatial_pattern,
+                                                dtype=np.float64)
+            amps_j = jnp.asarray(amps_vec, dtype=jnp.float64)
+            t0 = time.time()
+            acts = _fwd(amps_j)
+            acts_np = np.asarray(acts)
+            dt_ms = (time.time() - t0) * 1000.0
+            fired = acts_np > 0.5
+            nft = int(np.sum(fired & target_mask_bool))
+            nfn = int(np.sum(fired & ~target_mask_bool))
+            target_frac = nft / max(n_t, 1)
+            off_frac = nfn / max(n_off, 1)
+            score = target_frac - off_frac
+            history.append({
+                "pattern_name":    pattern_name,
+                "mag_mA":          float(mag),
+                "amps_vec":        amps_vec.tolist(),
+                "n_fired_target":  nft,
+                "n_fired_off":     nfn,
+                "target_frac":     float(target_frac),
+                "off_frac":        float(off_frac),
+                "score":           float(score),
+                "wall_ms":         float(dt_ms),
+            })
+            if verbose:
+                print(f"  probe '{pattern_name}' mag={float(mag):+.3f} mA  "
+                      f"fired={nft}/{n_t}t+{nfn}/{n_off}nt "
+                      f"({100*target_frac:.0f}%T, {100*off_frac:.0f}%NT)  "
+                      f"score={score:+.3f}  dt={dt_ms:.0f}ms",
+                      flush=True)
+            if score > best_score:
+                best_score = score
+                best_mag = float(mag)
+                best_pattern_name = pattern_name
+                best_amps = amps_vec.copy()
+                best_acts = acts_np
     if verbose:
-        print(f"{label} Probe winner: mag={best_mag:+.3f} mA  "
-              f"score={best_score:+.3f}", flush=True)
-    return best_amps, best_mag, float(best_score), best_acts, history
+        print(f"{label} Probe winner: pattern='{best_pattern_name}' "
+              f"mag={best_mag:+.3f} mA  score={best_score:+.3f}",
+              flush=True)
+    return (best_amps, best_mag, float(best_score), best_acts,
+            history, best_pattern_name)
 
 
 def _firing_summary(acts, target_mask) -> dict:
@@ -559,6 +675,7 @@ def _build_seed(duke: dict, seed: int, verbose: bool = True) -> dict:
         nerve=nerve, geoms=geoms,
         target_mask=target_mask, weights=weights,
         Ve_unit=duke["Ve_unit"], node_indices=duke["node_indices"],
+        contact_xyz_um=duke["contact_xyz_um"],
         fs_batch=fs_batch, s0_batch=s0_batch,
         pulse_mask=pulse_mask, N_STEPS=N_STEPS,
         si_baseline=si_baseline,
@@ -589,24 +706,38 @@ def _run_one_seed(seed_in: dict, verbose: bool = True) -> dict:
                   f"{len(PROBE_MAGS_MA)}-magnitude probe + 1×Adam-FD "
                   f"({n_iters} iters)", flush=True)
 
-        spatial = _smart_spatial_pattern(seed_in["Ve_unit"],
-                                         seed_in["target_mask"],
-                                         verbose=verbose, label=label)
+        spatial_bipolar = _smart_spatial_pattern(
+            seed_in["Ve_unit"], seed_in["target_mask"],
+            verbose=verbose, label=label,
+        )
+        spatial_tripolar = _sparse_tripolar_pattern(
+            spatial_bipolar, seed_in["contact_xyz_um"],
+            verbose=verbose, label=label,
+        )
+        spatial_patterns = {
+            "bipolar":  spatial_bipolar,
+            "tripolar": spatial_tripolar,
+        }
+        # For backward-compat with downstream JSON code that expects a
+        # single canonical "spatial pattern" we keep the dense bipolar
+        # as the headline for plotting; the actual init used is captured
+        # in best_pattern_name + amps_init_vec.
+        spatial = spatial_bipolar
         if verbose:
             patt_str = "  ".join(f"{c:+.2f}" for c in spatial)
             print(f"{label} Spatial contrast [{spatial.min():+.3f},"
                   f"{spatial.max():+.3f}] mean={spatial.mean():+.3f}: "
                   f"[{patt_str}]", flush=True)
 
-        amps_init_vec, best_mag, best_score, _probe_acts, probe_hist = \
-            _magnitude_probe(
-                spatial, PROBE_MAGS_MA, seed_in["target_mask"],
-                seed_in["fs_batch"], seed_in["s0_batch"],
-                jnp.asarray(seed_in["Ve_unit"], dtype=jnp.float64),
-                jnp.asarray(seed_in["pulse_mask"], dtype=jnp.float64),
-                jnp.asarray(seed_in["node_indices"], dtype=jnp.int32),
-                DT, label=label, verbose=verbose,
-            )
+        (amps_init_vec, best_mag, best_score, _probe_acts,
+         probe_hist, best_pattern_name) = _magnitude_probe(
+            spatial_patterns, PROBE_MAGS_MA, seed_in["target_mask"],
+            seed_in["fs_batch"], seed_in["s0_batch"],
+            jnp.asarray(seed_in["Ve_unit"], dtype=jnp.float64),
+            jnp.asarray(seed_in["pulse_mask"], dtype=jnp.float64),
+            jnp.asarray(seed_in["node_indices"], dtype=jnp.int32),
+            DT, label=label, verbose=verbose,
+        )
 
         if verbose:
             init_str = "  ".join(f"{a:+.2f}" for a in amps_init_vec)
@@ -643,12 +774,16 @@ def _run_one_seed(seed_in: dict, verbose: bool = True) -> dict:
             "n_restarts":        1,
             "n_steps":           n_iters,
             "smart_init": {
-                "enabled":          True,
-                "best_mag_mA":      best_mag,
-                "best_score":       best_score,
-                "spatial_pattern":  spatial.tolist(),
-                "amps_init_vector": amps_init_vec.tolist(),
-                "probe_history":    probe_hist,
+                "enabled":           True,
+                "best_pattern_name": best_pattern_name,
+                "best_mag_mA":       best_mag,
+                "best_score":        best_score,
+                "spatial_patterns":  {
+                    "bipolar":  spatial_bipolar.tolist(),
+                    "tripolar": spatial_tripolar.tolist(),
+                },
+                "amps_init_vector":  amps_init_vec.tolist(),
+                "probe_history":     probe_hist,
             },
             "all_final_losses": np.asarray([float(loss_hist[-1])]),
         }

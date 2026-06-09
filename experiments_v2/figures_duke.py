@@ -77,6 +77,18 @@ def _short(sample: str) -> str:
     return s
 
 
+def _stage_metrics(stage: dict) -> dict:
+    """Return (frac_tgt, frac_off, loss, time_s) for one stage's sub-dict."""
+    fire = stage.get("firing") or {}
+    loss = stage.get("final_loss")
+    return dict(
+        frac_tgt=float(fire.get("frac_fired_target", float("nan"))),
+        frac_off=float(fire.get("frac_fired_nontarget", float("nan"))),
+        loss=float(loss) if loss is not None else float("nan"),
+        time_s=float(stage.get("time_s", float("nan"))),
+    )
+
+
 def _load_rows() -> list[dict]:
     rows = []
     for d in sorted(SWEEP.iterdir()):
@@ -89,6 +101,12 @@ def _load_rows() -> list[dict]:
         rect = raw.get("rect") or {}
         l1   = raw.get("rect_l1") or {}
         wav  = raw.get("waveform") or {}
+        m_rect = _stage_metrics(rect)
+        m_l1   = _stage_metrics(l1) if l1 else dict(
+            frac_tgt=float("nan"), frac_off=float("nan"),
+            loss=float("nan"), time_s=float("nan"),
+        )
+        m_wave = _stage_metrics(wav)
         rows.append(dict(
             sample=raw.get("sample", d.name),
             species=_species_of(raw.get("sample", d.name)),
@@ -99,6 +117,13 @@ def _load_rows() -> list[dict]:
                   if l1 else float("nan"),
             wave_si=float(wav.get("achievable_si",
                                       abs(wav.get("final_si", 0.0)))),
+            # Per-stage metrics (frac in [0,1]; loss; time s).
+            rect_frac_tgt=m_rect["frac_tgt"], rect_frac_off=m_rect["frac_off"],
+            rect_loss=m_rect["loss"],         rect_time=m_rect["time_s"],
+            l1_frac_tgt=m_l1["frac_tgt"],     l1_frac_off=m_l1["frac_off"],
+            l1_loss=m_l1["loss"],             l1_time=m_l1["time_s"],
+            wave_frac_tgt=m_wave["frac_tgt"], wave_frac_off=m_wave["frac_off"],
+            wave_loss=m_wave["loss"],         wave_time=m_wave["time_s"],
         ))
     return rows
 
@@ -304,6 +329,111 @@ def make_species_method_fig(rows: list[dict]) -> Path:
     fig, ax = plt.subplots(figsize=(7.0, 5.0))
     _box_by_species_method(ax, rows)
     out = OUT_DIR / "fig_duke_si_by_species_method.png"
+    fig.savefig(out); plt.close(fig)
+    return out
+
+
+# ── Figure: bar + strip + error-bar metrics panel ──────────────────────────
+
+def _bar_strip_panel(ax, rows: list[dict], field_template: str,
+                       ylabel: str, ylim: tuple[float, float] | None = None,
+                       scaling: float = 1.0, log: bool = False) -> None:
+    """One panel: clusters of three bars per species, with median +
+    IQR error bars and a jittered strip plot of individual samples.
+
+    ``field_template`` is the row key with a method placeholder, e.g.
+    ``"{method}_frac_tgt"``.  ``scaling`` multiplies the values (use
+    100.0 to convert a [0,1] fraction to a percent).
+    """
+    METHODS  = ["rect", "l1", "wave"]
+    SPECIES  = ["swine", "human"]
+    SP_MARK  = {"swine": "s", "human": "o"}
+    n_meth   = len(METHODS)
+    bar_w    = 0.6
+    group_w  = n_meth * bar_w + 0.7
+    rng      = np.random.default_rng(0)
+    centres  = []
+
+    for s_idx, sp in enumerate(SPECIES):
+        base = s_idx * group_w
+        cluster_xs = []
+        for m_idx, method in enumerate(METHODS):
+            x = base + (m_idx - (n_meth - 1) / 2.0) * bar_w
+            cluster_xs.append(x)
+            vals = np.array([r[field_template.format(method=method)] * scaling
+                              for r in rows if r["species"] == sp])
+            finite = vals[np.isfinite(vals)]
+            if finite.size:
+                med  = float(np.median(finite))
+                q25  = float(np.quantile(finite, 0.25))
+                q75  = float(np.quantile(finite, 0.75))
+            else:
+                med = q25 = q75 = float("nan")
+            ax.bar(x, med, width=bar_w * 0.9,
+                      color=PALETTE[method], alpha=0.45,
+                      edgecolor=PALETTE["grey"], linewidth=1.2,
+                      zorder=2)
+            # Error bars (IQR).
+            if np.isfinite(med):
+                ax.errorbar(x, med, yerr=[[med - q25], [q75 - med]],
+                              fmt="none", ecolor=PALETTE["grey"],
+                              elinewidth=1.4, capsize=4, capthick=1.4,
+                              zorder=3)
+            # Strip plot.
+            if finite.size:
+                jitter = rng.uniform(-0.18, 0.18, size=finite.size)
+                ax.scatter(np.full(finite.size, x) + jitter, finite,
+                              s=45, marker=SP_MARK[sp],
+                              facecolor=PALETTE[method],
+                              edgecolor=PALETTE["grey"], linewidth=0.8,
+                              alpha=0.95, zorder=4)
+        centres.append(float(np.mean(cluster_xs)))
+
+    ax.set_xticks(centres)
+    ax.set_xticklabels([
+        f"swine\n($n$=" + str(sum(1 for r in rows if r["species"] == "swine")) + ")",
+        f"human\n($n$=" + str(sum(1 for r in rows if r["species"] == "human")) + ")",
+    ])
+    ax.set_ylabel(ylabel)
+    if ylim is not None:
+        ax.set_ylim(*ylim)
+    if log:
+        ax.set_yscale("log")
+    ax.set_xlim(-bar_w * 1.1, (len(SPECIES) - 1) * group_w + bar_w * 1.1)
+
+
+def make_metrics_fig(rows: list[dict]) -> Path:
+    fig, axes = plt.subplots(2, 2, figsize=(13.0, 9.0))
+    (ax_tgt, ax_off), (ax_loss, ax_time) = axes
+
+    _bar_strip_panel(ax_tgt,  rows, "{method}_frac_tgt",
+                        "target fibres activated (%)",
+                        ylim=(0, 105), scaling=100.0)
+    _bar_strip_panel(ax_off,  rows, "{method}_frac_off",
+                        "off-target fibres activated (%)",
+                        ylim=(0, 105), scaling=100.0)
+    _bar_strip_panel(ax_loss, rows, "{method}_loss",
+                        "final loss")
+    ax_loss.set_ylim(bottom=0)
+    _bar_strip_panel(ax_time, rows, "{method}_time",
+                        "wall-clock time (s)",
+                        log=True)
+
+    # One shared legend at the bottom (method colours).
+    from matplotlib.patches import Patch
+    handles = [
+        Patch(facecolor=PALETTE["rect"], edgecolor=PALETTE["grey"],
+                alpha=0.55, label="probe Adam-FD"),
+        Patch(facecolor=PALETTE["l1"],   edgecolor=PALETTE["grey"],
+                alpha=0.55, label="L1 random init"),
+        Patch(facecolor=PALETTE["wave"], edgecolor=PALETTE["grey"],
+                alpha=0.55, label="waveform Adam"),
+    ]
+    fig.legend(handles=handles, loc="lower center", ncol=3,
+                  frameon=False, bbox_to_anchor=(0.5, -0.02))
+
+    fig.tight_layout(rect=(0, 0.04, 1, 1))
+    out = OUT_DIR / "fig_duke_metrics.png"
     fig.savefig(out); plt.close(fig)
     return out
 
@@ -530,6 +660,7 @@ def main() -> None:
         make_per_sample_fig(rows),
         make_agreement_fig(rows),
         make_species_method_fig(rows),
+        make_metrics_fig(rows),
         make_summary_fig(rows),
     ]
     paths.extend(make_xsection_galleries(rows))

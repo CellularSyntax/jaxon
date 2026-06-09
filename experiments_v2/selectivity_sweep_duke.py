@@ -146,8 +146,8 @@ ASYM_RATIO  = _env_flt("ASYM_RATIO", 4.0)
 # brings the init into the gradient-informative threshold regime.
 # All env-overrideable.
 AMP_INIT_MA = _env_flt("AMP_INIT_MA", -0.08)
-_AMP_CLIP_LO = _env_flt("AMP_CLIP_LO", -1.50)
-_AMP_CLIP_HI = _env_flt("AMP_CLIP_HI",  1.50)
+_AMP_CLIP_LO = _env_flt("AMP_CLIP_LO", -2.00)
+_AMP_CLIP_HI = _env_flt("AMP_CLIP_HI",  2.00)
 AMP_CLIP    = (_AMP_CLIP_LO, _AMP_CLIP_HI)
 ADAM_LR_MA  = _env_flt("ADAM_LR_MA",  0.005)
 FD_EPS_MA   = _env_flt("FD_EPS_MA",   0.030)
@@ -192,10 +192,17 @@ SMART_INIT_ENABLED = os.environ.get("SMART_INIT_ENABLED", "true").strip().lower(
     "1", "true", "yes", "y", "on",
 )
 # Probe magnitudes (signed mA).  Sign convention: negative = cathodic
-# for the target-preferring contacts.  Span 30x to cover both
-# tightly-coupled and weakly-coupled anatomies.
+# for the target-preferring contacts.  Span ~75x to cover:
+#   - tightly-coupled bipolar (threshold ~0.05-0.2 mA)
+#   - weakly-coupled bipolar (threshold ~0.5-0.8 mA)
+#   - tripolar with axial guards (threshold 1.5-2x bipolar, can reach
+#     ~1.5-2.0 mA on hard anatomies like sub-53 where contacts are
+#     800-1000 um from the target fascicle).
+# The ceiling MUST exceed AMP_CLIP otherwise the probe never explores
+# the actual operating range available to the optimizer.
 PROBE_MAGS_MA = _parse_restart_mags(
-    os.environ.get("PROBE_MAGS_MA", "-0.02,-0.05,-0.10,-0.20,-0.40,-0.80")
+    os.environ.get("PROBE_MAGS_MA",
+                    "-0.02,-0.05,-0.10,-0.20,-0.40,-0.80,-1.20,-1.50")
 )
 
 # L1-discovery: an alternative optimization path that does NOT rely on

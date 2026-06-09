@@ -101,8 +101,8 @@ export WAVE_PATIENCE="${WAVE_PATIENCE:-20}"
 #
 # All env-overrideable on submission for further tuning.
 export AMP_INIT_MA="${AMP_INIT_MA:--0.08}"
-export AMP_CLIP_LO="${AMP_CLIP_LO:--1.50}"
-export AMP_CLIP_HI="${AMP_CLIP_HI:-1.50}"
+export AMP_CLIP_LO="${AMP_CLIP_LO:--2.00}"
+export AMP_CLIP_HI="${AMP_CLIP_HI:-2.00}"
 export ADAM_LR_MA="${ADAM_LR_MA:-0.005}"
 export FD_EPS_MA="${FD_EPS_MA:-0.030}"
 
@@ -133,7 +133,7 @@ export ADAM_FD_RESTART_MAGS="${ADAM_FD_RESTART_MAGS:--0.10,-0.30,-0.80,-1.50}"
 # spatial pattern that is already target-aligned at iter 0.  Set
 # SMART_INIT_ENABLED=false to fall back to the multi-restart path.
 export SMART_INIT_ENABLED="${SMART_INIT_ENABLED:-true}"
-export PROBE_MAGS_MA="${PROBE_MAGS_MA:--0.02,-0.05,-0.10,-0.20,-0.40,-0.80}"
+export PROBE_MAGS_MA="${PROBE_MAGS_MA:--0.02,-0.05,-0.10,-0.20,-0.40,-0.80,-1.20,-1.50}"
 
 # L1-discovery: parallel validation path that does NOT use hand-coded
 # spatial patterns.  Random init + Adam-FD + L1 soft-thresholding prox

@@ -407,10 +407,10 @@ rejection sampling inside the fascicles in proportion to fascicle
 cross-sectional area, extruded along the nerve axis at $200\,\mu
 \mathrm{m}$ steps.  The lead fields $V_e^{(k)}$ are sampled at every
 MRG compartment of every fibre and exported as a per-fibre tensor
-$V_e^{(k)}_{f,n}$, which the optimiser superposes linearly with the
+${V_e^{(k)}}_{f,n}$, which the optimiser superposes linearly with the
 per-contact amplitudes $a_k(t)$ to obtain the total extracellular
-potential at each compartment, exactly as in
-Section~\ref{sec:methods-forward}.  Off-mesh sample points (well
+potential at each compartment, identically to the synthetic-Ve
+forward path.  Off-mesh sample points (well
 under $3\,\%$ of points, occurring near fascicle ends) are filled by
 axial interpolation along the fibre.  We refer the reader
 to~\cite{haberbusch2026golgi} for the full pipeline including
@@ -426,10 +426,10 @@ audit (\texttt{duke\_fem\_quality.py --diameter 5.7 --threshold 100})
 after also subtracting the $n_{\mathrm{fasc}}<3$ exclusions
 (sub-63, sub-70)} entered the selectivity study after two
 pre-flight filters: \textbf{(i)} samples with fewer than three
-fascicles were rejected (degenerate target-cluster selector,
-Section~\ref{sec:methods-cluster-target}); \textbf{(ii)} samples
+fascicles were rejected (degenerate target-cluster selector, below);
+\textbf{(ii)} samples
 whose per-channel mean of the per-fibre standard deviation of
-$V_e^{(k)}_{f,n}$ along $n$ fell below $100\,\mathrm{mV/mA}$ (at the
+${V_e^{(k)}}_{f,n}$ along $n$ fell below $100\,\mathrm{mV/mA}$ (at the
 $5.7\,\mu\mathrm{m}$ MRG fibre diameter we use throughout) were
 rejected as having insufficient FE-mesh $z$-resolution between
 adjacent contact rows: in such samples the cathode-middle minus

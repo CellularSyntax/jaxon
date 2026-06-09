@@ -709,11 +709,12 @@ pipeline~\cite{haberbusch2026golgi}
 (Section~\ref{sec:methods-duke}).  The cuff is the 12-contact
 MultiContact array (three axial rows $\times$ four angular
 columns), so the rectangular optimiser searches over $K=12$
-amplitudes per nerve.  Target fascicles were selected by the
-cluster-paradigm peripheral-cluster selector
-(Section~\ref{sec:methods-cluster-target}), giving every nerve
-a single anatomically contiguous target region rather than an
-arbitrary divider-line split.
+amplitudes per nerve.  Target fascicles were selected by a
+peripheral-cluster selector that picks one contiguous angular
+sector of the nerve perimeter containing the largest
+peripheral-fascicle cluster (by total fibre count), giving every
+nerve a single anatomically contiguous target region rather than
+an arbitrary divider-line split.
 
 \paragraph{Probe-based smart-init Adam-FD.}
 We use the smart-init variant of the rectangular optimiser: a
@@ -748,19 +749,13 @@ sparsity patterns are compared per anatomy
 
 \paragraph{Cohort outcome.}
 \needdata{Insert the cohort summary numbers here once the cluster
-sweep finishes.  Expected structure:
-\begin{itemize}
-\item median and mean achievable $|\mathrm{SI}|$ across the cohort
-\item fraction reaching $|\mathrm{SI}| \geq 0.95$ (the
-near-saturation tier)
-\item fraction in 0.7--0.95 (the polishing tier)
-\item fraction below 0.5 (geometric ceiling)
-\item swine vs human breakdown
-\item probe-vs-L1 agreement: fraction of anatomies where both
-paths land within 0.05 SI of each other (target $\geq$ 80\,\%)
-\item probe vs L1 sparsity: median number of active contacts
-under L1 vs probe winner
-\end{itemize}}
+sweep finishes -- median and mean achievable $|\mathrm{SI}|$ across
+the cohort; fraction reaching $|\mathrm{SI}| \geq 0.95$
+(near-saturation tier), in 0.7--0.95 (polishing tier), below 0.5
+(geometric ceiling); swine vs human breakdown; probe-vs-L1
+agreement (fraction of anatomies where both paths land within 0.05
+SI of each other, target $\geq 80\,\%$); probe vs L1 sparsity
+(median number of active contacts under L1 vs probe winner).}
 
 \paragraph{Geometric-ceiling cases.}
 The cohort separates cleanly into anatomies where the cluster

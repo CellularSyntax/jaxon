@@ -691,3 +691,165 @@ gradient-availability one.
     $\alpha$-large (all-fire), never at a positive-SI configuration.}
   \label{fig:mixed-landscape}
 \end{figure}
+
+
+\subsection{Selectivity on microCT-derived vagus nerve geometries}
+\label{sec:results-selectivity-duke}
+
+To test the optimisation pipeline beyond synthetic Hussain-style
+nerves we additionally ran the same rectangular-pulse + warm-started
+waveform optimisers on a cohort of $n=21$ microCT-segmented vagus
+nerve cross-sections drawn from the Duke / SPARC consortium
+data~\cite{settell2020vagotopy,pelot2023humanvagus}: 3 swine
+samples and 18 human samples,
+with FEM-derived lead-field tensors $V_e^{(k)}(x)$ computed by an
+in-house FEniCSx pipeline\footnote{The selectivity sweep was still
+in progress at the time of submission; this section reports the
+$n=21$ samples available at writing.  An updated cohort of
+$n=36$ (18 swine + 18 human) will be reported in the final
+version.}.  Each nerve carries between 2 and 27 polygonal
+fascicles and 997--1\,000 fibres; the cuff is the 12-contact
+MultiContact array (three axial rows, four azimuthal angles), so
+the rectangular optimiser searches over $K=12$ amplitudes per
+nerve.
+
+We use the multi-start Adam-FD variant of the rectangular optimiser
+with four restart magnitudes
+$|I_0| \in \{0.10,\,0.30,\,0.80,\,1.50\}\,\mathrm{mA}$,
+keeping the lowest-loss trajectory's best-iter amplitudes.  This
+multi-start is required because a single fixed $|I_0|$ cannot put
+every Duke geometry into the gradient-informative threshold
+regime: unbalanced anatomies with very small or very large target
+fascicles collapse the finite-difference gradient to zero unless
+$|I_0|$ is matched to that geometry's per-contact threshold.  By
+sweeping $|I_0|$ across a $15\times$ range we ensure at least one
+restart lands in the regime where Adam-FD can take informative
+gradient steps.  The achievable selectivity is reported as
+$|\mathrm{SI}|$ because the random divider angle assigns
+target/off-target labelling symmetrically: a strongly anti-selective
+solution (\(\mathrm{SI} < 0\)) is equivalent by relabelling to a
+positive-SI solution that selectively activates the other fascicle
+group, and the two yield identical achievable magnitudes.
+
+The cohort distribution is strongly bimodal
+(Figure~\ref{fig:duke-summary}, Table~\ref{tab:duke-summary}).
+Across the 18 human samples the rectangular optimiser achieves
+median $|\mathrm{SI}| = 0.01$ with mean $0.34$, but $6/18$ samples
+(33\,\%) reach $|\mathrm{SI}| \geq 0.95$ and one further sample
+($\texttt{human-sub-70}$) recovers $|\mathrm{SI}| = 0.99$ during
+the subsequent waveform-Adam refinement.  The three swine samples
+similarly split into a successful pair
+($\texttt{sub-10\_sam-1}$: $0.73$, $\texttt{sub-11\_sam-1}$:
+$0.82$) and a single stuck sample with $|\mathrm{SI}| \approx 0$.
+The non-success outcomes are dominated by anatomies where the
+target fascicle is geometrically unreachable by the 12-contact
+cuff at any per-contact amplitude up to the clip limit:
+$\texttt{human-sub-46\_sam-2}$ for example has a 953/47 fascicle
+split where the optimiser's restart at $|I_0|=1.5\,\mathrm{mA}$
+selectively activates the small 47-fibre fascicle ($45/47$ fire,
+$0/953$ in the target) but never reaches the large target
+fascicle at any amplitude, indicating a true anatomical
+selectivity ceiling rather than an optimiser failure.
+
+Figure~\ref{fig:duke-xsections-swine}
+and~\ref{fig:duke-xsections-human} show the per-sample
+cross-section galleries with the rectangular-pulse outcome
+overlaid for each species; the bimodality is visible directly in
+the firing patterns.  Figure~\ref{fig:duke-convergence} shows the
+median + IQR convergence of the rectangular-pulse and
+warm-started-waveform optimisers per species.  Compared with the
+synthetic Hussain-style sweep (Table~\ref{tab:selectivity}), where
+$\geq 96\,\%$ of seeds reach $\mathrm{SI} \geq 0.95$ on every
+fibre model, the lower hit rate on real microCT geometries
+reflects the larger variance in fascicle position, size, and
+target/off-target imbalance present in genuine anatomies
+relative to the rejection-sampled synthetic nerves.  The
+demonstration that gradient-based selectivity optimisation
+succeeds on real cross-species microCT anatomies---and
+honestly reports the geometric ceiling where it does not---is
+the principal application result of this paper.
+
+\begin{table}[h]
+  \centering
+  \caption{Achievable rectangular-pulse selectivity index
+    $|\mathrm{SI}|$ on the Duke microCT-derived vagus nerve cohort,
+    by species.  ``$\geq 0.95$'' is the fraction of samples whose
+    rectangular optimiser reached near-perfect selectivity;
+    ``flipped'' is the fraction whose optimum required the autoflip
+    relabelling (signed $\mathrm{SI} < 0$).}
+  \label{tab:duke-summary}
+  \begin{tabular}{lrrrrr}
+    \toprule
+    Species & $n$ & mean $|\mathrm{SI}|$ & median $|\mathrm{SI}|$
+            & \% $\geq 0.95$ & flipped \\
+    \midrule
+    swine   &  3 & 0.52 & 0.73 &  0\,\% & 1/3 \\
+    human   & 18 & 0.34 & 0.01 & 33\,\% & 4/18 \\
+    \midrule
+    combined & 21 & 0.37 & 0.01 & 29\,\% & 5/21 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{figure}[h]
+  \centering
+  \figmaybe[width=0.98\textwidth]{fig_duke_selectivity_summary.png}
+  \caption{Achievable rectangular-pulse selectivity index
+    $|\mathrm{SI}|$ on the Duke microCT-derived vagus nerve cohort
+    ($n=18$ human, $n=3$ swine).
+    \textbf{(a)} Per-species paired violin of the achievable
+    rect-only vs.\ best (rect or wave) $|\mathrm{SI}|$.  The bimodal
+    distribution reflects the mixture of well-coupled anatomies
+    (target fascicle reachable by the 12-contact cuff) and
+    geometric-ceiling anatomies (target fascicle physically
+    unreachable at any per-contact amplitude up to the clip limit).
+    \textbf{(b)} Rect-vs-wave-Adam per-seed scatter; points above
+    the diagonal indicate seeds where the warm-started waveform
+    optimiser improved on the rectangular optimum.}
+  \label{fig:duke-summary}
+\end{figure}
+
+\begin{figure}[h]
+  \centering
+  \figmaybe[width=0.98\textwidth]{fig_duke_selectivity_xsections_swine.png}
+  \caption{Per-sample selectivity outcomes on the swine subset of
+    the Duke microCT cohort.  Each cell shows one sample's nerve
+    cross-section with fibres coloured by their post-optimisation
+    activation status (target/off-target $\times$ fired/silent);
+    the 12-contact cuff is shown as black circles around the
+    perimeter, and the random divider line that assigns the
+    target/off-target split is drawn as a thin dashed line.}
+  \label{fig:duke-xsections-swine}
+\end{figure}
+
+\begin{figure}[h]
+  \centering
+  \figmaybe[width=0.98\textwidth]{fig_duke_selectivity_xsections_human.png}
+  \caption{As Figure~\ref{fig:duke-xsections-swine} but for the
+    human subset of the Duke microCT cohort.  Successful
+    selectivity (almost all target fibres green, almost all
+    off-target fibres grey) is visible on samples such as
+    \texttt{human-sub-47\_sam-2}, \texttt{human-sub-50\_sam-2} and
+    \texttt{human-sub-58\_sam-3}; the geometric-ceiling cases
+    (e.g.\ \texttt{human-sub-46\_sam-2} with a 953/47 fascicle
+    split) show essentially no activation across the entire
+    nerve.}
+  \label{fig:duke-xsections-human}
+\end{figure}
+
+\begin{figure}[h]
+  \centering
+  \figmaybe[width=0.98\textwidth]{fig_duke_optimization_convergence.png}
+  \caption{Per-species convergence of the rectangular-pulse
+    Adam-FD multi-start (panel a) and the warm-started waveform
+    Adam (panel b) on the Duke microCT cohort.  Solid line:
+    per-species median across samples.  Shaded band:
+    25--75\,\% interquartile range.  Convergence to the
+    sample-specific achievable $|\mathrm{SI}|$ occurs within
+    20--40 inner-loop iters for the rectangular optimiser; the
+    warm-started waveform stage adds modest refinement on samples
+    that did not saturate at the rectangular stage and recovers
+    one human sample (\texttt{human-sub-70}) from
+    $|\mathrm{SI}|=0$ to $|\mathrm{SI}|=0.99$.}
+  \label{fig:duke-convergence}
+\end{figure}

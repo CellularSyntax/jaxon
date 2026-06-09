@@ -98,12 +98,22 @@ affirmatively.  Our contributions are:
         with cross-model mean SI of $0.955$ and $70\,\%$ of seeds
         reaching the theoretical maximum $\mathrm{SI}=1.0$
         (Section~\ref{sec:results-selectivity}).
+  \item A demonstration of the same gradient-based selectivity
+        optimisation pipeline on a cohort of $n=21$ microCT-segmented
+        vagus nerve cross-sections (3 swine + 18 human) drawn from
+        the SPARC consortium, with FEM-derived per-contact
+        extracellular potentials computed by an in-house FEniCSx
+        pipeline and the 12-contact MultiContact cuff array
+        (Section~\ref{sec:results-selectivity-duke}).  This is, to
+        our knowledge, the first cross-species gradient-based
+        selectivity optimisation on real microCT-derived
+        peripheral nerve anatomies.
 \end{enumerate}
 
 We discuss the limits of the current implementation---most notably the
 plateau encountered when target and off-target fiber populations have
 very different diameters, where chronaxie-based waveform discrimination
 alone is insufficient to break the all-fibers-fire attractor---and
-outline the natural extensions to anatomically realistic FEM-derived
-$V_e$ fields and joint amplitude--position
-optimisation (Section~\ref{sec:discussion}).
+the anatomical-ceiling cases encountered on the Duke microCT cohort
+where the cuff cannot reach the assigned target fascicle at any
+amplitude (Section~\ref{sec:discussion}).

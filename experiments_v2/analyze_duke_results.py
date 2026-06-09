@@ -145,7 +145,7 @@ def _print_table(by_species: dict) -> None:
     print("[note] all SI values are |signed_si| (achievable selectivity); "
           "#flipped is the number of seeds where the optimiser landed in "
           "the anti-selective basin, equivalent to a positive-SI solution "
-          "with target↔non-target swapped.")
+          "with target/non-target swapped.")
 
 
 def _print_per_nerve(by_species: dict) -> None:

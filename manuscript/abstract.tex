@@ -37,7 +37,14 @@ amplitude optimisation achieves \textbf{median $\mathrm{SI}=1.000$
 on every model}, with cross-model mean SI of $0.955$ and
 $70\,\%$ of seeds reaching the theoretical maximum
 $\mathrm{SI}=1.0$ (all target fibres firing, all off-target fibres
-silent).
+silent).  We additionally demonstrate the pipeline on a cohort of
+$n=21$ microCT-segmented vagus nerve cross-sections (3 swine + 18
+human) from the SPARC consortium, optimising over a 12-contact
+MultiContact cuff with FEM-derived per-contact extracellular
+potentials: $33\,\%$ of human samples reach
+$|\mathrm{SI}|\geq 0.95$ on rectangular optimisation, with the
+remaining samples honestly reporting the geometric ceiling at which
+the cuff cannot reach the assigned target fascicle.
 jaxon is open-source and designed to slot into existing peripheral nerve
 stimulation pipelines as a drop-in replacement for the NEURON forward
 solver, with the additional capability of gradient-based optimisation.

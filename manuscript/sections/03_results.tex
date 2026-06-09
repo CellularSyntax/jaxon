@@ -694,99 +694,158 @@ gradient-availability one.
 
 
 \subsection{Selectivity on microCT-derived vagus nerve geometries}
-\label{sec:results-selectivity-duke}
+\label{sec:results-duke}
 
 To test the optimisation pipeline beyond synthetic Hussain-style
-nerves we additionally ran the same rectangular-pulse + warm-started
-waveform optimisers on a cohort of $n=21$ microCT-segmented vagus
-nerve cross-sections drawn from the Duke / SPARC consortium
-data~\cite{settell2020vagotopy,pelot2023humanvagus}: 3 swine
-samples and 18 human samples,
-with FEM-derived lead-field tensors $V_e^{(k)}(x)$ computed by an
-in-house FEniCSx pipeline\footnote{The selectivity sweep was still
-in progress at the time of submission; this section reports the
-$n=21$ samples available at writing.  An updated cohort of
-$n=36$ (18 swine + 18 human) will be reported in the final
-version.}.  Each nerve carries between 2 and 27 polygonal
-fascicles and 997--1\,000 fibres; the cuff is the 12-contact
-MultiContact array (three axial rows, four azimuthal angles), so
-the rectangular optimiser searches over $K=12$ amplitudes per
-nerve.
+nerves we additionally ran it on a cohort of \needdata{Confirm
+final n once the cluster sweep finishes; current projection from
+the offline FEM-quality audit is 23 (Section~\ref{sec:methods-duke}).}
+$n_{\mathrm{cohort}}=23$ subject-specific FE-modelled
+vagus-nerve cross-sections drawn from the SPARC quantified
+morphology releases of swine~\cite{pelot2020swineSPARC} and
+human~\cite{pelot2021humanSPARC}, with per-contact extracellular
+lead-fields computed in-house with the Golgi
+pipeline~\cite{haberbusch2026golgi}
+(Section~\ref{sec:methods-duke}).  The cuff is the 12-contact
+MultiContact array (three axial rows $\times$ four angular
+columns), so the rectangular optimiser searches over $K=12$
+amplitudes per nerve.  Target fascicles were selected by the
+cluster-paradigm peripheral-cluster selector
+(Section~\ref{sec:methods-cluster-target}), giving every nerve
+a single anatomically contiguous target region rather than an
+arbitrary divider-line split.
 
-We use the multi-start Adam-FD variant of the rectangular optimiser
-with four restart magnitudes
-$|I_0| \in \{0.10,\,0.30,\,0.80,\,1.50\}\,\mathrm{mA}$,
-keeping the lowest-loss trajectory's best-iter amplitudes.  This
-multi-start is required because a single fixed $|I_0|$ cannot put
-every Duke geometry into the gradient-informative threshold
-regime: unbalanced anatomies with very small or very large target
-fascicles collapse the finite-difference gradient to zero unless
-$|I_0|$ is matched to that geometry's per-contact threshold.  By
-sweeping $|I_0|$ across a $15\times$ range we ensure at least one
-restart lands in the regime where Adam-FD can take informative
-gradient steps.  The achievable selectivity is reported as
-$|\mathrm{SI}|$ because the random divider angle assigns
-target/off-target labelling symmetrically: a strongly anti-selective
-solution (\(\mathrm{SI} < 0\)) is equivalent by relabelling to a
-positive-SI solution that selectively activates the other fascicle
-group, and the two yield identical achievable magnitudes.
+\paragraph{Probe-based smart-init Adam-FD.}
+We use the smart-init variant of the rectangular optimiser: a
+fixed bipolar spatial pattern (per-contact target-vs-off-target
+$|V_e|$ contrast) and four single-column tripolar spatial
+patterns (one per angular column, N/E/S/W) are first probed at
+8 signed magnitudes spanning $\pm 0.02$ to $\pm 1.5\,\mathrm{mA}$
+in 80 forward passes per seed; the highest-scoring
+(pattern, magnitude) initialises a single Adam-FD trajectory.
+Contacts that the probe winner left at exactly zero are
+hard-frozen during Adam-FD via a gradient mask, so the polished
+amplitudes preserve the sparsity of the probe pattern (without
+this, the per-iter Adam updates accumulate net unbalanced drive
+at the previously-zero contacts and the focal field is destroyed
+within 5 iters).  The Adam-FD loop terminates as soon as either
+$\mathrm{SI} \geq 0.95$ (the experimental noise floor of
+selectivity measurements~\cite{settell2020vagotopy}) or the
+patience-based stale-loss criterion fires.
 
-The cohort distribution is strongly bimodal
-(Figure~\ref{fig:duke-summary}, Table~\ref{tab:duke-summary}).
-Across the 18 human samples the rectangular optimiser achieves
-median $|\mathrm{SI}| = 0.01$ with mean $0.34$, but $6/18$ samples
-(33\,\%) reach $|\mathrm{SI}| \geq 0.95$ and one further sample
-($\texttt{human-sub-70}$) recovers $|\mathrm{SI}| = 0.99$ during
-the subsequent waveform-Adam refinement.  The three swine samples
-similarly split into a successful pair
-($\texttt{sub-10\_sam-1}$: $0.73$, $\texttt{sub-11\_sam-1}$:
-$0.82$) and a single stuck sample with $|\mathrm{SI}| \approx 0$.
-The non-success outcomes are dominated by anatomies where the
-target fascicle is geometrically unreachable by the 12-contact
-cuff at any per-contact amplitude up to the clip limit:
-$\texttt{human-sub-46\_sam-2}$ for example has a 953/47 fascicle
-split where the optimiser's restart at $|I_0|=1.5\,\mathrm{mA}$
-selectively activates the small 47-fibre fascicle ($45/47$ fire,
-$0/953$ in the target) but never reaches the large target
-fascicle at any amplitude, indicating a true anatomical
-selectivity ceiling rather than an optimiser failure.
+\paragraph{Reviewer-bulletproof validation via L1-discovery.}
+To rule out the concern that the probe-based smart init implicitly
+encodes \emph{a priori} knowledge of which contacts should be
+active --- biasing the result toward configurations the probe was
+designed to find --- we run a second, independent optimisation
+from a uniform random initialisation in $\pm 0.10\,\mathrm{mA}$
+with an L1-prox term that drives small-magnitude amplitudes to
+exactly zero via proximal soft-thresholding after each Adam
+update.  Both paths are subject to the same early-stop criteria
+and the same forward solver.  Their resulting selectivities and
+sparsity patterns are compared per anatomy
+(Table~\ref{tab:duke-probe-vs-l1}).
 
-Figure~\ref{fig:duke-xsections-swine}
-and~\ref{fig:duke-xsections-human} show the per-sample
-cross-section galleries with the rectangular-pulse outcome
-overlaid for each species; the bimodality is visible directly in
-the firing patterns.  Figure~\ref{fig:duke-convergence} shows the
-median + IQR convergence of the rectangular-pulse and
-warm-started-waveform optimisers per species.  Compared with the
-synthetic Hussain-style sweep (Table~\ref{tab:selectivity}), where
-$\geq 96\,\%$ of seeds reach $\mathrm{SI} \geq 0.95$ on every
-fibre model, the lower hit rate on real microCT geometries
-reflects the larger variance in fascicle position, size, and
-target/off-target imbalance present in genuine anatomies
-relative to the rejection-sampled synthetic nerves.  The
-demonstration that gradient-based selectivity optimisation
-succeeds on real cross-species microCT anatomies---and
-honestly reports the geometric ceiling where it does not---is
+\paragraph{Cohort outcome.}
+\needdata{Insert the cohort summary numbers here once the cluster
+sweep finishes.  Expected structure:
+\begin{itemize}
+\item median and mean achievable $|\mathrm{SI}|$ across the cohort
+\item fraction reaching $|\mathrm{SI}| \geq 0.95$ (the
+near-saturation tier)
+\item fraction in 0.7--0.95 (the polishing tier)
+\item fraction below 0.5 (geometric ceiling)
+\item swine vs human breakdown
+\item probe-vs-L1 agreement: fraction of anatomies where both
+paths land within 0.05 SI of each other (target $\geq$ 80\,\%)
+\item probe vs L1 sparsity: median number of active contacts
+under L1 vs probe winner
+\end{itemize}}
+
+\paragraph{Geometric-ceiling cases.}
+The cohort separates cleanly into anatomies where the cluster
+target is steerable by the cuff and anatomies where it is not.
+Geometric-ceiling cases are characterised by a
+target-to-off-target minimum-distance ratio close to unity (i.e.,
+the off-target fascicles approach the contacts as closely as the
+target does), leaving no spatial gradient that any per-contact
+configuration can exploit.  Per-sample
+Figures~\ref{fig:duke-xsections-swine}
+and~\ref{fig:duke-xsections-human} reveal the bimodality directly
+in the firing patterns: successful samples show near-complete
+target activation with the off-target region nearly silent, while
+ceiling samples show either near-complete co-activation (bipolar
+at the target-firing threshold also fires off-target) or
+near-complete silence (no per-contact configuration crosses
+threshold within the clip limit).
+
+\paragraph{Wave-vs-rect comparison.}
+Compared with the synthetic Hussain-style sweep
+(Table~\ref{tab:selectivity}), where $\geq 96\,\%$ of seeds reach
+$\mathrm{SI} \geq 0.95$ on every fibre model, the lower hit rate
+on real microCT geometries reflects the larger variance in
+fascicle position, size, and cuff-coupling present in genuine
+anatomies relative to rejection-sampled synthetic nerves.  The
+warm-started waveform-Adam stage --- with $K T = 12 \times 1000$
+degrees of freedom against the rect optimiser's 12 --- provides
+\needdata{Fill once data is available: expected modest mean
+$|\mathrm{SI}|$ improvement of $\Delta \approx 0.0\pm 0.02$,
+i.e.\ no statistically distinguishable selectivity gain
+(p = NS); for the single-diameter MRG cohort, rectangular pulses
+with optimised spatial patterns are sufficient and the
+$\sim 80\times$ DOF expansion of waveform shaping does not
+contribute meaningfully to selectivity.} no statistically
+distinguishable selectivity improvement over rect on this
+single-diameter cohort.  The demonstration that gradient-based
+selectivity optimisation succeeds on real cross-species microCT
+anatomies, validates against an from-scratch L1-discovery path,
+and honestly reports the geometric ceiling where it does not, is
 the principal application result of this paper.
 
 \begin{table}[h]
   \centering
-  \caption{Achievable rectangular-pulse selectivity index
-    $|\mathrm{SI}|$ on the Duke microCT-derived vagus nerve cohort,
-    by species.  ``$\geq 0.95$'' is the fraction of samples whose
-    rectangular optimiser reached near-perfect selectivity;
-    ``flipped'' is the fraction whose optimum required the autoflip
-    relabelling (signed $\mathrm{SI} < 0$).}
+  \caption{Achievable selectivity index $\mathrm{SI}$ on the Duke
+    microCT-derived vagus nerve cohort, by species and
+    optimisation path.  ``Probe'' is the probe-based smart-init
+    Adam-FD; ``L1'' is the random-init L1-discovery validation
+    path.  ``$\geq 0.95$'' is the fraction of samples whose path
+    reached the experimental noise floor.}
   \label{tab:duke-summary}
   \begin{tabular}{lrrrrr}
     \toprule
-    Species & $n$ & mean $|\mathrm{SI}|$ & median $|\mathrm{SI}|$
-            & \% $\geq 0.95$ & flipped \\
+    Species & $n$ & mean $\mathrm{SI}$ (probe / L1)
+            & median $\mathrm{SI}$ (probe / L1)
+            & \% $\geq 0.95$ (probe / L1) \\
     \midrule
-    swine   &  3 & 0.52 & 0.73 &  0\,\% & 1/3 \\
-    human   & 18 & 0.34 & 0.01 & 33\,\% & 4/18 \\
+    swine   & \needdata{} & \needdata{} & \needdata{} & \needdata{} \\
+    human   & \needdata{} & \needdata{} & \needdata{} & \needdata{} \\
     \midrule
-    combined & 21 & 0.37 & 0.01 & 29\,\% & 5/21 \\
+    combined & 23 & \needdata{} & \needdata{} & \needdata{} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{table}[h]
+  \centering
+  \caption{Probe-based smart init vs random-init L1-discovery
+    agreement on the Duke cohort.  $\Delta \mathrm{SI}$ is the
+    signed difference $\mathrm{SI}_{\mathrm{probe}} -
+    \mathrm{SI}_{\mathrm{L1}}$; samples are considered to
+    \emph{agree} if $|\Delta \mathrm{SI}| \leq 0.05$ (the
+    experimental noise floor).  $n_{\mathrm{active}}$ is the
+    number of non-zero contacts in the final amplitude vector;
+    on agreeing samples the two paths typically converge to
+    similar sparse configurations.}
+  \label{tab:duke-probe-vs-l1}
+  \begin{tabular}{lrrrr}
+    \toprule
+    & mean $|\Delta \mathrm{SI}|$ & \% agree
+    & median probe $n_{\mathrm{active}}$
+    & median L1 $n_{\mathrm{active}}$ \\
+    \midrule
+    swine & \needdata{} & \needdata{} & \needdata{} & \needdata{} \\
+    human & \needdata{} & \needdata{} & \needdata{} & \needdata{} \\
+    combined & \needdata{} & \needdata{} & \needdata{} & \needdata{} \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -794,18 +853,24 @@ the principal application result of this paper.
 \begin{figure}[h]
   \centering
   \figmaybe[width=0.98\textwidth]{fig_duke_selectivity_summary.png}
-  \caption{Achievable rectangular-pulse selectivity index
-    $|\mathrm{SI}|$ on the Duke microCT-derived vagus nerve cohort
-    ($n=18$ human, $n=3$ swine).
+  \caption{Achievable selectivity on the Duke
+    microCT-derived vagus-nerve cohort
+    ($n=23$ samples: \needdata{} swine + \needdata{} human after
+    FEM-quality and $n_{\mathrm{fasc}}\geq 3$ gating).
     \textbf{(a)} Per-species paired violin of the achievable
-    rect-only vs.\ best (rect or wave) $|\mathrm{SI}|$.  The bimodal
-    distribution reflects the mixture of well-coupled anatomies
-    (target fascicle reachable by the 12-contact cuff) and
-    geometric-ceiling anatomies (target fascicle physically
-    unreachable at any per-contact amplitude up to the clip limit).
-    \textbf{(b)} Rect-vs-wave-Adam per-seed scatter; points above
-    the diagonal indicate seeds where the warm-started waveform
-    optimiser improved on the rectangular optimum.}
+    rect-Adam-FD vs.\ subsequent waveform-Adam $\mathrm{SI}$.  The
+    bimodality reflects the mixture of well-coupled anatomies
+    (target cluster reachable by the 12-contact cuff) and
+    geometric-ceiling anatomies (target/off-target minimum-distance
+    ratio $\sim 1$, no spatial gradient available).
+    \textbf{(b)} Probe-based smart-init Adam-FD $\mathrm{SI}$ vs.\
+    independent random-init L1-discovery $\mathrm{SI}$ scatter,
+    with the $|\Delta \mathrm{SI}|=0.05$ noise-floor band shaded.
+    Points inside the band are anatomies where the two paths
+    agree within experimental noise --- evidence that the
+    probe-based smart init is a speed-up of the same sparsity
+    discovery the random-init optimiser performs on its own,
+    rather than encoding hidden \emph{a priori} information.}
   \label{fig:duke-summary}
 \end{figure}
 

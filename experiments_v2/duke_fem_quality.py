@@ -58,8 +58,15 @@ def channel_z_std(Ve_unit: np.ndarray) -> np.ndarray:
     return Ve_unit.std(axis=2).mean(axis=1)   # [K]
 
 
-def audit_sample(sample_dir: Path) -> dict:
-    sample = load_duke_sample(sample_dir, fiber_diam_um=10.0,
+def audit_sample(sample_dir: Path, fiber_diam_um: float = 5.7) -> dict:
+    """Default diameter is 5.7 um to match the cluster sweep's actual
+    setting (the sbatch passes FIBER_DIAMETER_UM=5.7 -- changing the
+    diameter changes the MRG internode length which changes where Ve
+    gets sampled along z, which changes the std statistic.  Critically,
+    if the audit and the sweep use different diameters the FEM-quality
+    cutoff is meaningless because each sample's z-std value scales with
+    diameter)."""
+    sample = load_duke_sample(sample_dir, fiber_diam_um=fiber_diam_um,
                                  n_nodes=21, verbose=False)
     Ve_unit = sample["Ve_unit"]
     if Ve_unit.ndim != 3:
@@ -83,9 +90,13 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("duke_ves_root", type=str,
                           help="Directory containing per-sample subdirectories")
-    parser.add_argument("--threshold", type=float, default=150.0,
+    parser.add_argument("--threshold", type=float, default=100.0,
                           help="Minimum acceptable per-channel mean z-std "
                                 "(mV/mA).  Samples below this fail.")
+    parser.add_argument("--diameter", type=float, default=5.7,
+                          help="Fiber diameter (um) to use when loading.  "
+                                "MUST match the sweep's FIBER_DIAMETER_UM "
+                                "for the z-std numbers to be comparable.")
     parser.add_argument("--out-json", type=str, default=None,
                           help="Write pass/fail summary to this JSON path "
                                 "(consumed by selectivity_sweep_duke).")
@@ -104,7 +115,7 @@ def main() -> None:
     results: list[dict] = []
     for sd in candidates:
         try:
-            r = audit_sample(sd)
+            r = audit_sample(sd, fiber_diam_um=args.diameter)
         except Exception as e:
             r = dict(name=sd.name, ok=False, error=str(e))
         results.append(r)

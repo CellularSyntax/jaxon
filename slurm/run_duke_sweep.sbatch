@@ -151,7 +151,7 @@ export L1_N_ITERS="${L1_N_ITERS:-150}"
 # between contact heights fail tripolar patterns -- those are auto-
 # skipped at sample load time.  See experiments_v2/duke_fem_quality.py
 # for the dataset-wide audit.
-export FEM_Z_STD_MIN="${FEM_Z_STD_MIN:-150.0}"
+export FEM_Z_STD_MIN="${FEM_Z_STD_MIN:-100.0}"
 # EARLY_STOP_SI: stop probe-path Adam-FD when SI reaches this threshold.
 # Defensible value: 0.95 (matches experimental noise floor +/- 0.05 on
 # selectivity measurements, FD gradient noise floor, and observed

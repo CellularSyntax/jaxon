@@ -249,12 +249,19 @@ CLUSTER_MIN_FASCICLES   = _env_int("CLUSTER_MIN_FASCICLES", 3)
 # patterns rely on Ve differing between the column's z-middle contact
 # and its z-top/z-bottom guards; when those three Ve fields are nearly
 # identical (poor mesh resolution between contact heights), tripolar
-# cancels to ~zero and fires nothing.  Working sample sub-54_sam-2 has
-# z_std ~ 250, broken sub-53_sam-2 has ~ 62.  150 is a safe threshold;
-# the dataset audit at experiments_v2/duke_fem_quality.py shows a clean
-# gap between 117 (highest fail) and 150 (lowest pass).  Set to 0 to
-# disable the check (legacy behaviour).
-FEM_Z_STD_MIN = _env_flt("FEM_Z_STD_MIN", 150.0)
+# cancels to ~zero and fires nothing.
+#
+# Threshold depends on FIBER_DIAMETER_UM because the MRG internode
+# length (and therefore the z-grid Ve is sampled at) scales with
+# diameter.  Audit values at D=5.7 um (the sweep's default):
+#   working sub-54_sam-2:      z_std ~ 176
+#   broken sub-53_sam-2:       z_std ~  33
+#   broken sub-50_sam-2:       z_std ~  52
+#   borderline sub-9_sam-3:    z_std ~  99   <- excluded
+#   borderline sub-57_sam-3:   z_std ~ 105   <- included
+# Run experiments_v2/duke_fem_quality.py --diameter 5.7 to refresh.
+# Set to 0 to disable the check.
+FEM_Z_STD_MIN = _env_flt("FEM_Z_STD_MIN", 100.0)
 
 # EARLY_STOP_SI: if Adam-FD reaches SI >= this threshold during the
 # probe-path rect optimization, stop immediately.  Defensible value: 0.95.

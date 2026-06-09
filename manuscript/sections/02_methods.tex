@@ -349,6 +349,96 @@ fixed-divider mode (\texttt{RANDOMIZE\_DIVIDER=0}) is retained for
 debugging and for reproducing the original Hussain-style P1--P6
 motor-vs-sensory split.
 
+\subsection{Subject-specific Duke FEM cohort}
+\label{sec:methods-duke}
+
+For the cohort-scale selectivity study (Section~\ref{sec:results-duke})
+we replaced the synthetic Hussain-style geometry of
+Section~\ref{sec:methods-geom} with subject-specific finite-element
+(FE) nerve models built from quantified vagus-nerve morphology of
+swine~\cite{pelot2020swineSPARC} and human~\cite{pelot2021humanSPARC},
+both released through the SPARC Portal.  The raw datasets provide,
+per nerve, calibrated histological cross-sections with manually
+segmented epineurium and per-fascicle endoneurium boundaries; the
+human dataset additionally includes anti-claudin-1 staining that
+resolves the perineurium thickness directly~\cite{pelot2023humanvagus}.
+
+\paragraph{Per-sample FE model.}
+For each sample, an automated pipeline (Golgi~\cite{haberbusch2026golgi})
+converts the segmented cross-section into a watertight 3-D multi-domain
+nerve-and-cuff FE model and computes the per-contact extracellular
+lead field.  Briefly: (i) the segmentation is cleaned morphologically
+and Ramer--Douglas--Peucker-simplified, then area-preserving
+circularised to remove segmentation-specific shape bias while
+conserving fascicle areas; (ii) the resulting cross-section is
+extruded axially and embedded in a concentric cuff (12 platinum
+contacts arranged in 3 axial rows $\times$ 4 angular columns, on a
+$1.0\,\mathrm{mm}$ silicone wall, $5.4\,\mathrm{mm}$ long), a thin
+saline film ($150\,\mu\mathrm{m}$ radial clearance), and a surrounding
+muscle bath; (iii) the assembly is tetrahedralised with Gmsh/OpenCASCADE
+and Netgen, with a size field that refines the mesh to
+${\approx}100\,\mu\mathrm{m}$ near the cuff and coarsens to
+${\approx}1.5\,\mathrm{mm}$ in the muscle bulk; (iv) the
+electro-quasistatic problem $\nabla \cdot (\sigma \nabla V) = 0$ is
+solved in FEniCSx/DOLFINx with $P_1$ Lagrange elements, anisotropic
+endoneurium ($\sigma_{\perp} = 1/6.0$, $\sigma_{\parallel} = 1/1.75$
+S/m along the nerve axis) and muscle (0.086 transverse,
+$0.35$ longitudinal S/m), isotropic epineurium and encapsulation
+($1/6.3$ S/m), saline ($1.76$ S/m), silicone ($10^{-12}$ S/m), and
+platinum contacts ($9.43 \times 10^{6}$
+S/m)~\cite{pelot2020perineurium,grill1994stimulus,gielen1984incorporation,horch2017neuroprosthetics};
+(v) the perineurium is modelled as a zero-thickness contact-impedance
+sheet at the endoneurium--epineurium interface with sheet resistance
+$R_s = d_{\mathrm{peri}} / \sigma_{\mathrm{peri}}$ ($\sigma_{\mathrm{peri}}
+= 1/1149$\,S/m~\cite{pelot2020perineurium}), with $d_{\mathrm{peri}}$
+taken per fascicle from the diameter-dependent
+relation~\cite{pelot2020perineurium}
+($d_{\mathrm{peri}} = 0.02547\,d_{\mathrm{fasc}} + 3.44\,\mu\mathrm{m}$
+for swine; measured directly from the anti-claudin-1 inner/outer
+masks for human).  Because the problem is linear, the assembled
+block matrix is LU-factorised once with MUMPS and one unit-current
+($1\,\mathrm{A}$) solve is performed per contact with the muscle
+boundary as return, yielding a lead field $V_e^{(k)}$ in $\mathrm{V/A}$
+for each of the 12 contacts.
+
+\paragraph{Fibre sampling.}
+$1\,000$ straight axial fibre trajectories per nerve are seeded by
+rejection sampling inside the fascicles in proportion to fascicle
+cross-sectional area, extruded along the nerve axis at $200\,\mu
+\mathrm{m}$ steps.  The lead fields $V_e^{(k)}$ are sampled at every
+MRG compartment of every fibre and exported as a per-fibre tensor
+$V_e^{(k)}_{f,n}$, which the optimiser superposes linearly with the
+per-contact amplitudes $a_k(t)$ to obtain the total extracellular
+potential at each compartment, exactly as in
+Section~\ref{sec:methods-forward}.  Off-mesh sample points (well
+under $3\,\%$ of points, occurring near fascicle ends) are filled by
+axial interpolation along the fibre.  We refer the reader
+to~\cite{haberbusch2026golgi} for the full pipeline including
+benchmarks, mesh-convergence tests, and the geometry-rendering and
+volume-field-export utilities used to validate every sample by visual
+inspection prior to inclusion in the cohort.
+
+\paragraph{Cohort composition and FEM-quality gating.}
+Of the $N_{\mathrm{raw}} = 36$ SPARC bundles processed by the pipeline,
+$N_{\mathrm{cohort}} = 23$ \needdata{Confirm exact n once the cluster
+sweep finishes; 23 was the projection from the offline FEM-quality
+audit (\texttt{duke\_fem\_quality.py --diameter 5.7 --threshold 100})
+after also subtracting the $n_{\mathrm{fasc}}<3$ exclusions
+(sub-63, sub-70)} entered the selectivity study after two
+pre-flight filters: \textbf{(i)} samples with fewer than three
+fascicles were rejected (degenerate target-cluster selector,
+Section~\ref{sec:methods-cluster-target}); \textbf{(ii)} samples
+whose per-channel mean of the per-fibre standard deviation of
+$V_e^{(k)}_{f,n}$ along $n$ fell below $100\,\mathrm{mV/mA}$ (at the
+$5.7\,\mu\mathrm{m}$ MRG fibre diameter we use throughout) were
+rejected as having insufficient FE-mesh $z$-resolution between
+adjacent contact rows: in such samples the cathode-middle minus
+guard-outer subtraction that defines tripolar field steering
+collapses to zero and the optimiser is unable to obtain selective
+activation regardless of which spatial pattern it explores.  The
+quality metric and threshold are reproducible via
+\texttt{experiments\_v2/duke\_fem\_quality.py} in the released code.
+
 \subsection{Validation protocol}
 \label{sec:methods-validation}
 

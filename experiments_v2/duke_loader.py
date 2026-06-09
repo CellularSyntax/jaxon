@@ -304,6 +304,109 @@ def load_duke_sample(
     )
 
 
+def select_peripheral_target_candidates(
+    fasc_meta: list,
+    contact_xyz_um: np.ndarray,
+    fasc_id: np.ndarray,
+    n_min_fibers: int = 30,
+    top_k: int = 3,
+    peripheral_quantile: float = 0.5,
+) -> list[int]:
+    """Pick up to ``top_k`` fascicle IDs to use as single-fascicle targets.
+
+    The selection paradigm is physics-aware: an extraneural cuff cannot
+    selectively activate fascicles deep in the nerve interior because
+    every contact reaches them at approximately the same Ve magnitude.
+    So we restrict targets to **peripheral** fascicles (those with a
+    small centroid-to-nearest-contact distance), and within that pool
+    we take the largest fascicles by fibre count (so per-target SI
+    statistics aren't degenerate).
+
+    Parameters
+    ----------
+    fasc_meta : list
+        Per-fascicle metadata with ``id``, ``centroid_xy_um``.
+    contact_xyz_um : [K, 3]
+        Cuff contact positions in µm.  Only the xy plane is used here
+        since the cuff is axially extended and per-fascicle proximity
+        is dominated by the angular component.
+    fasc_id : [n_fibers] int
+        Per-fibre fascicle membership (for the size filter).
+    n_min_fibers : int, default 30
+        Minimum fibre count for a fascicle to be a candidate; smaller
+        fascicles give degenerate per-target SI statistics.
+    top_k : int, default 3
+        Maximum number of candidates to return per nerve.
+    peripheral_quantile : float, default 0.5
+        Fraction of fascicles to keep in the "peripheral" pool, ranked
+        by ascending centroid-to-nearest-contact distance.  0.5 keeps
+        the closest-to-contact half of the fascicles.
+
+    Returns
+    -------
+    list of fascicle IDs (subset of ``[m['id'] for m in fasc_meta]``),
+    ordered by fibre count descending.  May be shorter than ``top_k``
+    if the size filter rejects everything, or empty if no fascicle
+    passes the filters.
+    """
+    if not fasc_meta:
+        return []
+    contact_xy = np.asarray(contact_xyz_um, dtype=np.float64)[:, :2]
+    items = []
+    for m in fasc_meta:
+        fid = int(m["id"])
+        cx, cy = float(m["centroid_xy_um"][0]), float(m["centroid_xy_um"][1])
+        d_min = float(np.min(np.hypot(contact_xy[:, 0] - cx,
+                                       contact_xy[:, 1] - cy)))
+        n_in_f = int(np.sum(fasc_id == fid))
+        items.append({
+            "id":           fid,
+            "centroid_xy":  (cx, cy),
+            "proximity_um": d_min,
+            "n_fibers":     n_in_f,
+        })
+
+    # Peripheral pool: closest-to-contact half (or whatever fraction).
+    items.sort(key=lambda r: r["proximity_um"])
+    n_peripheral = max(1, int(np.ceil(len(items) * peripheral_quantile)))
+    peripheral = items[:n_peripheral]
+
+    # Size filter.
+    candidates = [c for c in peripheral if c["n_fibers"] >= n_min_fibers]
+    if not candidates:
+        return []
+
+    # Top-k by fibre count.
+    candidates.sort(key=lambda r: -r["n_fibers"])
+    return [c["id"] for c in candidates[:top_k]]
+
+
+def single_fascicle_target_mask(
+    nerve_geom: NerveGeometry,
+    fasc_id: np.ndarray,
+    fasc_meta: list,
+    target_fascicle_id: int,
+) -> np.ndarray:
+    """Set the target_mask so that only fibres in ``target_fascicle_id``
+    are target; every other fibre is off-target.  Updates the
+    ``is_target`` flag on each fascicle in ``nerve_geom.fascicles`` for
+    downstream plotting code.  Returns the boolean ``target_mask``.
+
+    Mirrors the ``divider_split_target_mask`` API so the sweep code
+    can drop in this targeting paradigm without other changes."""
+    target_mask = (np.asarray(fasc_id, dtype=int) == int(target_fascicle_id))
+    nerve_geom.target_mask = target_mask
+    # Update is_target on each FascicleOutline so xsection plotting
+    # paints the right fascicle in the target colour.
+    id_to_tgt = {int(m["id"]): (int(m["id"]) == int(target_fascicle_id))
+                 for m in fasc_meta}
+    for fasc, m in zip(nerve_geom.fascicles, fasc_meta):
+        fasc.is_target = id_to_tgt[int(m["id"])]
+    # Clear divider angle — we're not using the divider paradigm here.
+    nerve_geom.divider_angle_deg = None
+    return target_mask
+
+
 def divider_split_target_mask(
     nerve_geom: NerveGeometry,
     fasc_id: np.ndarray,

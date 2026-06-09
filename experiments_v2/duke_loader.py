@@ -381,6 +381,173 @@ def select_peripheral_target_candidates(
     return [c["id"] for c in candidates[:top_k]]
 
 
+def select_peripheral_cluster_target(
+    fasc_meta: list,
+    fasc_id: np.ndarray,
+    nerve_outline_xy_um: np.ndarray,
+    radius_quantile: float = 0.6,
+    angular_window_deg: float = 90.0,
+    n_min_target_fibers: int = 50,
+    angular_step_deg: float = 5.0,
+) -> dict:
+    """Pick a single cluster of peripheral fascicles to use as the target.
+
+    Real fascicles cluster anatomically along branches of the parent
+    nerve, so targeting one isolated fascicle while leaving its
+    anatomical neighbour off-target doesn't match any real clinical
+    selectivity goal.  This selector instead finds **one contiguous
+    angular sector** of the nerve perimeter that contains the largest
+    peripheral fascicle cluster (by total fibre count) and labels
+    every peripheral fascicle in that sector as the target.
+
+    The sector width matches the angular resolution the cuff can
+    actually steer (4 angular contact positions → ~90° sectors), so
+    the test aligns with the hardware's discrimination capability.
+
+    Parameters
+    ----------
+    fasc_meta : list
+        Per-fascicle metadata with ``id`` and ``centroid_xy_um``.
+    fasc_id : [n_fibers] int
+        Per-fibre fascicle membership.
+    nerve_outline_xy_um : [N, 2]
+        Outer polygon vertices in µm; used to compute the nerve
+        centroid as the origin of the polar grid.
+    radius_quantile : float, default 0.6
+        A fascicle is "peripheral" if its radial position from the
+        nerve centroid is ≥ ``radius_quantile`` of the max radial
+        position observed for any fascicle in this nerve.  0.6
+        empirically captures the outer ring without including the
+        central core.
+    angular_window_deg : float, default 90.0
+        Width of the angular sector that defines the target cluster.
+        90° matches the 4-angle MultiContact cuff.
+    n_min_target_fibers : int, default 50
+        Reject nerves where the best window contains fewer than this
+        many target fibres (degenerate per-target SI statistics).
+    angular_step_deg : float, default 5.0
+        Resolution of the sliding-window scan.
+
+    Returns
+    -------
+    dict with keys:
+        target_ids       — list[int], fascicle IDs in the chosen cluster
+                           (empty list if no acceptable cluster found)
+        window_start_deg — float, anti-clockwise start angle of sector
+        window_end_deg   — float, anti-clockwise end angle of sector
+        nerve_centroid_xy_um — (cx0, cy0) origin used for polar grid
+        r_threshold_um   — float, radial cut-off used as the peripheral
+                           filter
+        peripheral_ids   — list[int], all fascicle IDs that passed the
+                           peripheral filter (for plotting)
+        n_target_fibers  — int, sum of fibres across target_ids
+    """
+    if not fasc_meta:
+        return dict(target_ids=[], window_start_deg=0.0,
+                    window_end_deg=0.0,
+                    nerve_centroid_xy_um=(0.0, 0.0),
+                    r_threshold_um=0.0,
+                    peripheral_ids=[], n_target_fibers=0)
+
+    outline_xy = np.asarray(nerve_outline_xy_um, dtype=np.float64)
+    cx0, cy0 = float(outline_xy[:, 0].mean()), float(outline_xy[:, 1].mean())
+
+    # Per-fascicle polar coords relative to nerve centroid.
+    items = []
+    for m in fasc_meta:
+        fid = int(m["id"])
+        cx, cy = float(m["centroid_xy_um"][0]), float(m["centroid_xy_um"][1])
+        dx, dy = cx - cx0, cy - cy0
+        r = float(np.hypot(dx, dy))
+        theta = float(np.degrees(np.arctan2(dy, dx)))
+        if theta < 0.0:
+            theta += 360.0
+        n_in_f = int(np.sum(fasc_id == fid))
+        items.append({"id": fid, "r": r, "theta": theta, "n_fibers": n_in_f})
+
+    r_max = max(it["r"] for it in items)
+    if r_max <= 0.0:
+        return dict(target_ids=[], window_start_deg=0.0,
+                    window_end_deg=0.0,
+                    nerve_centroid_xy_um=(cx0, cy0),
+                    r_threshold_um=0.0,
+                    peripheral_ids=[], n_target_fibers=0)
+    r_thr = radius_quantile * r_max
+
+    peripheral = [it for it in items if it["r"] >= r_thr]
+    peripheral_ids = [it["id"] for it in peripheral]
+    if not peripheral:
+        return dict(target_ids=[], window_start_deg=0.0,
+                    window_end_deg=0.0,
+                    nerve_centroid_xy_um=(cx0, cy0),
+                    r_threshold_um=r_thr,
+                    peripheral_ids=[], n_target_fibers=0)
+
+    # Sliding angular window: find the W° sector with the most
+    # peripheral target fibres.
+    W = float(angular_window_deg)
+    best_score = -1
+    best_start = 0.0
+    best_target_ids: list[int] = []
+    for start in np.arange(0.0, 360.0, float(angular_step_deg)):
+        end = (start + W) % 360.0
+        if start < end:
+            in_window = [it for it in peripheral
+                         if start <= it["theta"] < end]
+        else:
+            # Window wraps past 360°.
+            in_window = [it for it in peripheral
+                         if (it["theta"] >= start) or (it["theta"] < end)]
+        score = sum(it["n_fibers"] for it in in_window)
+        if score > best_score:
+            best_score = score
+            best_start = float(start)
+            best_target_ids = [it["id"] for it in in_window]
+
+    if best_score < n_min_target_fibers:
+        return dict(target_ids=[], window_start_deg=0.0,
+                    window_end_deg=0.0,
+                    nerve_centroid_xy_um=(cx0, cy0),
+                    r_threshold_um=r_thr,
+                    peripheral_ids=peripheral_ids,
+                    n_target_fibers=int(best_score))
+
+    return dict(
+        target_ids=best_target_ids,
+        window_start_deg=best_start,
+        window_end_deg=(best_start + W) % 360.0,
+        nerve_centroid_xy_um=(cx0, cy0),
+        r_threshold_um=r_thr,
+        peripheral_ids=peripheral_ids,
+        n_target_fibers=int(best_score),
+    )
+
+
+def cluster_target_mask(
+    nerve_geom: NerveGeometry,
+    fasc_id: np.ndarray,
+    fasc_meta: list,
+    target_fascicle_ids: list[int],
+) -> np.ndarray:
+    """Set ``target_mask`` so that fibres in any of the
+    ``target_fascicle_ids`` are target; every other fibre is off-target.
+    Updates the ``is_target`` flag on each fascicle in
+    ``nerve_geom.fascicles`` for downstream plotting.  Returns the
+    boolean ``target_mask``.
+
+    Sister to ``single_fascicle_target_mask`` for the cluster-based
+    paradigm."""
+    fasc_id_arr = np.asarray(fasc_id, dtype=int)
+    target_id_set = {int(t) for t in target_fascicle_ids}
+    target_mask = np.array([int(f) in target_id_set for f in fasc_id_arr],
+                           dtype=bool)
+    nerve_geom.target_mask = target_mask
+    for fasc, m in zip(nerve_geom.fascicles, fasc_meta):
+        fasc.is_target = (int(m["id"]) in target_id_set)
+    nerve_geom.divider_angle_deg = None
+    return target_mask
+
+
 def single_fascicle_target_mask(
     nerve_geom: NerveGeometry,
     fasc_id: np.ndarray,

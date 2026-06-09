@@ -1,25 +1,28 @@
-"""Sanity-check the peripheral target-candidate selection visually.
+"""Sanity-check the peripheral-cluster target selection visually.
 
 For each Duke bundle in ``duke_Ves/`` (or ``duke_meshes/``), draws a
-per-sample multi-panel figure:
+per-sample 2-panel figure:
 
-  - Overview panel: nerve outline, all fascicle polygons, all 12
-    contacts, with the selected target candidates highlighted in
-    red.
-  - One panel per target candidate: the same nerve cross-section but
-    coloured by the per-fibre target/off-target assignment that the
-    sweep code will use when that fascicle is chosen as the target.
+  - Overview panel: nerve outline, the radial peripheral threshold
+    ring, the chosen angular target sector, all fascicle polygons
+    coloured by their role (target / peripheral-but-not-target /
+    central), all 12 contacts, and fascicle centroids labelled with
+    their id and fibre count.
+  - Target/off-target panel: the same nerve cross-section but with
+    per-fibre target/off-target colouring matching what the sweep
+    code will use.
 
-n_fascicle < 3 bundles are skipped (the divider / single-fascicle
+n_fascicle < ``--min-fascicles`` bundles are skipped (the cluster
 paradigm is degenerate for them and they will be excluded from the
-manuscript cohort).
+manuscript cohort).  Likewise nerves whose best cluster contains
+fewer than ``--n-min-target-fibers`` fibres are flagged.
 
 Outputs land in ``outputs/duke_target_sanity/<sample>.png``.
 
 Run from the project root:
 
     python -m experiments_v2.duke_target_sanity
-    python -m experiments_v2.duke_target_sanity --top-k 5
+    python -m experiments_v2.duke_target_sanity --angular-window 120
 """
 from __future__ import annotations
 
@@ -35,21 +38,22 @@ sys.path.insert(0, str(ROOT))
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
+import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 
-from experiments_v2.duke_loader import select_peripheral_target_candidates
+from experiments_v2.duke_loader import select_peripheral_cluster_target
 from experiments_v2.utils import ensure_dir
 
 
 # ─── defaults (CLI-overridable) ──────────────────────────────────────
-DEFAULT_N_MIN_FIBERS       = 30
-DEFAULT_TOP_K              = 3
-DEFAULT_PERIPHERAL_QUANTILE = 0.5
-DEFAULT_OUT_SUBDIR         = "duke_target_sanity"
+DEFAULT_RADIUS_QUANTILE     = 0.6
+DEFAULT_ANGULAR_WINDOW_DEG  = 90.0
+DEFAULT_N_MIN_TARGET_FIBERS = 50
+DEFAULT_MIN_FASCICLES       = 3
+DEFAULT_OUT_SUBDIR          = "duke_target_sanity"
 
 
 def _resolve_duke_root(project_root: Path) -> Path | None:
-    """Prefer duke_meshes/ if it exists, otherwise duke_Ves/."""
     for sub in ("duke_meshes", "duke_Ves"):
         p = project_root / sub
         if p.is_dir():
@@ -58,14 +62,12 @@ def _resolve_duke_root(project_root: Path) -> Path | None:
 
 
 def _lite_load(sample_dir: Path) -> dict:
-    """Read only what we need for drawing — no MRG geometry, no Ve
-    interpolation.  Skips the expensive parts of ``load_duke_sample``
-    so the sanity check runs in seconds per sample."""
+    """Read only what we need for drawing — no MRG geometry, no Ve."""
     nx = json.loads((sample_dir / "nerve_xsec.json").read_text())
     ec = json.loads((sample_dir / "electrode_config.json").read_text())
 
-    fiber_xy = np.asarray(nx["fibers"]["xy_um"], dtype=np.float64)   # [F, 2]
-    fasc_id  = np.asarray(nx["fibers"]["fascicle"], dtype=int)        # [F]
+    fiber_xy = np.asarray(nx["fibers"]["xy_um"], dtype=np.float64)
+    fasc_id  = np.asarray(nx["fibers"]["fascicle"], dtype=int)
 
     fasc_meta = []
     for fc in nx["fascicles"]:
@@ -93,70 +95,90 @@ def _lite_load(sample_dir: Path) -> dict:
             cx, cy, cz = cx * 1e6, cy * 1e6, cz * 1e6
         contact_xyz[i] = (cx, cy, cz)
 
-    return dict(
-        fiber_xy=fiber_xy, fasc_id=fasc_id, fasc_meta=fasc_meta,
-        outline=outline, contact_xyz=contact_xyz,
-        sample_name=sample_dir.name,
-    )
+    return dict(fiber_xy=fiber_xy, fasc_id=fasc_id, fasc_meta=fasc_meta,
+                outline=outline, contact_xyz=contact_xyz,
+                sample_name=sample_dir.name)
 
 
 def _draw_outline(ax, outline: np.ndarray) -> None:
-    ax.plot(outline[:, 0], outline[:, 1], "k-", lw=0.8)
+    ax.plot(outline[:, 0], outline[:, 1], "k-", lw=0.8, zorder=1)
     ax.fill(outline[:, 0], outline[:, 1], color="0.95", alpha=0.5,
-            edgecolor="none")
+            edgecolor="none", zorder=0)
 
 
-def _draw_fascicle_polygons(ax, fasc_meta, target_id=None,
-                            candidate_ids=None) -> None:
-    """Fill each fascicle polygon.  Colour depends on role:
-       target_id present  -> green for that fascicle, grey for others
-       candidate_ids set  -> red outline on candidates, blue fill on rest
-       neither            -> uniform blue fill."""
+def _draw_peripheral_ring(ax, centroid_xy, r_threshold,
+                          outline: np.ndarray) -> None:
+    """Dashed circle at the radial peripheral threshold."""
+    cx0, cy0 = centroid_xy
+    theta = np.linspace(0, 2 * np.pi, 200)
+    rx = cx0 + r_threshold * np.cos(theta)
+    ry = cy0 + r_threshold * np.sin(theta)
+    ax.plot(rx, ry, "--", color="0.55", lw=0.8, alpha=0.7, zorder=2)
+    ax.plot(cx0, cy0, "+", color="0.3", ms=8, mew=1.0, zorder=2)
+
+
+def _draw_angular_sector(ax, centroid_xy, start_deg, end_deg,
+                         outline: np.ndarray) -> None:
+    """Translucent wedge from centroid through the outer boundary
+    covering [start_deg, end_deg]."""
+    cx0, cy0 = centroid_xy
+    # Use a large radius to cover the full nerve.
+    R = float(np.max(np.hypot(outline[:, 0] - cx0, outline[:, 1] - cy0))) * 1.05
+    width = (end_deg - start_deg) % 360.0
+    if width == 0.0:
+        width = 360.0
+    wedge = mpatches.Wedge(
+        (cx0, cy0), R, start_deg, start_deg + width,
+        facecolor="#ffcccb", edgecolor="red", alpha=0.25, lw=0.8, zorder=1,
+    )
+    ax.add_patch(wedge)
+
+
+def _draw_fascicle_polygons(ax, fasc_meta, target_id_set, peripheral_id_set,
+                            for_target_view: bool = False) -> None:
+    """Colour fascicles by role.
+
+       target_id_set ∋ fid              → green
+       fid ∈ peripheral_id_set (not tgt) → light blue with grey edge
+       else                             → grey
+    """
     for m in fasc_meta:
         poly = m.get("polygon_xy_um")
         if poly is None or len(poly) < 3:
             continue
         fid = int(m["id"])
-        if target_id is not None:
-            is_tgt = (fid == target_id)
-            face = "#7ec97e" if is_tgt else "#d8d8d8"
-            edge = "black" if is_tgt else "0.6"
-            lw = 1.0 if is_tgt else 0.5
-            alpha = 0.7 if is_tgt else 0.5
-        elif candidate_ids is not None:
-            is_cand = fid in candidate_ids
-            face = "#cfe2f3" if is_cand else "#e9e9e9"
-            edge = "red" if is_cand else "0.6"
-            lw = 1.5 if is_cand else 0.5
-            alpha = 0.75 if is_cand else 0.5
+        if fid in target_id_set:
+            face, edge, lw, alpha = "#7ec97e", "black", 1.0, 0.7
+        elif fid in peripheral_id_set:
+            face, edge, lw, alpha = "#cfe2f3", "steelblue", 0.6, 0.55
         else:
-            face, edge, lw, alpha = "#cfe2f3", "steelblue", 0.5, 0.5
-        ax.fill(poly[:, 0], poly[:, 1], facecolor=face,
-                edgecolor=edge, lw=lw, alpha=alpha)
+            face, edge, lw, alpha = "#d8d8d8", "0.6", 0.4, 0.45
+        ax.fill(poly[:, 0], poly[:, 1], facecolor=face, edgecolor=edge,
+                lw=lw, alpha=alpha, zorder=3)
 
 
 def _draw_contacts(ax, contact_xyz: np.ndarray) -> None:
     ax.scatter(contact_xyz[:, 0], contact_xyz[:, 1],
-               s=70, c="black", edgecolor="white", lw=1.0, zorder=5)
+               s=70, c="black", edgecolor="white", lw=1.0, zorder=6)
 
 
-def _annotate_centroids(ax, fasc_meta, candidate_ids, all_items=None) -> None:
-    """Label every fascicle centroid with its id and fibre count.
-    Candidate fascicles get a red dot and bold white-on-red label;
-    others get a small grey dot."""
+def _annotate_centroids(ax, fasc_meta, target_id_set,
+                        peripheral_id_set) -> None:
     for m in fasc_meta:
         fid = int(m["id"])
         cx, cy = m["centroid_xy_um"]
         n = int(m["n_fibers"])
-        if fid in candidate_ids:
+        if fid in target_id_set:
             ax.plot(cx, cy, "o", color="red", ms=8, mec="black", mew=0.8,
-                    zorder=4)
-            ax.annotate(f"{fid}\n(n={n})", (cx, cy), ha="center", va="center",
-                        fontsize=6, color="white", weight="bold", zorder=6)
+                    zorder=5)
+            ax.annotate(f"{fid}\n(n={n})", (cx, cy), ha="center",
+                        va="center", fontsize=6, color="white",
+                        weight="bold", zorder=7)
         else:
-            ax.plot(cx, cy, "o", color="0.4", ms=3, zorder=4)
+            face = "0.4" if fid in peripheral_id_set else "0.7"
+            ax.plot(cx, cy, "o", color=face, ms=3, zorder=5)
             ax.annotate(f"{fid}", (cx, cy), ha="center", va="center",
-                        fontsize=5, color="0.3", zorder=6,
+                        fontsize=5, color="0.3", zorder=7,
                         xytext=(0, -8), textcoords="offset points")
 
 
@@ -165,9 +187,9 @@ def _set_axis(ax) -> None:
     ax.axis("off")
 
 
-def draw_sample(sample: dict, candidate_ids: list[int],
-                out_path: Path, n_min_fibers: int,
-                peripheral_quantile: float) -> None:
+def draw_sample(sample: dict, cluster: dict, out_path: Path,
+                radius_quantile: float, angular_window_deg: float,
+                n_min_target_fibers: int) -> None:
     name = sample["sample_name"]
     fasc_meta = sample["fasc_meta"]
     fasc_id = sample["fasc_id"]
@@ -175,55 +197,79 @@ def draw_sample(sample: dict, candidate_ids: list[int],
     outline = sample["outline"]
     contact_xyz = sample["contact_xyz"]
 
-    n_panels = 1 + len(candidate_ids)
-    fig_w = max(5.5 * n_panels, 6.0)
-    fig, axes = plt.subplots(1, n_panels, figsize=(fig_w, 5.6),
+    target_id_set = set(int(t) for t in cluster["target_ids"])
+    peripheral_id_set = set(int(t) for t in cluster["peripheral_ids"])
+
+    fig, axes = plt.subplots(1, 2, figsize=(11.0, 5.6),
                               constrained_layout=True)
-    if n_panels == 1:
-        axes = np.array([axes])
 
     # ── Overview panel ──────────────────────────────────────────────
     ax = axes[0]
     _draw_outline(ax, outline)
-    _draw_fascicle_polygons(ax, fasc_meta, candidate_ids=set(candidate_ids))
-    _annotate_centroids(ax, fasc_meta, candidate_ids=set(candidate_ids))
+    if target_id_set:
+        _draw_angular_sector(ax, cluster["nerve_centroid_xy_um"],
+                             cluster["window_start_deg"],
+                             cluster["window_end_deg"],
+                             outline)
+    _draw_peripheral_ring(ax, cluster["nerve_centroid_xy_um"],
+                          cluster["r_threshold_um"], outline)
+    _draw_fascicle_polygons(ax, fasc_meta, target_id_set, peripheral_id_set)
+    _annotate_centroids(ax, fasc_meta, target_id_set, peripheral_id_set)
     _draw_contacts(ax, contact_xyz)
-    n_cand = len(candidate_ids)
+
     n_fasc = len(fasc_meta)
-    cand_str = ", ".join(map(str, candidate_ids)) if candidate_ids else "none"
-    ax.set_title(
+    n_per = len(peripheral_id_set)
+    n_tgt_fasc = len(target_id_set)
+    n_tgt_fibers = cluster["n_target_fibers"]
+    tids_str = ", ".join(map(str, sorted(target_id_set))) if target_id_set else "none"
+    title = (
         f"{name}\n"
-        f"n_fasc={n_fasc}, candidates(red)={n_cand}: [{cand_str}]\n"
-        f"(N_min={n_min_fibers}, periph_qtl={peripheral_quantile})",
-        fontsize=8,
+        f"n_fasc={n_fasc}, peripheral={n_per}, target cluster={n_tgt_fasc}\n"
+        f"target_ids=[{tids_str}], n_target_fibers={n_tgt_fibers}\n"
+        f"(r_qtl={radius_quantile}, sector={angular_window_deg:.0f}°, "
+        f"window {cluster['window_start_deg']:.0f}-{cluster['window_end_deg']:.0f}°)"
     )
+    ax.set_title(title, fontsize=8)
     _set_axis(ax)
 
-    # ── Per-candidate panels ────────────────────────────────────────
-    for i, tid in enumerate(candidate_ids):
-        ax = axes[i + 1]
-        target_mask = (fasc_id == tid)
+    # ── Target/off-target panel ──────────────────────────────────────
+    ax = axes[1]
+    _draw_outline(ax, outline)
+    if target_id_set:
+        target_mask = np.array(
+            [int(f) in target_id_set for f in fasc_id], dtype=bool
+        )
         n_tgt = int(target_mask.sum())
         n_nt = int((~target_mask).sum())
-        _draw_outline(ax, outline)
-        _draw_fascicle_polygons(ax, fasc_meta, target_id=tid)
-        # Fibre dots: target green, off-target grey
-        ax.scatter(fiber_xy[target_mask, 0], fiber_xy[target_mask, 1],
-                   s=1.5, c="#1e7d1e", alpha=0.75, zorder=3)
-        ax.scatter(fiber_xy[~target_mask, 0], fiber_xy[~target_mask, 1],
-                   s=1.0, c="#666666", alpha=0.45, zorder=3)
-        _draw_contacts(ax, contact_xyz)
-        # Mark the target fascicle centroid
+        # Fascicle polygons: target green, others light grey
         for m in fasc_meta:
-            if int(m["id"]) == tid:
-                cx, cy = m["centroid_xy_um"]
-                ax.plot(cx, cy, "o", color="red", ms=8, mec="black", mew=0.8,
-                        zorder=5)
-                break
-        ax.set_title(f"target = fascicle #{tid}\n"
-                     f"{n_tgt} target / {n_nt} off-target fibres",
+            poly = m.get("polygon_xy_um")
+            if poly is None or len(poly) < 3:
+                continue
+            fid = int(m["id"])
+            face = "#7ec97e" if fid in target_id_set else "#e9e9e9"
+            edge = "black" if fid in target_id_set else "0.6"
+            lw = 1.0 if fid in target_id_set else 0.4
+            alpha = 0.7 if fid in target_id_set else 0.5
+            ax.fill(poly[:, 0], poly[:, 1], facecolor=face, edgecolor=edge,
+                    lw=lw, alpha=alpha, zorder=3)
+        # Fibre dots
+        ax.scatter(fiber_xy[target_mask, 0], fiber_xy[target_mask, 1],
+                   s=1.5, c="#1e7d1e", alpha=0.75, zorder=4)
+        ax.scatter(fiber_xy[~target_mask, 0], fiber_xy[~target_mask, 1],
+                   s=1.0, c="#666666", alpha=0.45, zorder=4)
+        ax.set_title(f"target cluster: {n_tgt} target / {n_nt} off-target fibres",
                      fontsize=9)
-        _set_axis(ax)
+    else:
+        # Failed selection — explain why
+        ax.set_title(
+            f"NO TARGET\n"
+            f"best cluster had only {cluster['n_target_fibers']} fibres "
+            f"(< {n_min_target_fibers})",
+            fontsize=9, color="red",
+        )
+    _draw_contacts(ax, contact_xyz)
+    _set_axis(ax)
 
     fig.savefig(out_path, dpi=120, bbox_inches="tight")
     plt.close(fig)
@@ -236,18 +282,23 @@ def main(argv: list[str] | None = None) -> int:
                     help="Override duke_Ves / duke_meshes location.")
     ap.add_argument("--out", type=Path, default=None,
                     help="Override output directory.")
-    ap.add_argument("--n-min-fibers", type=int, default=DEFAULT_N_MIN_FIBERS,
-                    help=f"Minimum fibre count per target candidate "
-                         f"(default {DEFAULT_N_MIN_FIBERS}).")
-    ap.add_argument("--top-k", type=int, default=DEFAULT_TOP_K,
-                    help=f"Max number of target candidates per nerve "
-                         f"(default {DEFAULT_TOP_K}).")
-    ap.add_argument("--peripheral-quantile", type=float,
-                    default=DEFAULT_PERIPHERAL_QUANTILE,
-                    help=f"Fraction of fascicles kept in the peripheral "
-                         f"pool, ranked by proximity to nearest contact "
-                         f"(default {DEFAULT_PERIPHERAL_QUANTILE}).")
-    ap.add_argument("--min-fascicles", type=int, default=3,
+    ap.add_argument("--radius-quantile", type=float,
+                    default=DEFAULT_RADIUS_QUANTILE,
+                    help=f"Radial cut for peripheral fascicles, as a "
+                         f"fraction of the maximum fascicle radial "
+                         f"position (default {DEFAULT_RADIUS_QUANTILE}).")
+    ap.add_argument("--angular-window", type=float,
+                    default=DEFAULT_ANGULAR_WINDOW_DEG,
+                    help=f"Angular sector width in degrees that defines "
+                         f"the target cluster (default "
+                         f"{DEFAULT_ANGULAR_WINDOW_DEG}).")
+    ap.add_argument("--n-min-target-fibers", type=int,
+                    default=DEFAULT_N_MIN_TARGET_FIBERS,
+                    help=f"Reject nerves whose best cluster has fewer "
+                         f"target fibres than this (default "
+                         f"{DEFAULT_N_MIN_TARGET_FIBERS}).")
+    ap.add_argument("--min-fascicles", type=int,
+                    default=DEFAULT_MIN_FASCICLES,
                     help="Skip bundles with fewer than this many fascicles.")
     args = ap.parse_args(argv)
 
@@ -261,14 +312,14 @@ def main(argv: list[str] | None = None) -> int:
     samples = sorted(d for d in duke_root.iterdir() if d.is_dir())
     print(f"[duke_target_sanity] scanning {duke_root} "
           f"({len(samples)} subdirs)")
-    print(f"[duke_target_sanity] params: n_min_fibers={args.n_min_fibers}, "
-          f"top_k={args.top_k}, "
-          f"peripheral_quantile={args.peripheral_quantile}, "
+    print(f"[duke_target_sanity] params: radius_quantile={args.radius_quantile}, "
+          f"angular_window={args.angular_window}°, "
+          f"n_min_target_fibers={args.n_min_target_fibers}, "
           f"min_fascicles={args.min_fascicles}")
     print(f"[duke_target_sanity] output: {out_dir}")
     print()
 
-    n_drawn = n_skipped_low_fasc = n_skipped_no_cand = n_missing = 0
+    n_drawn = n_skip_low_fasc = n_skip_no_cluster = n_missing = 0
     for sample_dir in samples:
         nx_path = sample_dir / "nerve_xsec.json"
         if not nx_path.exists():
@@ -282,34 +333,39 @@ def main(argv: list[str] | None = None) -> int:
         n_fasc = len(sample["fasc_meta"])
         if n_fasc < args.min_fascicles:
             print(f"  [skip] {sample_dir.name}: only {n_fasc} fascicle(s)")
-            n_skipped_low_fasc += 1
+            n_skip_low_fasc += 1
             continue
         if sample["contact_xyz"].shape[0] == 0:
-            print(f"  [skip] {sample_dir.name}: no contacts in electrode_config.json")
+            print(f"  [skip] {sample_dir.name}: no contacts")
             n_missing += 1
             continue
-        candidates = select_peripheral_target_candidates(
-            sample["fasc_meta"], sample["contact_xyz"], sample["fasc_id"],
-            n_min_fibers=args.n_min_fibers, top_k=args.top_k,
-            peripheral_quantile=args.peripheral_quantile,
+        cluster = select_peripheral_cluster_target(
+            sample["fasc_meta"], sample["fasc_id"], sample["outline"],
+            radius_quantile=args.radius_quantile,
+            angular_window_deg=args.angular_window,
+            n_min_target_fibers=args.n_min_target_fibers,
         )
-        if not candidates:
-            print(f"  [skip] {sample_dir.name}: no candidates pass filters "
-                  f"(n_fasc={n_fasc})")
-            n_skipped_no_cand += 1
-            continue
         out_path = out_dir / f"{sample_dir.name}.png"
-        draw_sample(sample, candidates, out_path,
-                    n_min_fibers=args.n_min_fibers,
-                    peripheral_quantile=args.peripheral_quantile)
+        draw_sample(sample, cluster, out_path,
+                    radius_quantile=args.radius_quantile,
+                    angular_window_deg=args.angular_window,
+                    n_min_target_fibers=args.n_min_target_fibers)
+        if not cluster["target_ids"]:
+            print(f"  -> {sample_dir.name}: NO TARGET "
+                  f"(best cluster had {cluster['n_target_fibers']} fibres, "
+                  f"need >= {args.n_min_target_fibers})")
+            n_skip_no_cluster += 1
+        else:
+            print(f"  -> {sample_dir.name}: target={cluster['target_ids']} "
+                  f"({cluster['n_target_fibers']} fibres, sector "
+                  f"{cluster['window_start_deg']:.0f}-"
+                  f"{cluster['window_end_deg']:.0f}°)")
         n_drawn += 1
-        print(f"  -> {sample_dir.name}: candidates={candidates} "
-              f"(n_fasc={n_fasc})")
 
     print()
-    print(f"[duke_target_sanity] done: {n_drawn} drawn, "
-          f"{n_skipped_low_fasc} skipped (n_fasc < {args.min_fascicles}), "
-          f"{n_skipped_no_cand} skipped (no candidate passes filters), "
+    print(f"[duke_target_sanity] done: {n_drawn} figures drawn "
+          f"({n_skip_no_cluster} with no acceptable cluster), "
+          f"{n_skip_low_fasc} skipped (n_fasc < {args.min_fascicles}), "
           f"{n_missing} bundle load errors")
     return 0
 

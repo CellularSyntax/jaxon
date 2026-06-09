@@ -308,6 +308,190 @@ def make_species_method_fig(rows: list[dict]) -> Path:
     return out
 
 
+# ── Cross-section gallery ───────────────────────────────────────────────────
+
+DUKE_VES = ROOT / "duke_Ves"
+
+# Fiber-state colours (target / off-target × fired / silent).
+FIB_TGT_FIRED   = "#2E7D32"   # green
+FIB_TGT_SILENT  = "#B7D8B6"   # very light green
+FIB_OFF_FIRED   = "#D55E00"   # vermillion / orange
+FIB_OFF_SILENT  = "#E0E0E0"   # light grey
+
+# Electrode encoding.
+ELEC_CATHODE = "#0072B2"   # blue
+ELEC_ANODE   = "#D55E00"   # orange
+
+
+def _load_geometry(sample_dir_name: str):
+    """Return (outline_xy, fascicles_list_of_polygons, contact_xy_um, target_fasc_ids).
+
+    Outline is an (N, 2) array in um.  Fascicles is a list of dicts
+    {polygon, id}.  contact_xy_um is a (K, 2) array.  target_fasc_ids
+    is read from the sweep JSON's ``cluster.target_ids`` field via the
+    caller.
+    """
+    d = DUKE_VES / sample_dir_name
+    nx = json.loads((d / "nerve_xsec.json").read_text())
+    outline = np.asarray(nx["nerve_outline_xy_um"], dtype=float)
+    fascs = [dict(id=int(f["id"]),
+                    polygon=np.asarray(f["polygon_xy_um"], dtype=float))
+                for f in nx["fascicles"]]
+    ec = json.loads((d / "electrode_config.json").read_text())
+    # Cylindrical (R [m], phi [rad], z [m]) → Cartesian xy [um].
+    contact_xy = np.array([
+        [p["R"] * np.cos(p["phi"]) * 1e6,
+         p["R"] * np.sin(p["phi"]) * 1e6]
+        for p in ec.get("patches", [])
+    ], dtype=float)
+    return outline, fascs, contact_xy
+
+
+def _draw_xsection(ax, sample_dir_name: str, raw: dict) -> None:
+    outline, fascs, contact_xy = _load_geometry(sample_dir_name)
+    fiber_x = np.asarray(raw["nerve"]["fiber_x_um"], dtype=float)
+    fiber_y = np.asarray(raw["nerve"]["fiber_y_um"], dtype=float)
+    tgt = np.asarray(raw["nerve"]["target_mask"], dtype=bool)
+    acts = np.asarray(raw["rect"]["final_acts"], dtype=float)
+    fired = acts > 0.5
+    amps = np.asarray(raw["rect"]["amps_mA"], dtype=float)
+    target_fasc_ids = set(raw["cluster"]["target_ids"])
+
+    # Nerve outline.
+    ax.fill(outline[:, 0], outline[:, 1],
+              facecolor="#fafafa", edgecolor=PALETTE["grey"], linewidth=1.2,
+              zorder=1)
+    # Fascicles -- target faintly tinted green, off-target plain.
+    for f in fascs:
+        is_target = f["id"] in target_fasc_ids
+        ax.fill(f["polygon"][:, 0], f["polygon"][:, 1],
+                  facecolor=("#dff0e0" if is_target else "#f0f0f0"),
+                  edgecolor=PALETTE["grey"], linewidth=0.6, zorder=2)
+
+    # Fibres -- four-colour scheme.
+    masks = [
+        (~tgt & ~fired, FIB_OFF_SILENT, "off-target silent"),
+        ( tgt & ~fired, FIB_TGT_SILENT, "target silent"),
+        (~tgt &  fired, FIB_OFF_FIRED,  "off-target fired"),
+        ( tgt &  fired, FIB_TGT_FIRED,  "target fired"),
+    ]
+    for m, col, _lab in masks:
+        if np.any(m):
+            ax.scatter(fiber_x[m], fiber_y[m], s=3.5, color=col,
+                          edgecolors="none", zorder=4, alpha=0.95)
+
+    # Electrodes -- signed amp gives colour; |amp| gives size.
+    if contact_xy.size and amps.size:
+        K = min(len(contact_xy), len(amps))
+        radii = 0.5 * (np.abs(amps[:K]) ** 0.5) * 90.0 + 22.0
+        for k in range(K):
+            ax.add_patch(plt.Circle(
+                (contact_xy[k, 0], contact_xy[k, 1]), radii[k],
+                facecolor=(ELEC_CATHODE if amps[k] < -1e-9 else
+                            ELEC_ANODE if amps[k] > 1e-9 else "white"),
+                edgecolor=PALETTE["grey"], linewidth=0.9, alpha=0.85,
+                zorder=5,
+            ))
+
+    # Aesthetics.
+    pad = 100.0
+    xy = np.concatenate([outline, contact_xy]) if contact_xy.size else outline
+    ax.set_xlim(xy[:, 0].min() - pad, xy[:, 0].max() + pad)
+    ax.set_ylim(xy[:, 1].min() - pad, xy[:, 1].max() + pad)
+    ax.set_aspect("equal")
+    ax.set_xticks([]); ax.set_yticks([])
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+
+    # Top-left: sample name; top-right: SI badge.
+    name = _short(raw.get("sample", sample_dir_name))
+    si = float(raw["rect"]["achievable_si"])
+    ax.text(0.03, 0.97, name, transform=ax.transAxes,
+              ha="left", va="top", fontsize=11, weight="bold",
+              color=PALETTE["grey"])
+    ax.text(0.97, 0.97, f"SI = {si:.2f}", transform=ax.transAxes,
+              ha="right", va="top", fontsize=11,
+              color=("black" if si >= 0.95 else PALETTE["grey"]),
+              weight="bold" if si >= 0.95 else "normal",
+              bbox=dict(boxstyle="round,pad=0.25",
+                          facecolor=("#dff0e0" if si >= 0.95 else "white"),
+                          edgecolor=PALETTE["grey"], linewidth=0.8))
+
+
+def _xsection_gallery(samples: list[tuple[str, dict]],
+                        nrows: int, ncols: int,
+                        out_path: Path, title: str) -> Path:
+    fig, axes = plt.subplots(nrows, ncols,
+                                figsize=(3.6 * ncols, 3.6 * nrows),
+                                squeeze=False)
+    for ax_idx, (dir_name, raw) in enumerate(samples):
+        ax = axes[ax_idx // ncols][ax_idx % ncols]
+        _draw_xsection(ax, dir_name, raw)
+    # Hide unused subplots.
+    for j in range(len(samples), nrows * ncols):
+        axes[j // ncols][j % ncols].axis("off")
+
+    # Shared legend at the bottom.
+    from matplotlib.lines import Line2D
+    handles = [
+        Line2D([0], [0], marker="o", color="w", markerfacecolor=FIB_TGT_FIRED,
+                 markersize=8, label="target fired"),
+        Line2D([0], [0], marker="o", color="w", markerfacecolor=FIB_TGT_SILENT,
+                 markersize=8, markeredgecolor=PALETTE["grey"],
+                 label="target silent"),
+        Line2D([0], [0], marker="o", color="w", markerfacecolor=FIB_OFF_FIRED,
+                 markersize=8, label="off-target fired"),
+        Line2D([0], [0], marker="o", color="w", markerfacecolor=FIB_OFF_SILENT,
+                 markersize=8, markeredgecolor=PALETTE["grey"],
+                 label="off-target silent"),
+        Line2D([0], [0], marker="o", color="w", markerfacecolor=ELEC_CATHODE,
+                 markersize=11, markeredgecolor=PALETTE["grey"],
+                 label="cathode (-)"),
+        Line2D([0], [0], marker="o", color="w", markerfacecolor=ELEC_ANODE,
+                 markersize=11, markeredgecolor=PALETTE["grey"],
+                 label="anode (+)"),
+    ]
+    fig.legend(handles=handles, loc="lower center", ncol=6,
+                  frameon=False, fontsize=12,
+                  bbox_to_anchor=(0.5, -0.02))
+
+    fig.suptitle("")   # Nature-style: no title (species implied by filename)
+    fig.tight_layout(rect=(0, 0.04, 1, 1))
+    fig.savefig(out_path); plt.close(fig)
+    return out_path
+
+
+def make_xsection_galleries(rows: list[dict]) -> list[Path]:
+    """Two PNGs: one for swine samples, one for human samples."""
+    # Load each sample's raw JSON.
+    samples_by_species: dict[str, list[tuple[str, dict]]] = {
+        "swine": [], "human": []
+    }
+    for r in rows:
+        d = SWEEP / r["sample"]
+        j = d / "data_seed_0000.json"
+        if not j.exists():
+            continue
+        raw = json.loads(j.read_text())
+        samples_by_species[r["species"]].append((r["sample"], raw))
+
+    paths = []
+    for sp in ("swine", "human"):
+        s = samples_by_species[sp]
+        if not s:
+            continue
+        s.sort(key=lambda t: -float(t[1]["rect"]["achievable_si"]))
+        n = len(s)
+        # Layout: aim for ~3 columns
+        ncols = min(3, n)
+        nrows = (n + ncols - 1) // ncols
+        out = OUT_DIR / f"fig_duke_xsections_{sp}.png"
+        _xsection_gallery(s, nrows, ncols, out,
+                            title=f"{sp} cohort cross-sections")
+        paths.append(out)
+    return paths
+
+
 # ── Public callables ────────────────────────────────────────────────────────
 
 def make_per_sample_fig(rows: list[dict]) -> Path:
@@ -348,6 +532,7 @@ def main() -> None:
         make_species_method_fig(rows),
         make_summary_fig(rows),
     ]
+    paths.extend(make_xsection_galleries(rows))
     for p in paths:
         print(f"  -> {p}")
 

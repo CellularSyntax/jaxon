@@ -1415,6 +1415,11 @@ def _package_result(seed_in: dict, rect_res: dict, rect_t: float,
         "cluster":         cluster_snapshot,
         "divider_deg":     seed_in["divider_deg"],
         "pulse_shape":     PULSE_SHAPE,
+        "fem": {
+            "z_std_mean_mV_per_mA": seed_in.get("fem_z_std_mean"),
+            "z_std_low":            seed_in.get("fem_z_std_low", False),
+            "z_std_threshold":      FEM_Z_STD_MIN,
+        },
         "pulse_pw_ms":     float(PW_MS),
         "pulse_asym_ratio": float(ASYM_RATIO) if PULSE_SHAPE == "biphasic_asym" else None,
         "si_baseline":     float(seed_in["si_baseline"]),
@@ -1488,25 +1493,23 @@ def main():
                   flush=True)
             return
 
-    # FEM mesh-quality pre-flight: skip samples whose Ve_unit lacks
-    # sufficient z-variation for tripolar patterns to function.  See
-    # FEM_Z_STD_MIN docstring above and the standalone audit at
-    # experiments_v2/duke_fem_quality.py for the methodology.  This
-    # catches the early-batch human FEM bundles (sub-46/47/50/53/...)
-    # where the mesh was too coarse between contact z-levels.
-    if FEM_Z_STD_MIN > 0.0:
-        Ve_z_std_per_chan = duke["Ve_unit"].std(axis=2).mean(axis=1)  # [K]
-        z_std_mean = float(Ve_z_std_per_chan.mean())
-        if z_std_mean < FEM_Z_STD_MIN:
-            print(f"[duke sweep] SKIP {SAMPLE_NAME}: FEM z-variation "
-                  f"insufficient (mean per-channel z-std = {z_std_mean:.1f} "
-                  f"< FEM_Z_STD_MIN = {FEM_Z_STD_MIN:.1f} mV/mA).  Tripolar "
-                  f"patterns will cancel to ~0 on this anatomy -- regenerate "
-                  f"FEM with finer z-resolution between contact heights.",
-                  flush=True)
-            return
+    # FEM mesh-quality check: measure axial z-variation of the lead fields.
+    # Low z-std means tripolar / axial multipolar patterns cannot work (fascicles
+    # clustered centrally → field is axially flat at every fiber).  We no longer
+    # skip these nerves outright — the optimizer runs on all 12 contacts and may
+    # still find transverse or mixed selectivity.  We just flag the result JSON
+    # so postprocessing can stratify "full" vs "transverse-mode" runs.
+    Ve_z_std_per_chan = duke["Ve_unit"].std(axis=2).mean(axis=1)  # [K]
+    fem_z_std_mean = float(Ve_z_std_per_chan.mean())
+    fem_z_std_low  = (FEM_Z_STD_MIN > 0.0) and (fem_z_std_mean < FEM_Z_STD_MIN)
+    if fem_z_std_low:
+        print(f"[duke sweep] {SAMPLE_NAME}: low axial z-std "
+              f"({fem_z_std_mean:.1f} < {FEM_Z_STD_MIN:.1f} mV/mA) — "
+              f"tripolar patterns unlikely to work; running in transverse mode.",
+              flush=True)
+    else:
         print(f"[duke sweep] FEM mesh quality: per-channel z-std mean = "
-              f"{z_std_mean:.1f} mV/mA (threshold {FEM_Z_STD_MIN:.1f}) -- OK",
+              f"{fem_z_std_mean:.1f} mV/mA (threshold {FEM_Z_STD_MIN:.1f}) -- OK",
               flush=True)
 
     seeds = list(range(SEED_START, SEED_END))
@@ -1522,6 +1525,8 @@ def main():
             # no acceptable target; nothing to optimise.  Skip cleanly.
             print(f"[seed {s}] no target -> no JSON written", flush=True)
             continue
+        seed_in["fem_z_std_mean"] = fem_z_std_mean
+        seed_in["fem_z_std_low"]  = fem_z_std_low
         result = _run_one_seed(seed_in, verbose=True)
         save_json(result, out_path)
         print(f"[seed {s}] -> {out_path}", flush=True)

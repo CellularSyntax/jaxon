@@ -137,12 +137,10 @@ def run_rect_optimization(
     early_stop_si_tol:      float = 0.01,
     early_stop_si_floor:    float = 0.85,
 ) -> dict:
-    """Optimize per-contact rectangular pulse amplitudes via autodiff (Adam).
+    """Optimize per-contact rectangular pulse amplitudes via FD gradient.
 
-    Each step runs one forward pass + one backward pass through the ODE solver.
-    Requires JAXLEY_FIBERS_SOFT_TEMPERATURE > 0 so the activation proxy is
-    sigmoid-smooth and differentiable.  fd_eps is accepted for backward
-    compatibility but is not used.
+    Each optimization step runs ONE batched forward pass over (K+1)*N_FIBERS
+    effective fibers: one base config + K perturbed configs (amps[k] += fd_eps).
 
     Returns
     -------
@@ -153,6 +151,7 @@ def run_rect_optimization(
     K        = Ve_unit.shape[0]
     n_fibers = Ve_unit.shape[1]
     n_comp   = Ve_unit.shape[2]
+    n_configs = K + 1
 
     Ve_unit_j    = jnp.asarray(Ve_unit,      dtype=jnp.float64)
     pulse_j      = jnp.asarray(pulse_mask,   dtype=jnp.float64)
@@ -169,20 +168,44 @@ def run_rect_optimization(
     n_target_total    = int(target_mask_bool.sum())
     n_nontarget_total = int((~target_mask_bool).sum())
 
+    # Tile statics once outside JIT — constant across all iterations.
+    fs_tiled = _tile_fiber_statics(fiber_statics_batch, n_configs)
+    s0_tiled = _tile_states(state0_batch, n_configs)
+
     @jax.jit
     def _step(amps):
-        def _loss(a):
-            Ve_comb = jnp.einsum("k,kfn->fn", -a, Ve_unit_j)
-            m_max = batch_integrate_m_max_fd(
-                fiber_statics_batch, state0_batch,
-                Ve_comb, pulse_j, pulse_prev_j, dt,
-            )
-            acts = activation_proxy_batch(m_max, node_idx_j)
-            return wq_loss(acts, tgt_j, w, amps=a), acts
-        (loss_val, acts_val), grad = jax.value_and_grad(
-            _loss, has_aux=True
-        )(amps)
-        return (loss_val, acts_val), grad
+        # Base Ve_comb [n_fibers, n_comp].
+        Ve_comb_base = jnp.einsum("k,kfn->fn", -amps, Ve_unit_j)
+
+        # Perturbed configs: amps[k] += fd_eps  →  Ve_comb[k] -= fd_eps * Ve_unit[k].
+        Ve_comb_pert = Ve_comb_base[None] - fd_eps * Ve_unit_j  # [K, n_f, n_c]
+
+        # All K+1 configs stacked: [K+1, n_f, n_c].
+        Ve_comb_all  = jnp.concatenate([Ve_comb_base[None], Ve_comb_pert], axis=0)
+
+        # Flatten for batch solver: [(K+1)*n_fibers, n_comp].
+        Ve_comb_flat = Ve_comb_all.reshape(n_configs * n_fibers, n_comp)
+
+        m_max_flat = batch_integrate_m_max_fd(
+            fs_tiled, s0_tiled, Ve_comb_flat, pulse_j, pulse_prev_j, dt
+        )
+        m_max_all = m_max_flat.reshape(n_configs, n_fibers, n_comp)
+
+        # Activation proxy and loss for every config.
+        acts_all   = jax.vmap(lambda m: activation_proxy_batch(m, node_idx_j))(m_max_all)
+
+        # Per-config amplitudes for the energy-regularisation term:
+        # base = amps, perturbed config k = amps + fd_eps · e_k.
+        amps_pert  = amps[None, :] + fd_eps * jnp.eye(K, dtype=amps.dtype)
+        amps_all   = jnp.concatenate([amps[None, :], amps_pert], axis=0)
+        losses_all = jax.vmap(
+            lambda a, ak: wq_loss(a, tgt_j, w, amps=ak)
+        )(acts_all, amps_all)
+
+        loss_base = losses_all[0]
+        acts_base = acts_all[0]
+        grad      = (losses_all[1:] - loss_base) / fd_eps  # [K]
+        return (loss_base, acts_base), grad
 
     # Bipolar Ve-weighted initialisation (guard-pattern init).
     #
@@ -246,8 +269,9 @@ def run_rect_optimization(
     if verbose:
         amp_init_str = "  ".join(f"{a:+.2f}" for a in np.array(amps0))
         print(
-            f"  Rect opt (autodiff): K={K} contacts, "
-            f"{n_fibers} fibers, soft_T={_SOFT_T}, "
+            f"  Rect opt (FD): K={K} contacts, "
+            f"{n_configs} configs × {n_fibers} fibers = "
+            f"{n_configs * n_fibers} effective fibers per pass, "
             f"{n_steps} iters",
             flush=True,
         )

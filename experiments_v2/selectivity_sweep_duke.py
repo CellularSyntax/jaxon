@@ -112,6 +112,9 @@ SEED_START      = _env_int("SEED_START", 0)
 SEED_END        = _env_int("SEED_END", 25)
 N_OPT_RECT      = _env_int("N_OPT_RECT", 30)
 N_RESTARTS_RECT = _env_int("N_RESTARTS_RECT", 2)
+WAVEFORM_OPT_ENABLED = os.environ.get(
+    "WAVEFORM_OPT_ENABLED", "false"
+).strip().lower() in ("1", "true", "yes", "y", "on")
 N_OPT_WAVE      = _env_int("N_OPT_WAVE", 100)
 WAVE_LR         = _env_flt("WAVE_LR", 5e-4)
 WAVE_PATIENCE   = _env_int("WAVE_PATIENCE", 20)
@@ -1302,7 +1305,7 @@ def _run_one_seed(seed_in: dict, verbose: bool = True) -> dict:
               flush=True)
 
     # ── Waveform ──────────────────────────────────────────────────────────
-    if N_OPT_WAVE <= 0:
+    if not WAVEFORM_OPT_ENABLED or N_OPT_WAVE <= 0:
         wave_res = {
             "best_si":   float(si_rect),
             "best_iter": 0,

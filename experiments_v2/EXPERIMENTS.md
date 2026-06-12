@@ -128,3 +128,60 @@ Results are written to `outputs/` in the project root (mounted inside the contai
 
 These targets are based on the 0.0% error achieved for D=10 µm MRG in the coupled
 solver unit test (`extracellular_coupled`).
+
+---
+
+## Duke FEM selectivity sweep — `selectivity_sweep_duke.py`
+
+Runs probe + Adam-FD optimization on the Duke microCT vagus nerve cohort
+(swine + human, ~1000 fibers/nerve, 12-contact cuff, MRG 5.7 µm).
+Target fascicles selected by peripheral cluster paradigm (90° window).
+
+### Standard run (h100, 2 shards, 3 swine nerves)
+
+```bash
+sbatch --array=0-1 \
+  --qos=h100 --gres=gpu:h100:1 \
+  --export=ALL,PULSE_SHAPE=biphasic_asym,PW_MS=0.5,ASYM_RATIO=4.0,T_STOP=5.0 \
+  slurm/run_duke_sweep.sbatch
+```
+
+### Full cohort run (a100, 3 shards)
+
+```bash
+sbatch --array=0-2 \
+  --qos=a100 --gres=gpu:a100:1 \
+  --export=ALL,PULSE_SHAPE=biphasic_asym,PW_MS=0.5,ASYM_RATIO=4.0,T_STOP=5.0 \
+  slurm/run_duke_sweep.sbatch
+```
+
+### Sparse fiber sampling sweep (manuscript Fig: SI vs sampling density)
+
+Quantifies the SI penalty from centroid-only sampling (1 fiber/fascicle, as in
+Pelot/Grill 2024 Nat Comms) vs the full ~1000-fiber population.  Runs optimization
+at: centroid, 1/fasc, 3/fasc, 10/fasc, dense reference — all from the same FEM
+data (no FEM re-run needed, pure row subsampling of Ve_unit).
+
+```bash
+sbatch --array=0-2 \
+  --qos=a100 --gres=gpu:a100:1 \
+  --export=ALL,PULSE_SHAPE=biphasic_asym,PW_MS=0.5,ASYM_RATIO=4.0,T_STOP=5.0,\
+SPARSE_SAMPLING_SWEEP=true,SPARSE_N_PER_FASCICLE_LIST=1,3,10 \
+  slurm/run_duke_sweep.sbatch
+```
+
+Outputs per seed: `outputs/duke_sweeps/<sample>/sparse_sampling_seed_NNNN.json`
+with fields: `strategy`, `n_per_fascicle`, `n_fibers`, `n_target_fibers`, `si`, `wall_s`.
+
+To process results into a figure-ready CSV:
+```python
+# pseudo-code — adapt to make_figures.py
+import json, glob, pandas as pd
+rows = []
+for f in glob.glob("outputs/duke_sweeps/*/sparse_sampling_seed_0000.json"):
+    d = json.load(open(f))
+    for r in d["results"]:
+        rows.append({"sample": d["sample"], **r, "dense_n_fibers": d["dense_n_fibers"]})
+df = pd.DataFrame(rows)
+df.to_csv("outputs/sparse_sampling_summary.csv", index=False)
+```

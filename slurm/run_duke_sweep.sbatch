@@ -146,6 +146,14 @@ export L1_LAMBDA="${L1_LAMBDA:-0.10}"
 export L1_INIT_SCALE="${L1_INIT_SCALE:-0.10}"
 export L1_INIT_SEED="${L1_INIT_SEED:-0}"
 export L1_N_ITERS="${L1_N_ITERS:-150}"
+# Sparse fiber sampling sweep: re-runs optimization at centroid (1/fasc) +
+# SPARSE_N_PER_FASCICLE_LIST densities.  Off by default; enable to generate
+# the SI-vs-sampling-density comparison figure (jaxon manuscript Fig X).
+# Results land in outputs/duke_sweeps/<sample>/sparse_sampling_seed_NNNN.json.
+# Override SPARSE_N_PER_FASCICLE_LIST for finer/coarser density ladder.
+export SPARSE_SAMPLING_SWEEP="${SPARSE_SAMPLING_SWEEP:-false}"
+export SPARSE_N_PER_FASCICLE_LIST="${SPARSE_N_PER_FASCICLE_LIST:-1,3,10}"
+export SPARSE_SWEEP_RNG_SEED="${SPARSE_SWEEP_RNG_SEED:-42}"
 # FEM_Z_STD_MIN: minimum acceptable per-channel mean z-std (mV/mA) on
 # Ve_unit.  Samples whose FEM mesh has insufficient z-resolution
 # between contact heights fail tripolar patterns -- those are auto-
@@ -284,6 +292,9 @@ export CLUSTER_N_MIN_TARGET=\"${CLUSTER_N_MIN_TARGET}\"
 export CLUSTER_MIN_FASCICLES=\"${CLUSTER_MIN_FASCICLES}\"
 export CLUSTER_N_POSITIONS=\"${CLUSTER_N_POSITIONS}\"
 export CLUSTER_RNG_SEED=\"${CLUSTER_RNG_SEED}\"
+export SPARSE_SAMPLING_SWEEP=\"${SPARSE_SAMPLING_SWEEP}\"
+export SPARSE_N_PER_FASCICLE_LIST=\"${SPARSE_N_PER_FASCICLE_LIST}\"
+export SPARSE_SWEEP_RNG_SEED=\"${SPARSE_SWEEP_RNG_SEED}\"
 bash \"${PROJECT_ROOT}/slurm/setup_env.sh\"
 python -u experiments_v2/selectivity_sweep_duke.py
 "; then

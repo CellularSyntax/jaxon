@@ -63,6 +63,7 @@ from jaxfibers.optim.optimizer import (
     run_waveform_optimization,
 )
 from jaxfibers.optim.losses import activation_proxy_batch, selectivity_index
+from jaxfibers.nerve.geometry import NerveGeometry
 from experiments_v2.utils import ensure_dir, save_json
 from experiments_v2.duke_loader import (
     load_duke_sample, divider_split_target_mask,
@@ -226,6 +227,21 @@ L1_LAMBDA      = _env_flt("L1_LAMBDA",      0.10)   # sparsity penalty strength
 L1_INIT_SCALE  = _env_flt("L1_INIT_SCALE",  0.10)   # random uniform [-S, +S] mA
 L1_INIT_SEED   = _env_int("L1_INIT_SEED",   0)      # rng seed for random init
 L1_N_ITERS     = _env_int("L1_N_ITERS",     150)    # more than probe path
+
+# Sparse fiber sampling sweep: re-runs optimization at reduced fiber counts
+# to quantify the SI penalty from centroid-only sampling (1 fiber per fascicle,
+# as used in prior work e.g. Pelot/Grill 2024 Nat Comms) vs the full dense
+# population.  When SPARSE_SAMPLING_SWEEP=true, each seed also produces a
+# sparse_sampling_seed_NNNN.json with SI at each sampling density.
+SPARSE_SAMPLING_SWEEP = os.environ.get(
+    "SPARSE_SAMPLING_SWEEP", "false"
+).strip().lower() in ("1", "true", "yes", "y", "on")
+SPARSE_N_PER_FASCICLE_LIST = [
+    int(x.strip()) for x in
+    os.environ.get("SPARSE_N_PER_FASCICLE_LIST", "1,3,10").split(",")
+    if x.strip()
+]
+SPARSE_SWEEP_RNG_SEED = _env_int("SPARSE_SWEEP_RNG_SEED", 42)
 
 # NOTE: PROBE_L1_LAMBDA was replaced by a hard freeze_zero_mask passed
 # to run_rect_optimization (zeros stay at exactly zero throughout the
@@ -582,6 +598,148 @@ def _run_l1_discovery(seed_in: dict, n_iters: int, l1_lambda: float,
         "n_active_contacts": n_active,
         "wall_s":           float(wall_s),
         "all_final_losses": np.asarray([float(loss_hist[-1])]),
+    }
+
+
+def _sparse_subsample_duke(duke: dict, n_per_fascicle: int | str,
+                            rng_seed: int = 0) -> dict:
+    """Return a copy of duke with at most n_per_fascicle fibers per fascicle.
+
+    n_per_fascicle : int   → pick that many random fibers per fascicle
+                    "centroid" → pick the single fiber closest to each fascicle centroid
+    Only Ve_unit (axis 1), node_indices, fasc_id, geoms, and nerve_geom are
+    subsampled; all other keys are shared by reference.
+    """
+    fasc_id  = duke["fasc_id"]
+    fasc_meta = duke["fasc_meta"]
+    nerve    = duke["nerve_geom"]
+    fiber_x  = nerve.fiber_x_um
+    fiber_y  = nerve.fiber_y_um
+
+    rng = np.random.default_rng(int(rng_seed))
+    picked: list[int] = []
+    for fid in np.unique(fasc_id):
+        idx_f = np.where(fasc_id == fid)[0]
+        if len(idx_f) == 0:
+            continue
+        if n_per_fascicle == "centroid":
+            meta = next((m for m in fasc_meta if m["id"] == fid), None)
+            if meta is not None:
+                cx = float(meta["centroid_xy_um"][0])
+                cy = float(meta["centroid_xy_um"][1])
+            else:
+                cx = float(fiber_x[idx_f].mean())
+                cy = float(fiber_y[idx_f].mean())
+            dists = np.hypot(fiber_x[idx_f] - cx, fiber_y[idx_f] - cy)
+            picked.append(int(idx_f[int(np.argmin(dists))]))
+        else:
+            n = min(int(n_per_fascicle), len(idx_f))
+            picked.extend(int(i) for i in rng.choice(idx_f, size=n, replace=False))
+
+    keep = np.sort(np.array(picked, dtype=int))
+    n_k  = len(keep)
+    sparse_nerve = NerveGeometry(
+        n_fibers=n_k,
+        fiber_x_um=fiber_x[keep].copy(),
+        fiber_y_um=fiber_y[keep].copy(),
+        fiber_diam=np.full(n_k, float(nerve.fiber_diam[0]), dtype=np.float64),
+        target_mask=np.zeros(n_k, dtype=bool),
+        fascicles=nerve.fascicles,
+        divider_angle_deg=nerve.divider_angle_deg,
+    )
+    return {
+        **duke,
+        "nerve_geom":   sparse_nerve,
+        "fasc_id":      fasc_id[keep].copy(),
+        "Ve_unit":      duke["Ve_unit"][:, keep, :],
+        "node_indices": duke["node_indices"][keep].copy(),
+        "geoms":        [duke["geoms"][i] for i in keep],
+    }
+
+
+def _run_sparse_sweep(duke: dict, seed_in: dict) -> dict:
+    """Optimize at each SPARSE_N_PER_FASCICLE_LIST density using the same
+    target fascicle cluster as the dense run.  Returns a lightweight dict
+    (no activation arrays) for sparse_sampling_seed_NNNN.json.
+    """
+    cluster_info = seed_in.get("cluster_info")
+    if cluster_info is None:
+        return {"enabled": False, "reason": "non-cluster paradigm"}
+
+    label = seed_in["label"]
+    strategies = [("centroid", "centroid")] + [
+        ("random", n) for n in SPARSE_N_PER_FASCICLE_LIST
+    ]
+    print(f"{label} [sparse sampling] "
+          f"{len(strategies)} densities: centroid + {SPARSE_N_PER_FASCICLE_LIST} /fasc",
+          flush=True)
+
+    results = []
+    for strat_name, n_per_fasc in strategies:
+        t0 = time.time()
+        try:
+            sd = _sparse_subsample_duke(duke, n_per_fasc, rng_seed=SPARSE_SWEEP_RNG_SEED)
+        except Exception as e:
+            print(f"{label} [sparse] {strat_name}: subsample failed: {e}", flush=True)
+            continue
+
+        n_tot = sd["nerve_geom"].n_fibers
+        target_mask_sp = cluster_target_mask(
+            sd["nerve_geom"], sd["fasc_id"], sd["fasc_meta"],
+            cluster_info["target_ids"],
+        )
+        n_tgt = int(target_mask_sp.sum())
+        lbl = "centroid" if strat_name == "centroid" else f"{n_per_fasc}/fasc"
+        if n_tgt == 0:
+            print(f"{label} [sparse] {lbl}: 0 target fibers — skip", flush=True)
+            results.append({
+                "strategy": strat_name,
+                "n_per_fascicle": 1 if strat_name == "centroid" else int(n_per_fasc),
+                "n_fibers": n_tot, "n_target_fibers": 0,
+                "si": None, "wall_s": 0.0, "skipped": True,
+            })
+            continue
+
+        sparse_seed = {
+            **seed_in,
+            "nerve":        sd["nerve_geom"],
+            "geoms":        sd["geoms"],
+            "target_mask":  target_mask_sp,
+            "weights":      _class_balanced_weights(target_mask_sp),
+            "Ve_unit":      sd["Ve_unit"],
+            "node_indices": sd["node_indices"],
+            "fs_batch":     stack_fiber_statics(sd["geoms"], DT),
+            "s0_batch":     initial_states_batch(sd["geoms"]),
+        }
+        try:
+            res = _run_one_seed(sparse_seed, verbose=False)
+        except Exception as e:
+            print(f"{label} [sparse] {lbl}: opt failed: {e}", flush=True)
+            continue
+
+        si      = float(res["rect"]["achievable_si"])
+        wall_s  = time.time() - t0
+        print(f"{label} [sparse] {lbl:10s}: "
+              f"n={n_tot:4d}  n_tgt={n_tgt:4d}  SI={si:.3f}  ({wall_s:.0f}s)",
+              flush=True)
+        results.append({
+            "strategy":       strat_name,
+            "n_per_fascicle": 1 if strat_name == "centroid" else int(n_per_fasc),
+            "n_fibers":       n_tot,
+            "n_target_fibers": n_tgt,
+            "si":             si,
+            "wall_s":         wall_s,
+            "skipped":        False,
+        })
+
+    return {
+        "enabled":        True,
+        "sample":         SAMPLE_NAME,
+        "seed":           seed_in["seed"],
+        "dense_n_fibers": int(seed_in["nerve"].n_fibers),
+        "dense_n_target": int(seed_in["target_mask"].sum()),
+        "target_ids":     list(cluster_info["target_ids"]),
+        "results":        results,
     }
 
 
@@ -1367,6 +1525,13 @@ def main():
         result = _run_one_seed(seed_in, verbose=True)
         save_json(result, out_path)
         print(f"[seed {s}] -> {out_path}", flush=True)
+
+        if SPARSE_SAMPLING_SWEEP:
+            sparse_out = OUT / f"sparse_sampling_seed_{s:04d}.json"
+            if not sparse_out.exists():
+                sparse_data = _run_sparse_sweep(duke, seed_in)
+                save_json(sparse_data, sparse_out)
+                print(f"[seed {s}] sparse -> {sparse_out}", flush=True)
 
 
 if __name__ == "__main__":

@@ -394,6 +394,207 @@ def select_peripheral_target_candidates(
     return [c["id"] for c in candidates[:top_k]]
 
 
+def _peripheral_polar(
+    fasc_meta: list,
+    fasc_id: np.ndarray,
+    nerve_outline_xy_um,
+    radius_quantile: float,
+):
+    """Shared setup: centroid, per-fascicle polar coords, peripheral filter.
+
+    Returns (items, peripheral, peripheral_ids, r_thr, cx0, cy0) or None
+    if the data is degenerate (no fascicles, r_max==0, no peripheral fascs).
+    """
+    if not fasc_meta:
+        return None
+    outline_xy = np.asarray(nerve_outline_xy_um, dtype=np.float64)
+    cx0 = float(outline_xy[:, 0].mean())
+    cy0 = float(outline_xy[:, 1].mean())
+    items = []
+    for m in fasc_meta:
+        fid = int(m["id"])
+        cx, cy = float(m["centroid_xy_um"][0]), float(m["centroid_xy_um"][1])
+        dx, dy = cx - cx0, cy - cy0
+        r = float(np.hypot(dx, dy))
+        theta = float(np.degrees(np.arctan2(dy, dx)))
+        if theta < 0.0:
+            theta += 360.0
+        n_in_f = int(np.sum(fasc_id == fid))
+        r_fasc = float(m.get("radius_um", 0.0))
+        # Angular half-width: angle subtended by the fascicle radius at its
+        # radial distance — used to include near-boundary fascicles.
+        ahw = float(np.degrees(np.arcsin(min(r_fasc / r, 1.0)))) if r > 1.0 else 0.0
+        items.append({"id": fid, "r": r, "theta": theta, "n_fibers": n_in_f,
+                      "angular_half_width_deg": ahw})
+    r_max = max(it["r"] for it in items)
+    if r_max <= 0.0:
+        return None
+    r_thr = radius_quantile * r_max
+    peripheral = [it for it in items if it["r"] >= r_thr]
+    peripheral_ids = [it["id"] for it in peripheral]
+    return items, peripheral, peripheral_ids, r_thr, cx0, cy0
+
+
+def _in_arc(theta: float, start: float, end: float) -> bool:
+    """True if theta lies in the arc [start, end) mod 360."""
+    theta = theta % 360.0
+    if start < end:
+        return start <= theta < end
+    return theta >= start or theta < end
+
+
+def _dist_to_arc(theta: float, start: float, end: float) -> float:
+    """Minimum angular distance (°) from theta to arc [start, end).
+    Returns 0.0 if theta is already inside the arc."""
+    if _in_arc(theta, start, end):
+        return 0.0
+    return min(_circ_dist(theta, start), _circ_dist(theta, end))
+
+
+def _apply_window(peripheral, peripheral_ids, r_thr, cx0, cy0,
+                  start_deg: float, angular_window_deg: float,
+                  n_min_target_fibers: int) -> dict:
+    """Apply a single angular window and return a cluster dict.
+
+    A fascicle is included if its centroid falls inside [start, end) OR
+    if the angular distance from its centroid to the nearest window edge
+    is within its angular half-width (derived from radius_um / radial
+    distance), so that fascicles straddling a boundary are not excluded.
+    """
+    W = float(angular_window_deg)
+    start = float(start_deg) % 360.0
+    end = (start + W) % 360.0
+    # Require at least 30 % of the fascicle's angular diameter to fall inside
+    # the window.  For a fascicle at distance d from the boundary: overlap
+    # fraction = (ahw - d) / (2*ahw) >= 0.30  →  d <= 0.40 * ahw.
+    in_window = [it for it in peripheral
+                 if _dist_to_arc(it["theta"], start, end)
+                 <= it.get("angular_half_width_deg", 0.0) * 0.40]
+    score = sum(it["n_fibers"] for it in in_window)
+    target_ids = [it["id"] for it in in_window] if score >= n_min_target_fibers else []
+    return dict(
+        target_ids=target_ids,
+        window_start_deg=start,
+        window_end_deg=end,
+        nerve_centroid_xy_um=(cx0, cy0),
+        r_threshold_um=r_thr,
+        peripheral_ids=peripheral_ids,
+        n_target_fibers=int(score),
+    )
+
+
+def select_peripheral_cluster_at(
+    fasc_meta: list,
+    fasc_id: np.ndarray,
+    nerve_outline_xy_um,
+    window_start_deg: float,
+    radius_quantile: float = 0.6,
+    angular_window_deg: float = 90.0,
+    n_min_target_fibers: int = 50,
+) -> dict:
+    """Cluster dict for a single fixed angular window starting at ``window_start_deg``."""
+    prep = _peripheral_polar(fasc_meta, fasc_id, nerve_outline_xy_um, radius_quantile)
+    if prep is None:
+        return dict(target_ids=[], window_start_deg=float(window_start_deg),
+                    window_end_deg=(float(window_start_deg) + angular_window_deg) % 360.0,
+                    nerve_centroid_xy_um=(0.0, 0.0),
+                    r_threshold_um=0.0, peripheral_ids=[], n_target_fibers=0)
+    items, peripheral, peripheral_ids, r_thr, cx0, cy0 = prep
+    if not peripheral:
+        return dict(target_ids=[], window_start_deg=float(window_start_deg),
+                    window_end_deg=(float(window_start_deg) + angular_window_deg) % 360.0,
+                    nerve_centroid_xy_um=(cx0, cy0),
+                    r_threshold_um=r_thr, peripheral_ids=[], n_target_fibers=0)
+    return _apply_window(peripheral, peripheral_ids, r_thr, cx0, cy0,
+                         window_start_deg, angular_window_deg, n_min_target_fibers)
+
+
+def _circ_dist(a: float, b: float) -> float:
+    """Minimum circular distance between two angles in [0, 360)."""
+    d = abs(a - b) % 360.0
+    return min(d, 360.0 - d)
+
+
+def select_random_cluster_targets(
+    fasc_meta: list,
+    fasc_id: np.ndarray,
+    nerve_outline_xy_um,
+    n_positions: int = 4,
+    rng_seed: int = 0,
+    radius_quantile: float = 0.32,
+    angular_window_deg: float = 90.0,
+    n_min_target_fibers: int = 50,
+    scan_step_deg: float = 5.0,
+) -> list[dict]:
+    """Return up to ``n_positions`` cluster dicts chosen to maximally cover
+    the nerve circumference.
+
+    Algorithm:
+    1. Scan every ``scan_step_deg`` degrees to collect *all* valid windows
+       (those with n_target ≥ n_min_target_fibers).
+    2. From the valid set, greedily pick ``n_positions`` windows that are as
+       far apart as possible on the circle (farthest-point sampling).  The
+       first pick is the valid window closest to a random starting angle so
+       that repeated calls with different seeds produce different selections
+       while still being spread.
+    3. If fewer than ``n_positions`` valid windows exist, return all of them.
+
+    ``radius_quantile=0.4`` (vs the optimal-window default of 0.6) gives a
+    larger peripheral pool, which is important here because we want as many
+    distinct valid positions as the anatomy allows.
+    """
+    prep = _peripheral_polar(fasc_meta, fasc_id, nerve_outline_xy_um,
+                             radius_quantile)
+    empty = dict(target_ids=[], window_start_deg=0.0, window_end_deg=0.0,
+                 nerve_centroid_xy_um=(0.0, 0.0), r_threshold_um=0.0,
+                 peripheral_ids=[], n_target_fibers=0)
+    if prep is None:
+        return [empty] * n_positions
+
+    items, peripheral, peripheral_ids, r_thr, cx0, cy0 = prep
+
+    # 1. Dense scan — collect all valid candidate windows.
+    valid: list[dict] = []
+    for start in np.arange(0.0, 360.0, float(scan_step_deg)):
+        c = _apply_window(peripheral, peripheral_ids, r_thr, cx0, cy0,
+                          start, angular_window_deg, n_min_target_fibers)
+        if c["target_ids"]:
+            valid.append(c)
+
+    if not valid:
+        return [empty] * n_positions
+
+    if len(valid) <= n_positions:
+        return valid  # fewer valid windows than requested — return all
+
+    # 2. Greedy farthest-point selection on the circle.
+    rng = np.random.default_rng(rng_seed)
+    anchor = float(rng.uniform(0.0, 360.0))
+    # Start from the valid window whose start angle is closest to the anchor.
+    first_idx = int(np.argmin([_circ_dist(c["window_start_deg"], anchor)
+                                for c in valid]))
+    selected = [valid[first_idx]]
+    remaining = valid[:first_idx] + valid[first_idx + 1:]
+
+    while len(selected) < n_positions and remaining:
+        # Pick the candidate with the greatest minimum circular distance
+        # from any already-selected window.
+        best_idx = max(
+            range(len(remaining)),
+            key=lambda i: min(
+                _circ_dist(remaining[i]["window_start_deg"],
+                           s["window_start_deg"])
+                for s in selected
+            ),
+        )
+        selected.append(remaining[best_idx])
+        remaining = remaining[:best_idx] + remaining[best_idx + 1:]
+
+    # Sort by angle for a consistent left-to-right display order.
+    selected.sort(key=lambda c: c["window_start_deg"])
+    return selected
+
+
 def select_peripheral_cluster_target(
     fasc_meta: list,
     fasc_id: np.ndarray,
@@ -455,73 +656,35 @@ def select_peripheral_cluster_target(
                            peripheral filter (for plotting)
         n_target_fibers  — int, sum of fibres across target_ids
     """
-    if not fasc_meta:
-        return dict(target_ids=[], window_start_deg=0.0,
-                    window_end_deg=0.0,
-                    nerve_centroid_xy_um=(0.0, 0.0),
-                    r_threshold_um=0.0,
+    prep = _peripheral_polar(fasc_meta, fasc_id, nerve_outline_xy_um,
+                             radius_quantile)
+    if prep is None:
+        return dict(target_ids=[], window_start_deg=0.0, window_end_deg=0.0,
+                    nerve_centroid_xy_um=(0.0, 0.0), r_threshold_um=0.0,
                     peripheral_ids=[], n_target_fibers=0)
-
-    outline_xy = np.asarray(nerve_outline_xy_um, dtype=np.float64)
-    cx0, cy0 = float(outline_xy[:, 0].mean()), float(outline_xy[:, 1].mean())
-
-    # Per-fascicle polar coords relative to nerve centroid.
-    items = []
-    for m in fasc_meta:
-        fid = int(m["id"])
-        cx, cy = float(m["centroid_xy_um"][0]), float(m["centroid_xy_um"][1])
-        dx, dy = cx - cx0, cy - cy0
-        r = float(np.hypot(dx, dy))
-        theta = float(np.degrees(np.arctan2(dy, dx)))
-        if theta < 0.0:
-            theta += 360.0
-        n_in_f = int(np.sum(fasc_id == fid))
-        items.append({"id": fid, "r": r, "theta": theta, "n_fibers": n_in_f})
-
-    r_max = max(it["r"] for it in items)
-    if r_max <= 0.0:
-        return dict(target_ids=[], window_start_deg=0.0,
-                    window_end_deg=0.0,
-                    nerve_centroid_xy_um=(cx0, cy0),
-                    r_threshold_um=0.0,
-                    peripheral_ids=[], n_target_fibers=0)
-    r_thr = radius_quantile * r_max
-
-    peripheral = [it for it in items if it["r"] >= r_thr]
-    peripheral_ids = [it["id"] for it in peripheral]
+    items, peripheral, peripheral_ids, r_thr, cx0, cy0 = prep
     if not peripheral:
-        return dict(target_ids=[], window_start_deg=0.0,
-                    window_end_deg=0.0,
-                    nerve_centroid_xy_um=(cx0, cy0),
-                    r_threshold_um=r_thr,
+        return dict(target_ids=[], window_start_deg=0.0, window_end_deg=0.0,
+                    nerve_centroid_xy_um=(cx0, cy0), r_threshold_um=r_thr,
                     peripheral_ids=[], n_target_fibers=0)
 
-    # Sliding angular window: find the W° sector with the most
-    # peripheral target fibres.
+    # Sliding window: find the W° sector with the most peripheral fibres.
     W = float(angular_window_deg)
     best_score = -1
     best_start = 0.0
     best_target_ids: list[int] = []
     for start in np.arange(0.0, 360.0, float(angular_step_deg)):
-        end = (start + W) % 360.0
-        if start < end:
-            in_window = [it for it in peripheral
-                         if start <= it["theta"] < end]
-        else:
-            # Window wraps past 360°.
-            in_window = [it for it in peripheral
-                         if (it["theta"] >= start) or (it["theta"] < end)]
-        score = sum(it["n_fibers"] for it in in_window)
+        cand = _apply_window(peripheral, peripheral_ids, r_thr, cx0, cy0,
+                             start, W, 0)  # threshold=0 so we always get a score
+        score = cand["n_target_fibers"]
         if score > best_score:
             best_score = score
             best_start = float(start)
-            best_target_ids = [it["id"] for it in in_window]
+            best_target_ids = cand["target_ids"]
 
     if best_score < n_min_target_fibers:
-        return dict(target_ids=[], window_start_deg=0.0,
-                    window_end_deg=0.0,
-                    nerve_centroid_xy_um=(cx0, cy0),
-                    r_threshold_um=r_thr,
+        return dict(target_ids=[], window_start_deg=0.0, window_end_deg=0.0,
+                    nerve_centroid_xy_um=(cx0, cy0), r_threshold_um=r_thr,
                     peripheral_ids=peripheral_ids,
                     n_target_fibers=int(best_score))
 

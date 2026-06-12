@@ -73,7 +73,7 @@ export SLURM_STEP_LAUNCH_TIMEOUT=600
 # 38 nerves would be ~950 runs and dilute the per-nerve signal.  Set
 # SEED_END=25 if you really want the 25-seed per-anatomy distribution.
 export SEED_START="${SEED_START:-0}"
-export SEED_END="${SEED_END:-1}"
+export SEED_END="${SEED_END:-4}"
 export FIBER_DIAMETER_UM="${FIBER_DIAMETER_UM:-5.7}"
 export N_NODES="${N_NODES:-21}"
 export RECT_OPTIMIZER="${RECT_OPTIMIZER:-adam_fd}"
@@ -186,10 +186,12 @@ export ASYM_RATIO="${ASYM_RATIO:-4.0}" # anodic/cathodic duration ratio (asym on
 # duke_target_sanity for the geometry rationale.  Override
 # TARGET_PARADIGM=divider to reproduce pre-cluster behaviour.
 export TARGET_PARADIGM="${TARGET_PARADIGM:-cluster}"
-export CLUSTER_RADIUS_QUANTILE="${CLUSTER_RADIUS_QUANTILE:-0.6}"
+export CLUSTER_RADIUS_QUANTILE="${CLUSTER_RADIUS_QUANTILE:-0.32}"
 export CLUSTER_WINDOW_DEG="${CLUSTER_WINDOW_DEG:-90.0}"
 export CLUSTER_N_MIN_TARGET="${CLUSTER_N_MIN_TARGET:-50}"
 export CLUSTER_MIN_FASCICLES="${CLUSTER_MIN_FASCICLES:-3}"
+export CLUSTER_N_POSITIONS="${CLUSTER_N_POSITIONS:-4}"
+export CLUSTER_RNG_SEED="${CLUSTER_RNG_SEED:-0}"
 
 # Where the Duke FEM bundles live.  Default = duke_meshes/ (the
 # 18-swine + 20-human bundle from the FEM pipeline).  Earlier bundles
@@ -280,6 +282,8 @@ export CLUSTER_RADIUS_QUANTILE=\"${CLUSTER_RADIUS_QUANTILE}\"
 export CLUSTER_WINDOW_DEG=\"${CLUSTER_WINDOW_DEG}\"
 export CLUSTER_N_MIN_TARGET=\"${CLUSTER_N_MIN_TARGET}\"
 export CLUSTER_MIN_FASCICLES=\"${CLUSTER_MIN_FASCICLES}\"
+export CLUSTER_N_POSITIONS=\"${CLUSTER_N_POSITIONS}\"
+export CLUSTER_RNG_SEED=\"${CLUSTER_RNG_SEED}\"
 bash \"${PROJECT_ROOT}/slurm/setup_env.sh\"
 python -u experiments_v2/selectivity_sweep_duke.py
 "; then

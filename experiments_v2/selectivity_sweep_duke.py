@@ -66,7 +66,7 @@ from jaxfibers.optim.losses import activation_proxy_batch, selectivity_index
 from experiments_v2.utils import ensure_dir, save_json
 from experiments_v2.duke_loader import (
     load_duke_sample, divider_split_target_mask,
-    select_peripheral_cluster_target, cluster_target_mask,
+    select_random_cluster_targets, cluster_target_mask,
 )
 
 # ─────────────────────────────────────────────── sample location ──────────────
@@ -239,10 +239,12 @@ L1_N_ITERS     = _env_int("L1_N_ITERS",     150)    # more than probe path
 # random-divider behaviour (kept available for reproducing pre-cluster
 # results).
 TARGET_PARADIGM         = os.environ.get("TARGET_PARADIGM", "cluster").strip().lower()
-CLUSTER_RADIUS_QUANTILE = _env_flt("CLUSTER_RADIUS_QUANTILE", 0.6)
+CLUSTER_RADIUS_QUANTILE = _env_flt("CLUSTER_RADIUS_QUANTILE", 0.32)
 CLUSTER_WINDOW_DEG      = _env_flt("CLUSTER_WINDOW_DEG", 90.0)
 CLUSTER_N_MIN_TARGET    = _env_int("CLUSTER_N_MIN_TARGET", 50)
 CLUSTER_MIN_FASCICLES   = _env_int("CLUSTER_MIN_FASCICLES", 3)
+CLUSTER_N_POSITIONS     = _env_int("CLUSTER_N_POSITIONS", 4)
+CLUSTER_RNG_SEED        = _env_int("CLUSTER_RNG_SEED", 0)
 
 # FEM_Z_STD_MIN: minimum per-channel mean of per-fiber std along z
 # (mV/mA) required to consider a sample's FEM data adequate.  Tripolar
@@ -790,19 +792,26 @@ def _build_seed(duke: dict, seed: int, verbose: bool = True) -> dict:
     cluster_info: dict | None = None
     divider_deg = 0.0
     if TARGET_PARADIGM == "cluster":
-        cluster_info = select_peripheral_cluster_target(
+        # Select all n_positions spread angular windows; seed indexes which one
+        # to use for this run (seed 0 → position 0, seed 1 → position 1, …).
+        all_clusters = select_random_cluster_targets(
             duke["fasc_meta"], duke["fasc_id"],
             duke["nerve_outline_xy_um"],
+            n_positions=CLUSTER_N_POSITIONS,
+            rng_seed=CLUSTER_RNG_SEED,
             radius_quantile=CLUSTER_RADIUS_QUANTILE,
             angular_window_deg=CLUSTER_WINDOW_DEG,
             n_min_target_fibers=CLUSTER_N_MIN_TARGET,
         )
-        if not cluster_info["target_ids"]:
+        pos_idx = seed % CLUSTER_N_POSITIONS
+        cluster_info = (all_clusters[pos_idx]
+                        if pos_idx < len(all_clusters) else None)
+        if cluster_info is None or not cluster_info["target_ids"]:
+            n_best = cluster_info["n_target_fibers"] if cluster_info else 0
             if verbose:
-                print(f"{label} SKIP: no peripheral cluster meets "
-                      f"n_min_target_fibers={CLUSTER_N_MIN_TARGET} "
-                      f"(best cluster had {cluster_info['n_target_fibers']} "
-                      f"fibres)", flush=True)
+                print(f"{label} SKIP: position {pos_idx} has no valid target "
+                      f"(n_target_fibers={n_best} < {CLUSTER_N_MIN_TARGET})",
+                      flush=True)
             return None  # signal "skip this sample"
         target_mask = cluster_target_mask(
             nerve, duke["fasc_id"], duke["fasc_meta"],
@@ -811,7 +820,7 @@ def _build_seed(duke: dict, seed: int, verbose: bool = True) -> dict:
         n_tgt = int(target_mask.sum())
         n_tgt_fasc = len(cluster_info["target_ids"])
         if verbose:
-            print(f"{label} cluster target: "
+            print(f"{label} cluster target (pos {pos_idx}/{CLUSTER_N_POSITIONS-1}): "
                   f"sector {cluster_info['window_start_deg']:.0f}-"
                   f"{cluster_info['window_end_deg']:.0f}°  "
                   f"target_fascs={cluster_info['target_ids']}  "
@@ -1233,6 +1242,8 @@ def _package_result(seed_in: dict, rect_res: dict, rect_t: float,
             "n_target_fibers":       int(cluster_info["n_target_fibers"]),
             "radius_quantile":       float(CLUSTER_RADIUS_QUANTILE),
             "angular_window_deg":    float(CLUSTER_WINDOW_DEG),
+            "position_idx":          int(seed_in["seed"] % CLUSTER_N_POSITIONS),
+            "n_positions":           int(CLUSTER_N_POSITIONS),
         }
     return {
         "sample":   SAMPLE_NAME,

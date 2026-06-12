@@ -250,7 +250,14 @@ def run_rect_optimization(
     # given amp_init_mA (cathodic), farthest at −amp_init_mA (anodic).
     amps0 = amps0.astype(jnp.float64)
 
-    optimizer = optax.chain(optax.clip_by_global_norm(1.0), optax.adam(lr))
+    # Cosine LR decay: keeps the initial step size for exploration but
+    # shrinks to 2% of lr by the final iter so Adam settles instead of
+    # orbiting the optimum (the main cause of the loss oscillations seen
+    # at constant LR near narrow activation-threshold windows).
+    lr_schedule = optax.cosine_decay_schedule(
+        init_value=lr, decay_steps=max(n_steps, 1), alpha=0.02
+    )
+    optimizer = optax.chain(optax.clip_by_global_norm(1.0), optax.adam(lr_schedule))
     opt_state = optimizer.init(amps0)
     amps      = amps0
     # Apply the freeze mask to the init too -- if the caller passed an
@@ -269,10 +276,10 @@ def run_rect_optimization(
     if verbose:
         amp_init_str = "  ".join(f"{a:+.2f}" for a in np.array(amps0))
         print(
-            f"  Rect opt (FD): K={K} contacts, "
+            f"  Rect opt (FD, cosine-LR): K={K} contacts, "
             f"{n_configs} configs × {n_fibers} fibers = "
             f"{n_configs * n_fibers} effective fibers per pass, "
-            f"{n_steps} iters",
+            f"lr {lr:.4f}→{lr*0.02:.5f}, fd_eps={fd_eps}, {n_steps} iters",
             flush=True,
         )
         print(f"  init amps=[{amp_init_str}] mA", flush=True)

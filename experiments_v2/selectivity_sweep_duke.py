@@ -149,8 +149,13 @@ AMP_INIT_MA = _env_flt("AMP_INIT_MA", -0.08)
 _AMP_CLIP_LO = _env_flt("AMP_CLIP_LO", -2.00)
 _AMP_CLIP_HI = _env_flt("AMP_CLIP_HI",  2.00)
 AMP_CLIP    = (_AMP_CLIP_LO, _AMP_CLIP_HI)
-ADAM_LR_MA  = _env_flt("ADAM_LR_MA",  0.005)
-FD_EPS_MA   = _env_flt("FD_EPS_MA",   0.030)
+ADAM_LR_MA      = _env_flt("ADAM_LR_MA",       0.005)
+FD_EPS_MA       = _env_flt("FD_EPS_MA",       0.030)
+# Smaller FD step for the smart-init call: probe winner amps are already
+# in the 0.2–0.4 mA range so 0.010 mA gives a cleaner gradient estimate.
+# FD_EPS_MA (0.030) is kept for L1-discovery and global restarts where
+# the init is at ~0.08 mA and a small eps produces zero gradient.
+FD_EPS_SMART_MA = _env_flt("FD_EPS_SMART_MA", 0.010)
 
 # Adam-FD multi-start: a single AMP_INIT_MA cannot put every Duke
 # anatomy into the gradient-informative threshold regime simultaneously
@@ -886,7 +891,7 @@ def _run_one_seed(seed_in: dict, verbose: bool = True) -> dict:
     if verbose:
         print(f"{label} K={K} contacts  init={AMP_INIT_MA:+.3f} mA  "
               f"clip=[{_AMP_CLIP_LO:+.2f}, {_AMP_CLIP_HI:+.2f}] mA  "
-              f"lr={ADAM_LR_MA:.4f}  fd_eps={FD_EPS_MA:.4f}  "
+              f"lr={ADAM_LR_MA:.4f}  fd_eps={FD_EPS_MA:.4f} (smart={FD_EPS_SMART_MA:.4f})  "
               f"opt={RECT_OPTIMIZER}", flush=True)
 
     rect_t0 = time.time()
@@ -963,7 +968,7 @@ def _run_one_seed(seed_in: dict, verbose: bool = True) -> dict:
             dt=DT, n_steps=n_iters,
             amps_init_vector=amps_init_vec,
             amp_clip=AMP_CLIP,
-            lr=ADAM_LR_MA, fd_eps=FD_EPS_MA,
+            lr=ADAM_LR_MA, fd_eps=FD_EPS_SMART_MA,
             freeze_zero_mask=probe_freeze_mask,
             early_stop_si=EARLY_STOP_SI,
             verbose=verbose,

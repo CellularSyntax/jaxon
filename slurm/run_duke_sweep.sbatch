@@ -154,6 +154,12 @@ export L1_N_ITERS="${L1_N_ITERS:-150}"
 export SPARSE_SAMPLING_SWEEP="${SPARSE_SAMPLING_SWEEP:-false}"
 export SPARSE_N_PER_FASCICLE_LIST="${SPARSE_N_PER_FASCICLE_LIST:-1,3,10}"
 export SPARSE_SWEEP_RNG_SEED="${SPARSE_SWEEP_RNG_SEED:-42}"
+export WAVEFORM_OPT_ENABLED="${WAVEFORM_OPT_ENABLED:-false}"
+# SPECIES_FILTER: restrict sweep to one species.
+#   "swine"  — only sub-N_sam-M samples (no "human" prefix)
+#   "human"  — only human_sub-N_sam-M samples
+#   "all"    — no filter (default)
+export SPECIES_FILTER="${SPECIES_FILTER:-all}"
 # FEM_Z_STD_MIN: minimum acceptable per-channel mean z-std (mV/mA) on
 # Ve_unit.  Samples whose FEM mesh has insufficient z-resolution
 # between contact heights fail tripolar patterns -- those are auto-
@@ -240,6 +246,9 @@ for SAMPLE_DIR in "${DUKE_VES_ROOT}"/*/; do
     continue
   fi
   SAMPLE_NAME=$(basename "${SAMPLE_DIR%/}")
+  # Species filter: "human" samples have a "human_" prefix; swine do not.
+  if [[ "${SPECIES_FILTER}" == "swine" && "${SAMPLE_NAME}" == human_* ]]; then continue; fi
+  if [[ "${SPECIES_FILTER}" == "human" && "${SAMPLE_NAME}" != human_* ]]; then continue; fi
   echo
   echo "============================================================"
   echo "Sample: ${SAMPLE_NAME}  (index ${SAMPLE_INDEX}, shard ${SHARD_IDX}/${N_SHARDS})"
@@ -295,6 +304,7 @@ export CLUSTER_RNG_SEED=\"${CLUSTER_RNG_SEED}\"
 export SPARSE_SAMPLING_SWEEP=\"${SPARSE_SAMPLING_SWEEP}\"
 export SPARSE_N_PER_FASCICLE_LIST=\"${SPARSE_N_PER_FASCICLE_LIST}\"
 export SPARSE_SWEEP_RNG_SEED=\"${SPARSE_SWEEP_RNG_SEED}\"
+export WAVEFORM_OPT_ENABLED=\"${WAVEFORM_OPT_ENABLED}\"
 bash \"${PROJECT_ROOT}/slurm/setup_env.sh\"
 python -u experiments_v2/selectivity_sweep_duke.py
 "; then

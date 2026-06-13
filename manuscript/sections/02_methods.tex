@@ -3,46 +3,33 @@
 
 \begin{figure}[h]
   \centering
-  \figmaybe[width=0.98\textwidth]{fig_overview.png}
-  \caption{Overview of the jaxon forward pipeline and equivalent
-    circuits.  \textbf{(a)} Nerve cross-section with a six-contact
-    ring cuff (illustrative bipolar pattern, cathodic contacts blue,
-    anodic orange).  Fascicles are split into target (green, upper
-    half) and off-target (grey, lower half) by a divider line
-    through the nerve centre; on the microCT cohort the target region
-    is instead chosen per nerve by the peripheral-cluster selector
-    (Section~\ref{sec:results-duke}).
-    \textbf{(b)} Forward pipeline.  The cuff geometry and a chosen
-    extracellular medium yield the per-contact unit fields
-    $V_e^{(k)}(\mathbf{x})$.  Combined with the per-contact amplitude
-    design vector $\mathbf{I}\in\mathbb{R}^{K}$, these drive the
-    coupled-cable solver, which integrates the membrane dynamics of
-    every fibre in parallel and emits an activation proxy
-    $a_f \in [0, 1]$.  Aggregating the proxies into the selectivity
-    loss $\mathcal{L}(\mathbf{I})$ closes the loop; because the entire
-    pipeline is built on top of \texttt{jaxley}/JAX, the gradient
-    $\nabla_{\mathbf{I}}\mathcal{L}$ is available end-to-end via
-    reverse-mode autodiff (red arrow).
-    \textbf{(c)} Single-cable equivalent circuit underlying the
-    Sundt, Sweeney and Rattay unmyelinated fibre models.  Each axon
-    compartment carries a membrane resistance $R_m$ and capacitance
-    $C_m$ in parallel between the intracellular $V_i$ and bath $V_e$
-    rails; neighbouring compartments couple through an axial
-    resistance $R_a$.  The membrane resistance hides a multi-channel
-    Hodgkin--Huxley current (Na, K, leak) whose state variables are
-    integrated forward in time alongside $V_i$.
-    \textbf{(d)} Double-cable equivalent circuit underlying the MRG
-    myelinated fibre model.  A third rail $V_{\mathrm{px}}$
-    (periaxonal space) sits between the axon membrane and the myelin
-    sheath.  The membrane $R_m \parallel C_m$ now drops between $V_i$
-    and $V_{\mathrm{px}}$ rather than between $V_i$ and $V_e$, and a
-    myelin shunt $G_{\mathrm{my}} \parallel C_{\mathrm{my}}$ closes
-    the loop to bath.  Both the intracellular ($R_a$) and the
-    periaxonal ($R_{\mathrm{px}}$) layers carry their own axial
-    coupling.  The schematic shows one nodal and one internodal
-    compartment; the full MRG period is
-    node--MYSA--FLUT--STIN$\times 6$--FLUT--MYSA
-    (Section~\ref{sec:methods-models}).}
+  \figmaybe[width=0.98\textwidth]{main/concept_overview_fig.png}
+  \caption{Overview of the jaxon differentiable pipeline.
+    \textbf{Top left --- forward-and-optimise loop.}  A per-contact
+    stimulus $I_k(t)$ drives the superposed extracellular field
+    $V_e = \sum_k I_k\,V_e^{(k)}$; the coupled-cable GPU solver
+    integrates the membrane dynamics of every fibre in parallel and
+    aggregates them into a fascicle-selectivity objective
+    $\mathcal{L}$.  Because the whole pipeline is built on
+    \texttt{jaxley}/JAX, the gradient
+    $\partial\mathcal{L}/\partial\theta$ with respect to the stimulus
+    is available end-to-end by reverse-mode autodiff (dashed loop).
+    The solver is validated against \texttt{pyfibers}/NEURON on
+    thresholds and conduction velocity.
+    \textbf{Top right --- anatomy to model.}  A microCT vagus-nerve
+    cross-section is segmented and embedded in the 12-contact
+    MultiContact cuff finite-element model, from which the per-contact
+    extracellular lead fields $V_e^{(k)}$ are computed.
+    \textbf{Bottom left --- fibre models and validation.}  The four
+    implemented fibre models (myelinated MRG; unmyelinated Sweeney,
+    Sundt, Rattay) and their strength--duration agreement with
+    \texttt{pyfibers}/NEURON.
+    \textbf{Bottom right --- selectivity optimisation on the cohort.}
+    Two example nerves with the optimised cuff pattern (cathode blue,
+    anode orange, inactive white, over the cuff's four angular columns
+    $\times$ three axial rows) and fibres coloured by recruitment
+    (target fired / target silent / off-target fired / off-target
+    silent); the peripheral target-fascicle cluster is tinted green.}
   \label{fig:overview}
 \end{figure}
 
@@ -53,9 +40,10 @@ jaxon implements four canonical peripheral nerve fiber models, all of
 which have been used extensively in the PNS modelling literature and
 can be cross-validated against published NEURON
 results~\cite{mcintyre2002,sundt2015,sweeney1987,rattay1989analysis}.
-Figure~\ref{fig:overview} summarises the forward pipeline (panel b)
-and the two equivalent-circuit families on which the fibre models
-are built (panels c and d).
+Figure~\ref{fig:overview} summarises the differentiable
+forward-and-optimise pipeline, the anatomy-to-model FE construction,
+the fibre-model validation, and the selectivity optimisation on the
+microCT cohort.
 
 \paragraph{MRG double-cable (myelinated).}
 The McIntyre--Richardson--Grill model~\cite{mcintyre2002} represents
@@ -95,7 +83,7 @@ at each step; see Section~\ref{sec:methods-solver} for details.
 
 \paragraph{Sundt (unmyelinated, single-cable).}
 The Sundt C-fiber model~\cite{sundt2015} represents each axon as a
-uniform unmyelinated cable (Figure~\ref{fig:overview}c) with a
+uniform unmyelinated single cable with a
 transient Hodgkin--Huxley-style sodium current
 $I_{\mathrm{Na}}$ (NaV1.7/1.8 calibration via voltage shifts
 $\Delta_m = -6$\,mV, $\Delta_h = +6$\,mV at the m- and h-gates), a
@@ -222,12 +210,14 @@ weighted quality (WQ) loss
                  + \lambda \cdot \frac{1}{K} \sum_k I_k^2,
   \label{eq:wq-loss}
 \end{equation}
-where $y_f \in \{0,1\}$ is the target/off-target indicator,
-$w_f$ are per-fiber weights, and the second term is an
-amplitude-energy regulariser ($\lambda = 5\times10^{-3}\,\mathrm{mA}^{-2}$
-for the mixed-diameter sweep, $\lambda=0$ otherwise) introduced to
-prevent the trivial all-fibers-fire minimum on type-selectivity
-problems (Section~\ref{sec:discussion}).
+where $y_f \in \{0,1\}$ is the target/off-target indicator
+(constructed per nerve by the peripheral-cluster selector of
+Section~\ref{sec:methods-duke}), $w_f$ are per-fiber weights, and the
+second term is an amplitude-energy regulariser.  We set $\lambda = 0$
+for all results reported here; a positive
+$\lambda$ ($5\times10^{-3}\,\mathrm{mA}^{-2}$) is retained for the
+type-selectivity probe discussed in Section~\ref{sec:discussion}, where
+it is needed to prevent the trivial all-fibers-fire minimum.
 The activation proxy can be optionally softened with a per-node
 sigmoid of temperature $\tau$ to widen the gradient-informative
 window at saturation.
@@ -304,50 +294,11 @@ improve selectivity over optimised rectangular pulses, so we report
 rectangular-pulse results only and leave waveform shaping to future
 work (Section~\ref{sec:discussion}).
 
-\subsection{Nerve geometry generation}
-\label{sec:methods-geom}
-
-Multi-fascicle nerve realisations follow the Hussain-style
-construction~\cite{hussain2024}: $N_{\mathrm{fasc}}$ non-overlapping
-circular fascicles of radius drawn uniformly from $[55, 110]\,\mu
-\mathrm{m}$ are packed into a $500\,\mu\mathrm{m}$-radius nerve outline
-by rejection sampling with a $12\,\mu\mathrm{m}$ inter-fascicle gap.
-$N_{\mathrm{fiber}}/N_{\mathrm{fasc}}$ fibres are placed inside each
-fascicle by additional rejection sampling.
-
-The fascicles are then partitioned into a \emph{target} and an
-\emph{off-target} set by a straight line through the nerve centre at
-angle $\theta_{\mathrm{div}}$.  Each fascicle is assigned to the
-target set if its centroid lies above the line, off-target otherwise,
-producing the binary target mask $y_f$ in Eq.~(\ref{eq:wq-loss}).
-Importantly, $\theta_{\mathrm{div}}$ is \emph{drawn uniformly from
-$[0°,\,180°)$ independently per seed} (range stops at $180°$ because
-the divider line is reflection-symmetric).  This randomisation
-breaks the artificial coupling between the fascicle-packing seed and
-the target / off-target orientation: a fixed $\theta_{\mathrm{div}}$
-(e.g.\ $0°$, horizontal) would bake in a single
-``dorsal-vs-ventral'' configuration for every realisation, whereas
-the random divider ensures the sweep covers every possible
-target-fascicle orientation around the nerve cross-section.  The 25
-seeds of each per-model sweep therefore correspond to 25 distinct
-geometric / topological problems rather than 25 noisy draws from one.
-
-The cuff electrode is a six-contact ring of radius
-$1500\,\mu\mathrm{m}$ centred on the nerve.  $V_e$ at each fibre
-compartment is computed analytically from the point-source formula
-in homogeneous bath conductivity $\sigma = 0.3\,\mathrm{S/m}$.  For
-the manuscript sweep, $N_{\mathrm{fasc}} = 8$ and
-$N_{\mathrm{fiber}} = 200$ (25 fibres per fascicle).  The legacy
-fixed-divider mode (\texttt{RANDOMIZE\_DIVIDER=0}) is retained for
-debugging and for reproducing the original Hussain-style P1--P6
-motor-vs-sensory split.
-
 \subsection{Subject-specific Duke FEM cohort}
 \label{sec:methods-duke}
 
 For the cohort-scale selectivity study (Section~\ref{sec:results-duke})
-we replaced the synthetic Hussain-style geometry of
-Section~\ref{sec:methods-geom} with subject-specific finite-element
+we use subject-specific finite-element
 (FE) nerve models built from quantified vagus-nerve morphology of
 swine~\cite{pelot2020swineSPARC} and human~\cite{pelot2021humanSPARC},
 both released through the SPARC Portal.  The raw datasets provide,
@@ -411,6 +362,29 @@ benchmarks, mesh-convergence tests, and the geometry-rendering and
 volume-field-export utilities used to validate every sample by visual
 inspection prior to inclusion in the cohort.
 
+\paragraph{Target and off-target selection.}
+Rather than an arbitrary divider line, the target/off-target labelling
+$y_f$ in Eq.~(\ref{eq:wq-loss}) is set per nerve by a
+peripheral-fascicle cluster selector that matches what the cuff can
+physically steer.  Fascicles whose centroid lies in the outer
+radial band of the nerve (beyond the $0.32$ radius quantile) form the
+peripheral pool; a $90^\circ$ angular sector --- the angular
+resolution of the cuff's four contact columns --- is then slid around
+the perimeter in $5^\circ$ steps, and every sector containing at least
+$50$ fibres drawn
+from the peripheral pool is a valid target window.  For each nerve we
+select \emph{four} such windows, chosen by farthest-point sampling on
+the circle from a random anchor so that they are spread maximally
+around the cross-section; these four windows are the four ``seeds''
+optimised per nerve.  The peripheral fascicles inside the selected
+sector are labelled target ($y_f = 1$) and all remaining fibres
+off-target ($y_f = 0$).  This produces a single anatomically
+contiguous, cuff-reachable target region per seed --- rather than a
+topologically arbitrary split --- and the four seeds probe four
+distinct target orientations of the same anatomy.  Samples with fewer
+than three fascicles are excluded because the selector cannot form a
+meaningful peripheral cluster.
+
 \paragraph{Cohort composition and FEM-quality gating.}
 Of the $N_{\mathrm{raw}} = 36$ SPARC bundles processed by the pipeline,
 $N_{\mathrm{cohort}} = 23$ \needdata{Confirm exact n once the cluster
@@ -419,7 +393,7 @@ audit (\texttt{duke\_fem\_quality.py --diameter 5.7 --threshold 100})
 after also subtracting the $n_{\mathrm{fasc}}<3$ exclusions
 (sub-63, sub-70)} entered the selectivity study after two
 pre-flight filters: \textbf{(i)} samples with fewer than three
-fascicles were rejected (degenerate target-cluster selector, below);
+fascicles were rejected (degenerate target-cluster selector, above);
 \textbf{(ii)} samples
 whose per-channel mean of the per-fibre standard deviation of
 ${V_e^{(k)}}_{f,n}$ along $n$ fell below $100\,\mathrm{mV/mA}$ (at the

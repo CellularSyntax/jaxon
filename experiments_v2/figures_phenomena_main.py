@@ -1,0 +1,368 @@
+"""Figure 2: Propagation phenomena — PyFibers vs JAXON.
+
+Three panels (16:9 landscape, 14 × 7.875 in):
+  a  — AP propagation: waterfall line-plot (y=position, x=time, one trace per node)
+  b  — kHz frequency block: Vm vs time at distal node, 4 amplitude levels
+  c  — AP collision: Vm vs node # at 5 time points × 4 diameters
+
+Run from project root:
+    python -m experiments_v2.figures_phenomena_main
+"""
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+import numpy as np
+import matplotlib as mpl
+import matplotlib.gridspec as gridspec
+import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+
+ROOT    = Path(__file__).resolve().parent.parent
+OUT_DIR = ROOT / "manuscript" / "figures" / "main"
+OUT_DIR.mkdir(parents=True, exist_ok=True)
+
+C_PF   = "#0072B2"   # blue       — PyFibers (original; matches NEURON blue in fig1/3)
+C_JAX  = "#D55E00"  # vermillion — JAXON   (Wong palette; replaces shrill amber)
+C_REST = "#555555"
+V_REST = -80.0
+VM_LIM = (-92, 55)
+
+FS    = 9
+FS_SM = 8
+
+mpl.rcParams.update({
+    "font.family":        "sans-serif",
+    "font.sans-serif":    ["Arial", "Helvetica", "Liberation Sans", "DejaVu Sans"],
+    "font.size":          FS,
+    "axes.labelsize":     FS,
+    "axes.titlesize":     FS_SM,
+    "xtick.labelsize":    FS_SM,
+    "ytick.labelsize":    FS_SM,
+    "legend.fontsize":    FS_SM,
+    "axes.linewidth":     0.5,
+    "xtick.major.width":  0.5,
+    "ytick.major.width":  0.5,
+    "xtick.major.size":   2.5,
+    "ytick.major.size":   2.5,
+    "lines.linewidth":    0.8,
+    "patch.linewidth":    0.5,
+    "axes.spines.top":    False,
+    "axes.spines.right":  False,
+    "axes.grid":          False,
+    "savefig.dpi":        600,
+    "savefig.bbox":       "tight",
+    "figure.facecolor":   "white",
+    "axes.facecolor":     "white",
+    "pdf.fonttype":       42,
+})
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _load(path: Path) -> dict | None:
+    if not path.exists():
+        print(f"[fig2] missing: {path}", file=sys.stderr)
+        return None
+    with open(path) as f:
+        return json.load(f)
+
+
+def _heading(fig, x: float, y: float, letter: str, title: str) -> None:
+    """Panel heading at absolute figure-fraction coordinates."""
+    fig.text(x, y, letter, transform=fig.transFigure,
+             fontsize=15, fontweight="bold", va="bottom", ha="left", clip_on=False)
+    fig.text(x + 0.022, y, title, transform=fig.transFigure,
+             fontsize=11, va="bottom", ha="left", clip_on=False)
+
+
+# ── Panel a: AP propagation waterfall ─────────────────────────────────────────
+
+_WATERFALL_T_MAX = 3.5   # ms
+
+
+def _panel_a(gs_cell, fig, dc_data: dict | None,
+             v_rest: float = V_REST, t_max: float = _WATERFALL_T_MAX,
+             stride: int = 2) -> plt.Axes:
+    ax = fig.add_subplot(gs_cell)
+
+    if dc_data is None:
+        ax.text(0.5, 0.5, "data missing", ha="center", va="center",
+                transform=ax.transAxes, fontsize=FS_SM, color="#AAAAAA")
+        return ax
+
+    res = next((r for r in dc_data["results"]
+                if abs(r["amp_factor"] - 1.1) < 0.05), dc_data["results"][1])
+
+    t_jax  = np.array(res["jax_t_ms"])
+    t_pf   = np.array(res["pf_t_ms"])
+    vm_jax = np.array(res["jax_vm_nodes"])   # [n_t, n_nodes]
+    vm_pf  = np.array(res["pf_vm_nodes"])
+    pos    = np.array(dc_data["node_pos_mm"])
+
+    jm = t_jax <= t_max
+    pm = t_pf  <= t_max
+    t_jax,  vm_jax = t_jax[jm],  vm_jax[jm]
+    t_pf,   vm_pf  = t_pf[pm],   vm_pf[pm]
+
+    n_nodes     = len(pos)
+    plot_idx    = list(range(0, n_nodes, stride))
+    n_plot      = len(plot_idx)
+    # Scale so AP peak occupies ~50% of the inter-plotted-trace spacing,
+    # regardless of how densely the nodes are physically packed.
+    plot_spacing = (pos[-1] - pos[0]) / max(n_plot - 1, 1)
+    y_scale      = plot_spacing * 0.5 / (40.0 - v_rest)
+
+    for i in plot_idx:
+        y_off     = pos[i]
+        trace_pf  = (vm_pf[:,  i] - v_rest) * y_scale
+        trace_jax = (vm_jax[:, i] - v_rest) * y_scale
+        ax.plot(t_pf,  y_off + trace_pf,  color=C_PF,  lw=0.7, alpha=0.9,
+                label="PyFibers" if i == 0 else None)
+        ax.plot(t_jax, y_off + trace_jax, color=C_JAX, lw=0.7, ls="--", alpha=0.9,
+                label="JAXON"    if i == 0 else None)
+
+    ax.set_xlabel("time (ms)")
+    ax.set_ylabel("position (mm)")
+    ax.set_xlim(0, t_max)
+    ax.set_ylim(pos[0] - plot_spacing * 0.5, pos[-1] + plot_spacing * 0.5)
+
+    # Short horizontal arrow pointing right to the stimulation site
+    stim_pos = pos[len(pos) // 2]
+    stim_t   = float(dc_data.get("delay_ms", 0.5))
+    ax.annotate("",
+                xy=(stim_t, stim_pos),
+                xytext=(stim_t - t_max * 0.07, stim_pos),
+                arrowprops=dict(arrowstyle="-|>", color="black",
+                                lw=1.6, mutation_scale=16))
+
+    # Legend above the axes, right-aligned, single row
+    ax.legend(loc="lower right", bbox_to_anchor=(1.0, 1.02),
+              ncol=2, frameon=False, fontsize=FS_SM, borderaxespad=0)
+    return ax
+
+
+# ── Panel b: kHz frequency block ──────────────────────────────────────────────
+
+KHZ_ON  = 50.0
+KHZ_OFF = 100.0
+_SKIP   = 20
+
+
+def _panel_b(gs_cell, fig, khz_data: dict | None,
+             v_rest: float = V_REST) -> plt.Axes:
+    # Invisible outer axis so we can return a reference that spans the full panel
+    ax_outer = fig.add_subplot(gs_cell)
+    ax_outer.axis("off")
+
+    gs_inner = gridspec.GridSpecFromSubplotSpec(4, 1, subplot_spec=gs_cell, hspace=0.08)
+    axes = [fig.add_subplot(gs_inner[r, 0]) for r in range(4)]
+
+    if khz_data is None:
+        for ax in axes:
+            ax.axis("off")
+        return ax_outer
+
+    vm_lo = round(v_rest / 10) * 10 - 12   # headroom below rest
+    vm_lim = (vm_lo, 55)
+    ytick_rest = round(v_rest / 10) * 10    # nearest 10 mV for tick label
+
+    for r, res in enumerate(khz_data["results"]):
+        ax   = axes[r]
+        _t   = np.array(res["t_pf_ms"])
+        _vpf = np.array(res["vm_pf_90"])
+        _vjx = np.array(res["vm_jax_90"])
+        _n   = min(len(_t), len(_vpf), len(_vjx))
+        t    = _t[:_n:_SKIP]
+        vpf  = _vpf[:_n:_SKIP]
+        vjx  = _vjx[:_n:_SKIP]
+
+        ax.axvspan(KHZ_ON, KHZ_OFF, color="#FFCCCC", alpha=0.45, zorder=0, lw=0)
+        ax.plot(t, vpf, color=C_PF,  lw=1.0)
+        ax.plot(t, vjx, color=C_JAX, lw=0.9, ls="--")
+        ax.axhline(v_rest, color=C_REST, lw=0.3, ls=":", zorder=0)
+
+        ax.set_ylim(*vm_lim)
+        ax.set_xlim(0, 150)
+        ax.set_yticks([ytick_rest, 0])
+
+        # Amplitude as in-plot annotation
+        ax.text(0.03, 0.94, f"{res['amp_mA']:.1f} mA",
+                transform=ax.transAxes, ha="left", va="top", fontsize=FS_SM)
+
+        ax.set_ylabel("V$_m$ (mV)")
+        if r < 3:
+            ax.set_xticklabels([])
+        else:
+            ax.set_xlabel("time (ms)")
+
+    # Single-row legend placed just above the top subplot
+    handles = [
+        Line2D([0], [0], color=C_PF,  lw=1.4, ls="-",  label="PyFibers"),
+        Line2D([0], [0], color=C_JAX, lw=1.4, ls="--", label="JAXON"),
+    ]
+    # bbox y=1.00 → legend sits flush above axes[0] top, below the panel heading
+    axes[0].legend(handles=handles, loc="lower left",
+                   bbox_to_anchor=(0.0, 1.00), ncol=2, frameon=False,
+                   fontsize=FS_SM, borderaxespad=0)
+
+    return ax_outer
+
+
+# ── Panel c: AP collision ──────────────────────────────────────────────────────
+
+def _panel_c(gs_cell, fig, coll_data: dict | None,
+             v_rest: float = V_REST) -> plt.Axes:
+    ax_outer = fig.add_subplot(gs_cell)
+    ax_outer.axis("off")
+
+    if coll_data is None:
+        return ax_outer
+
+    snap_ts = list(coll_data["snapshot_t_ms"])
+    results = coll_data["results"]
+    n_rows  = len(results)
+    n_cols  = len(snap_ts)
+
+    gs_inner = gridspec.GridSpecFromSubplotSpec(
+        n_rows, n_cols, subplot_spec=gs_cell,
+        hspace=0.08, wspace=0.04,
+    )
+
+    for r, res in enumerate(results):
+        D         = res["diameter_um"]
+        snaps_jax = np.array(res["snapshots_nodes_mV"])
+        pf_raw    = res.get("snapshots_nodes_pf_mV", [])
+        snaps_pf  = np.array(pf_raw) if pf_raw else None
+        nodes     = np.arange(snaps_jax.shape[1])
+
+        for c, t_snap in enumerate(snap_ts):
+            ax = fig.add_subplot(gs_inner[r, c])
+
+            # Full box + square aspect for collision plots
+            for spine in ax.spines.values():
+                spine.set_visible(True)
+            ax.set_box_aspect(1)
+
+            if snaps_pf is not None:
+                ax.plot(nodes, snaps_pf[c], color=C_PF,  lw=1.0)
+            ax.plot(nodes, snaps_jax[c],    color=C_JAX, lw=0.9, ls="--")
+            ax.axhline(v_rest, color=C_REST, lw=0.3, ls=":", zorder=0)
+            ax.set_ylim(round(v_rest / 10) * 10 - 12, 55)
+            ax.set_xlim(0, nodes[-1])
+            ax.set_yticks([round(v_rest / 10) * 10, 0])
+
+            # Column header inside the box (frees space above for the legend)
+            if r == 0:
+                ax.text(0.5, 0.97, f"t = {t_snap} ms",
+                        transform=ax.transAxes, ha="center", va="top",
+                        fontsize=FS_SM)
+            if c == 0:
+                ax.set_ylabel(f"{D} µm")
+            else:
+                ax.set_yticklabels([])
+            if r == n_rows - 1:
+                ax.set_xlabel("node #")
+            else:
+                ax.set_xticklabels([])
+
+
+    # Legend above the panel, top-right — same style as panels a and b
+    leg_handles = [
+        Line2D([0], [0], color=C_PF,  lw=1.0, label="PyFibers"),
+        Line2D([0], [0], color=C_JAX, lw=0.9, ls="--", label="JAXON"),
+    ]
+    ax_outer.legend(handles=leg_handles, loc="lower right",
+                    bbox_to_anchor=(1.0, 1.02), ncol=2, frameon=False,
+                    fontsize=FS_SM, borderaxespad=0)
+
+    return ax_outer
+
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+
+def main() -> int:
+    # ── MRG data (row 1) ──────────────────────────────────────────────────────
+    dc_data   = _load(ROOT / "outputs" / "dc_block"          / "data_dc_block.json")
+    khz_data  = _load(ROOT / "outputs" / "khz_block"         / "data_khz_block.json")
+    coll_data = _load(ROOT / "outputs" / "ap_collision"       / "data_ap_collision.json")
+    # ── Sundt data (row 2) ───────────────────────────────────────────────────
+    dc_s   = _load(ROOT / "outputs" / "dc_block_sundt"    / "data_dc_block_sundt.json")
+    khz_s  = _load(ROOT / "outputs" / "khz_block_sundt"   / "data_khz_block_sundt.json")
+    coll_s = _load(ROOT / "outputs" / "ap_collision_sundt" / "data_ap_collision_sundt.json")
+
+    # ── Figure: 14 × 12 in (two panel rows, same column structure) ───────────
+    FIG_W, FIG_H = 14.0, 12.0
+    fig = plt.figure(figsize=(FIG_W, FIG_H))
+
+    # Column layout — identical for both rows
+    L, R    = 0.06, 0.98
+    col_gap = 0.05
+    W       = R - L
+    panel_w = W - 2 * col_gap
+
+    a_w = panel_w * 0.35
+    b_w = panel_w * 0.23
+    c_w = panel_w * 0.42
+
+    a_l = L;              a_r = a_l + a_w
+    b_l = a_r + col_gap;  b_r = b_l + b_w
+    c_l = b_r + col_gap;  c_r = R
+
+    # Square-subplot height constraint (panels c and f: 4 rows × 5 cols)
+    c_width   = c_r - c_l
+    T_minus_B = c_width * 4.24 * FIG_W / (5.16 * FIG_H)
+
+    # Row 1 (MRG, top)
+    B1 = 0.55
+    T1 = B1 + T_minus_B
+
+    # Row 2 (Sundt, bottom)
+    B2 = 0.05
+    T2 = B2 + T_minus_B
+
+    def _gs(left, right, bot, top):
+        return gridspec.GridSpec(1, 1, figure=fig,
+                                 left=left, right=right,
+                                 bottom=bot, top=top)
+
+    # ── Draw panels ───────────────────────────────────────────────────────────
+    _panel_a(_gs(a_l, a_r, B1, T1)[0, 0], fig, dc_data)
+    _panel_b(_gs(b_l, b_r, B1, T1)[0, 0], fig, khz_data)
+    _panel_c(_gs(c_l, c_r, B1, T1)[0, 0], fig, coll_data)
+
+    _panel_a(_gs(a_l, a_r, B2, T2)[0, 0], fig, dc_s,   v_rest=-60.0, t_max=8.0, stride=2)
+    _panel_b(_gs(b_l, b_r, B2, T2)[0, 0], fig, khz_s,  v_rest=-60.0)
+    _panel_c(_gs(c_l, c_r, B2, T2)[0, 0], fig, coll_s, v_rest=-60.0)
+
+    # ── Headings ──────────────────────────────────────────────────────────────
+    y1 = T1 + 0.025
+    _heading(fig, a_l, y1, "a", "AP propagation")
+    _heading(fig, b_l, y1, "b", "kHz frequency block")
+    _heading(fig, c_l, y1, "c", "AP collision")
+
+    y2 = T2 + 0.025
+    _heading(fig, a_l, y2, "d", "AP propagation")
+    _heading(fig, b_l, y2, "e", "kHz frequency block")
+    _heading(fig, c_l, y2, "f", "AP collision")
+
+    # Row labels at left margin, vertically centred in each row
+    label_x = L - 0.04
+    for bot, top, txt in [(B1, T1, "MRG\n(A-fiber)"), (B2, T2, "Sundt\n(C-fiber)")]:
+        fig.text(label_x, (bot + top) / 2, txt,
+                 transform=fig.transFigure, fontsize=FS_SM,
+                 va="center", ha="right", rotation=90,
+                 color="#555555", style="italic", clip_on=False)
+
+    for ext in (".png", ".svg"):
+        p = OUT_DIR / f"fig2_phenomena{ext}"
+        fig.savefig(p, dpi=600 if ext == ".png" else None)
+        print(f"  -> {p}")
+    plt.close(fig)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

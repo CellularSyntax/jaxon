@@ -46,8 +46,8 @@ NEURON simulator from Python and search by grid sweeps,
 finite-difference probes or evolutionary algorithms—none of which
 scale to multi-contact cuffs or arbitrary waveforms. We built jaxon,
 a fully differentiable JAX reimplementation of the canonical
-peripheral-fibre models—McIntyre–Richardson–Grill myelinated axons
-plus the unmyelinated Sundt, Sweeney and Rattay C-fibres—adding a
+peripheral-fibre models—the myelinated McIntyre–Richardson–Grill and
+Sweeney axons plus the unmyelinated Sundt and Rattay C-fibres—adding a
 coupled intracellular/periaxonal backward-Euler solver and a batched
 parallel-fibre forward pass to the jaxley differentiable Hodgkin–Huxley
 framework. The forward pass runs in parallel on a single GPU and is

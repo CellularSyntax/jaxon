@@ -24,9 +24,10 @@ become a standard component of PNS device development.  The dominant
 workflow links a finite-element solve for the extracellular potential
 $V_e(\mathbf{x})$ in a realistic nerve geometry to compartmental
 NEURON~\cite{hines1997neuron} simulations of canonical axon models---
-typically the McIntyre--Richardson--Grill (MRG) double-cable model for
-myelinated fibers~\cite{mcintyre2002} and the unmyelinated Sundt or
-Sweeney models for C-fibers~\cite{sweeney1987,sundt2015}---with
+typically the McIntyre--Richardson--Grill (MRG) double-cable model (or
+the simpler Sweeney model) for myelinated
+fibers~\cite{mcintyre2002,sweeney1987} and the Sundt model for
+unmyelinated C-fibers~\cite{sundt2015}---with
 parameter scanning to map activation thresholds across fascicles.
 Open-source pipelines such as ASCENT~\cite{musselman2021ascent} and
 pyfibers~\cite{hussain2024} have made this workflow accessible, but
@@ -52,12 +53,12 @@ densities and morphological parameters at unprecedented scale.
 For peripheral nerve fiber models, however, the differentiable
 implementation does not yet exist: the MRG double-cable model
 requires a coupled $(V_i, V_{\mathrm{px}})$ backward-Euler integration
-that is not provided out-of-the-box, the unmyelinated fiber models
-(Sundt, Sweeney, Rattay) each carry calibration-sensitive constants
-that must match NEURON's analytic solver to bench-marking
-accuracy~\cite{musselman2023}, and selectivity optimisation requires a
-batched-fiber forward solver that vectorises across hundreds of fibers
-on a single device.  Building the differentiable peripheral nerve
+that is not provided out-of-the-box, the other models (the myelinated
+Sweeney and the unmyelinated Sundt and Rattay) each carry
+calibration-sensitive constants that must match NEURON's analytic
+solver to bench-marking accuracy~\cite{musselman2023}, and selectivity
+optimisation requires a batched-fiber forward solver that vectorises
+across large fiber populations on a single device.  Building the differentiable peripheral nerve
 forward solver therefore reduces to three engineering questions:
 (i) can the coupled MRG cable equations be expressed in JAX with
 sufficient numerical accuracy that the resulting simulator passes the
@@ -72,9 +73,10 @@ peripheral nerve fiber simulator that answers these three questions
 affirmatively.  Our contributions are:
 
 \begin{enumerate}
-  \item A JAX implementation of the MRG double-cable axon and the
-        Sundt, Sweeney and Rattay unmyelinated fiber models using a
-        coupled $(V_i, V_{\mathrm{px}})$ backward-Euler integrator,
+  \item A JAX implementation of four canonical axon models --- the
+        myelinated MRG (double-cable) and Sweeney, and the unmyelinated
+        Sundt and Rattay C-fibers --- with a backward-Euler integrator
+        (coupled $(V_i, V_{\mathrm{px}})$ for the MRG double cable),
         validated against NEURON on strength--duration, conduction
         velocity and intracellular-trace benchmarks for all four
         models (Section~\ref{sec:results-validation}).

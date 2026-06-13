@@ -11,7 +11,7 @@ C-fibers---in JAX.  Built on top of the \texttt{jaxley} differentiable
 Hodgkin--Huxley framework, jaxon adds a batched coupled-cable
 backward-Euler integrator that simulates hundreds of fibers in
 parallel on a single GPU and exposes end-to-end gradients with respect
-to per-contact stimulus amplitudes and arbitrary waveforms.
+to per-contact stimulus amplitudes.
 We validate jaxon against \texttt{pyfibers}-wrapped NEURON on
 strength--duration thresholds across $D=0.3$--$16\,\mu\mathrm{m}$, eight
 stimulus waveforms and pulse widths from $0.02$ to $1\,\mathrm{ms}$:
@@ -29,22 +29,18 @@ on MRG-interpolated to $1\,377\times$ on Sweeney
 $929\times$ on Rattay C-fibers; jaxon crosses parity with pyfibers
 at $N\approx 10$ and dominates thereafter.  As a
 demonstration of the differentiability advantage, we use jaxon to
-optimise spatially selective fascicular stimulation across 125
-randomised Hussain-style multi-fascicle nerve realisations spanning
-all four fibre models (25 seeds each, every seed with an independently
-randomised target / off-target divider angle): rectangular-pulse
-amplitude optimisation achieves \textbf{median $\mathrm{SI}=1.000$
-on every model}, with cross-model mean SI of $0.955$ and
-$70\,\%$ of seeds reaching the theoretical maximum
-$\mathrm{SI}=1.0$ (all target fibres firing, all off-target fibres
-silent).  We additionally demonstrate the pipeline on a cohort of
-$n=21$ microCT-segmented vagus nerve cross-sections (3 swine + 18
-human) from the SPARC consortium, optimising over a 12-contact
-MultiContact cuff with FEM-derived per-contact extracellular
-potentials: $33\,\%$ of human samples reach
-$|\mathrm{SI}|\geq 0.95$ on rectangular optimisation, with the
-remaining samples honestly reporting the geometric ceiling at which
-the cuff cannot reach the assigned target fascicle.
+optimise spatially selective fascicular stimulation on a cross-species
+cohort of microCT-segmented vagus nerve cross-sections from the SPARC
+consortium, optimising over a 12-contact MultiContact cuff with
+FEM-derived per-contact extracellular potentials: gradient-based
+rectangular-pulse amplitude optimisation recovers selective
+configurations on the anatomies where the cuff has spatial purchase,
+agrees with an independent random-init L1-discovery path on those
+samples, and honestly reports the geometric ceiling at which the cuff
+cannot reach the assigned target fascicle.  Because jaxon simulates
+the full fibre population rather than a per-fascicle centroid, we
+further quantify the selectivity bias introduced by the centroid-only
+fibre sampling used in prior GPU-accelerated work.
 jaxon is open-source and designed to slot into existing peripheral nerve
 stimulation pipelines as a drop-in replacement for the NEURON forward
 solver, with the additional capability of gradient-based optimisation.

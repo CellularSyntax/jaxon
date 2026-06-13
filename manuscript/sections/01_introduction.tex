@@ -86,28 +86,26 @@ affirmatively.  Our contributions are:
         five implemented axon models on a single NVIDIA A100
         (Section~\ref{sec:results-scaling}).
   \item An end-to-end differentiable selectivity optimisation pipeline
-        that uses LBFGS multi-start over per-contact amplitudes for
-        rectangular pulses, and Adam over arbitrary
-        per-contact waveforms warm-started from the rectangular
-        optimum, demonstrated on 125 randomised Hussain-style
-        multi-fascicle nerve realisations spanning all four
-        implemented fibre models (25 seeds per model, with an
-        independently randomised target / off-target divider angle
-        per seed): rectangular amplitude optimisation achieves
-        \textbf{median $\mathrm{SI}=1.000$ on every fibre model},
-        with cross-model mean SI of $0.955$ and $70\,\%$ of seeds
-        reaching the theoretical maximum $\mathrm{SI}=1.0$
-        (Section~\ref{sec:results-selectivity}).
-  \item A demonstration of the same gradient-based selectivity
-        optimisation pipeline on a cohort of $n=21$ microCT-segmented
-        vagus nerve cross-sections (3 swine + 18 human) drawn from
-        the SPARC consortium, with FEM-derived per-contact
-        extracellular potentials computed by an in-house FEniCSx
-        pipeline and the 12-contact MultiContact cuff array
-        (Section~\ref{sec:results-selectivity-duke}).  This is, to
+        that uses gradient-based multi-start optimisation over
+        per-contact rectangular-pulse amplitudes, exposing exact
+        end-to-end gradients that the gradient-free PNS pipelines of
+        prior work lack.
+  \item A demonstration of that pipeline on a cross-species cohort of
+        microCT-segmented vagus nerve cross-sections drawn from the
+        SPARC consortium, with FEM-derived per-contact extracellular
+        potentials computed by an in-house pipeline and the 12-contact
+        MultiContact cuff array
+        (Section~\ref{sec:results-duke}).  This is, to
         our knowledge, the first cross-species gradient-based
         selectivity optimisation on real microCT-derived
-        peripheral nerve anatomies.
+        peripheral nerve anatomies.  A probe-based smart initialisation
+        is cross-validated against an independent random-init
+        L1-discovery path to rule out hidden \emph{a priori} bias.
+  \item A direct quantification, enabled by simulating the full
+        ${\sim}1000$-fibre population rather than a per-fascicle
+        centroid, of the selectivity bias introduced by the
+        centroid-only fibre sampling used in prior GPU-accelerated
+        selectivity work (Section~\ref{sec:results-sparse}).
 \end{enumerate}
 
 We discuss the limits of the current implementation---most notably the

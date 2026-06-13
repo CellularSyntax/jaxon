@@ -9,9 +9,9 @@
     ring cuff (illustrative bipolar pattern, cathodic contacts blue,
     anodic orange).  Fascicles are split into target (green, upper
     half) and off-target (grey, lower half) by a divider line
-    through the nerve centre; the orientation of the divider is
-    randomised in the selectivity sweep
-    (Section~\ref{sec:results-selectivity}).
+    through the nerve centre; on the microCT cohort the target region
+    is instead chosen per nerve by the peripheral-cluster selector
+    (Section~\ref{sec:results-duke}).
     \textbf{(b)} Forward pipeline.  The cuff geometry and a chosen
     extracellular medium yield the per-contact unit fields
     $V_e^{(k)}(\mathbf{x})$.  Combined with the per-contact amplitude
@@ -296,20 +296,13 @@ stops easy seeds at $\sim 15$--$30$ Adam iterations instead of the
 full 90 iterations budgeted, cutting per-seed wall time on the
 sweep by an order of magnitude on the easy-seed majority.
 
-\paragraph{Arbitrary-waveform optimisation.}
-For per-contact arbitrary waveforms $u_k(t) \in \mathbb{R}^{K \times T}$
-we use Adam with reverse-mode autodiff through the scan.  The
-waveform optimiser is \emph{warm-started} from the rectangular
-optimum (i.e.\ $u_k(t) = I_k^{\star} \cdot p(t)$ where $p(t)$ is the
-pulse mask), so iteration 0 reproduces the rectangular result.  To
-avoid Adam overshooting the warm-started optimum, the learning rate
-is reduced by an order of magnitude (lr$=5\times 10^{-4}$ vs the
-$5\times 10^{-3}$ used for cold-start), the waveform clamp range
-matches the per-model rect amp clamp from Table~\ref{tab:opt-hparams},
-and the same SI-target / patience early-stop pair as for the rect
-optimiser is enabled.  All results report the \emph{best-loss}
-iterate, not the final iterate, so that any post-warm-start Adam
-drift is invisible to the reported selectivity index.
+The same forward kernel also exposes reverse-mode gradients with
+respect to per-contact \emph{arbitrary waveforms}
+$u_k(t) \in \mathbb{R}^{K \times T}$, enabling waveform-shape
+optimisation; on the single-diameter cohort studied here this did not
+improve selectivity over optimised rectangular pulses, so we report
+rectangular-pulse results only and leave waveform shaping to future
+work (Section~\ref{sec:discussion}).
 
 \subsection{Nerve geometry generation}
 \label{sec:methods-geom}

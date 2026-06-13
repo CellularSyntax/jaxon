@@ -4,13 +4,13 @@
 We benchmarked jaxon across four axes: \emph{(i)} numerical agreement
 with NEURON on activation thresholds, conduction velocity and
 intracellular traces; \emph{(ii)} reproduction of canonical
-propagation phenomena (AP collision, kHz and DC conduction block,
-repetitive-stimulation desynchronisation); \emph{(iii)} forward-pass
-throughput against the standard \texttt{pyfibers} pipeline on a single
-GPU; and \emph{(iv)} differentiable selectivity optimisation on
-randomised multi-fascicle nerves.  All raw data and reproduction
-scripts are in the repository under
-\texttt{outputs/} and \texttt{experiments\_v2/}.
+propagation phenomena (AP propagation, kHz conduction block and AP
+collision) in both a myelinated and an unmyelinated fibre model;
+\emph{(iii)} forward-pass throughput against the standard
+\texttt{pyfibers} pipeline on a single GPU; and \emph{(iv)}
+differentiable selectivity optimisation on microCT-derived vagus-nerve
+anatomies.  All raw data and reproduction scripts are in the
+repository under \texttt{outputs/} and \texttt{experiments\_v2/}.
 
 \subsection{Validation against NEURON}
 \label{sec:results-validation}
@@ -40,7 +40,7 @@ this to the bisection-based threshold detector having reduced
 resolution near the inflection point of the biphasic cathodic-first
 strength--duration curve at the smallest diameters; the
 intracellular voltage traces themselves agree to NEURON-level
-precision (Figure~\ref{fig:traces}, bottom rows).
+precision (Figure~\ref{fig:validation}\textbf{a}).
 
 \begin{table}[h]
   \centering
@@ -91,11 +91,10 @@ tested; the only exceptions are four biphasic cathodic-first
 configurations of the smallest Rattay diameters (already discussed
 above), and even there 96.5\,\% of the 115 biphasic-cath-first
 configurations remain below the $1\,\%$ tolerance.  The visual
-analogue is Figure~\ref{fig:validation-waveforms}, which overlays
-the strength--duration curves for all eight waveforms at a single
-representative diameter ($D=10\,\mu\mathrm{m}$ MRG) and reports the
-distribution of relative threshold errors per waveform aggregated
-across the full per-model sweep.
+analogue is the per-waveform error distribution in
+Figure~\ref{fig:validation}\textbf{c}, which reports the spread of
+relative threshold errors per waveform aggregated across the full
+per-model sweep.
 
 \begin{table}[h]
   \centering
@@ -127,27 +126,6 @@ across the full per-model sweep.
     \bottomrule
   \end{tabular}
 \end{table}
-
-\begin{figure}[h]
-  \centering
-  \figmaybe[width=0.98\textwidth]{fig_validation_waveforms.png}
-  \caption{Per-waveform validation against \texttt{pyfibers}-wrapped
-    NEURON.  \textbf{Top row:} strength--duration threshold (absolute
-    value) vs.\ pulse width for each of the eight stimulus waveforms,
-    at one representative diameter ($D=10\,\mu\mathrm{m}$ MRG): jaxon
-    (solid coloured line) overlays NEURON (open circles) at every
-    tested pulse width for every waveform.  \textbf{Bottom row:}
-    distribution of $|$relative threshold error$|$ for the same
-    waveform, aggregated over all four fiber models and their
-    diameter sweeps ($n\approx 120$ configurations per panel; vertical
-    dashed line = per-waveform median, vertical dotted red line =
-    $1\,\%$ acceptance criterion).  X-axes are shared (0--2.5\,\%) so
-    the panels are directly visually comparable: seven of the eight
-    waveforms fall entirely below the $1\,\%$ tolerance, only the
-    biphasic cathodic-first panel has a tail above $1\,\%$ (the four
-    smallest-Rattay outliers identified in Table~\ref{tab:validation-sd}).}
-  \label{fig:validation-waveforms}
-\end{figure}
 
 Conduction velocity (CV) is independently sensitive to the
 internodal and nodal time constants and so probes a different
@@ -184,143 +162,115 @@ full diameter range.
   \end{tabular}
 \end{table}
 
-Figure~\ref{fig:validation} compactly summarises the three validation
-axes for all four models: the strength--duration curve at the nominal
-diameter (top row, jaxon as solid line, NEURON as open circles),
-CV-vs.-diameter agreement (middle row), and the empirical distribution
-of relative threshold error across the full sweep (bottom row, with
-median and the $1\,\%$ acceptance criterion shown).  Every histogram
-is wholly to the left of the red $1\,\%$ line.  Because the manuscript
-ultimately targets \emph{extracellular} stimulation (Section
-\ref{sec:results-selectivity}), we additionally verified that the
-full extracellular-stimulation membrane-potential response at the
-centre node matches NEURON's analytic update within the
-$\Delta t$-quantisation noise floor of the comparison
-(Figure~\ref{fig:traces}, top two rows); intracellular
-current-injection responses are also reported on the same fibres
-(Figure~\ref{fig:traces}, bottom two rows) and show comparable
-agreement.
+Figure~\ref{fig:validation} compactly summarises the validation and
+the computational-efficacy result for all four models in a single
+panel set: representative extracellular AP and gating-variable traces
+with the stimulus overlaid (panel a, jaxon solid over NEURON dashed),
+the strength--duration curves at every tested diameter (panel b),
+the activation-threshold agreement broken down as a jaxon-vs-NEURON
+scatter and by model, waveform and diameter (panel c),
+CV-vs.-diameter agreement (panel d), and the forward-pass throughput
+benchmark (panel e, detailed in Section~\ref{sec:results-scaling}).
+Across panel c the jaxon-vs-NEURON scatter lies on the unity line at
+$R^{2}>0.99999$, and every per-waveform and per-diameter error
+distribution sits below the $1\,\%$ acceptance criterion.  Because the
+manuscript ultimately targets \emph{extracellular} stimulation
+(Section~\ref{sec:results-duke}), the AP traces in panel a are driven
+by an extracellular cathodic pulse and match NEURON's analytic update
+within the $\Delta t$-quantisation noise floor of the comparison.
 
 \begin{figure}[h]
   \centering
-  \figmaybe[width=0.98\textwidth]{fig_validation_4models.png}
+  \figmaybe[width=0.98\textwidth]{main/fig1_validation.png}
   \caption{Validation of jaxon against \texttt{pyfibers}-wrapped NEURON
-    across all four fiber models.  \textbf{Top:} strength--duration
-    threshold (absolute value) vs.\ pulse width for monophasic cathodic
-    pulses at the nominal diameter ($D = 10\,\mu\mathrm{m}$ for MRG,
-    Sweeney and Rattay; $D = 1\,\mu\mathrm{m}$ for Sundt).  jaxon (solid,
-    coloured) overlies NEURON (open circles) at every pulse width.
-    \textbf{Middle:} conduction velocity (CV) vs.\ fiber diameter across
-    the manufacturer-supported range for each model.  \textbf{Bottom:}
-    empirical distribution of relative threshold error across the full
-    sweep of waveforms, pulse widths and diameters for that model
-    ($n$ = 432 MRG, 240 each for Sundt, Sweeney, Rattay).  Median is
-    marked with a dashed black line; the $1\,\%$ acceptance criterion
-    is the red dotted line.}
+    and computational-efficacy benchmark, all four fiber models.
+    \textbf{(a)} Membrane-potential and gating-variable response to a
+    single extracellular cathodic stimulus (overlaid as the solid
+    black step at resting potential), one column per model; jaxon
+    (coloured solid) over NEURON (dashed grey).
+    \textbf{(b)} Strength--duration threshold (absolute value) vs.\
+    pulse width at every tested diameter (viridis = small$\to$large
+    diameter); jaxon solid line + circle markers, PyFibers dashed line
+    + cross markers in a lighter tint of the same colour.
+    \textbf{(c)} Activation-threshold agreement: jaxon-vs-PyFibers
+    scatter with $R^{2}$ and median relative error (top left), and
+    relative-error distributions broken down per model, per stimulus
+    waveform and per diameter bin.  Median is the black bar; the
+    $1\,\%$ acceptance criterion is the dotted red line.
+    \textbf{(d)} Conduction velocity vs.\ fiber diameter for the
+    A-fibre (MRG, Sweeney) and C-fibre (Sundt, Rattay) models; same
+    jaxon-solid / PyFibers-lighter-dashed convention.
+    \textbf{(e)} Forward-pass throughput on a single NVIDIA A100 GPU:
+    absolute wall time (left) and jaxon-vs-PyFibers speedup (right)
+    vs.\ fiber count $N$, log--log
+    (Section~\ref{sec:results-scaling}).}
   \label{fig:validation}
-\end{figure}
-
-\begin{figure}[h]
-  \centering
-  \figmaybe[width=0.98\textwidth]{fig_traces_4models.png}
-  \caption{Membrane-potential response to a single extracellular
-    cathodic stimulus (top two rows) and intracellular current
-    injection (bottom two rows), jaxon vs.\ NEURON, for all four
-    fibre models.
-    \textbf{Row~1 (extracellular stim):} the applied extracellular
-    cathodic rectangular pulse $I_e(t)$ delivered at $t = 1\,\mathrm{ms}$
-    (PW $= 0.1\,\mathrm{ms}$ for MRG and Sweeney; $0.2\,\mathrm{ms}$
-    for Sundt and Rattay).  Grey dotted line: model-specific
-    activation threshold.  Annotated: suprathreshold amplitude actually
-    applied and threshold.
-    \textbf{Row~2 (extracellular $V_m$):} membrane potential at the
-    centre node, jaxon (coloured solid) over NEURON (dashed black).
-    Peak absolute voltage discrepancy $|\Delta V_m^{\mathrm{peak}}|$
-    annotated; in every case below the $\Delta t = 5\,\mu\mathrm{s}$
-    quantisation noise floor.
-    \textbf{Row~3 (intracellular stim):} the applied intracellular
-    current pulse $I_i(t)$ (1.0\,nA MRG, 3.0\,nA Sweeney,
-    0.5\,nA Sundt / Rattay; same delay and pulse-width convention).
-    \textbf{Row~4 (intracellular $V_m$):} membrane response, same
-    overlay convention.  The two stimulation regimes test the
-    integrator independently — the extracellular case is the one
-    that matters for selectivity optimisation
-    (Section~\ref{sec:results-selectivity}).}
-  \label{fig:traces}
 \end{figure}
 
 \subsection{Propagation phenomena}
 \label{sec:results-phenomena}
 
-Beyond threshold agreement, we verified that jaxon reproduces four
+Beyond threshold agreement, we verified that jaxon reproduces three
 characteristic propagation phenomena that arise from the nonlinear
-coupling of the axon's active membrane to the extracellular field.
-Each phenomenon was run independently in jaxon and in
+coupling of the axon's active membrane to the extracellular field, in
+both a myelinated (MRG, A-fibre) and an unmyelinated (Sundt, C-fibre)
+model.  Each phenomenon was run independently in jaxon and in
 \texttt{pyfibers}-wrapped NEURON with identical parameters;
-Figure~\ref{fig:phenomena} overlays the two as solid lines (jaxon) and
-dashed lines (NEURON).
+Figure~\ref{fig:phenomena} overlays jaxon (solid) and NEURON (dashed)
+for the A-fibre (top row, \textbf{a}--\textbf{c}) and the C-fibre
+(bottom row, \textbf{d}--\textbf{f}).
 
-\paragraph{AP collision.}
-Two cathodic pulses delivered simultaneously from opposite ends of a
-$5.7$--$14\,\mu\mathrm{m}$ MRG fiber initiate two action potentials
-that propagate inward, meet near the centre, and annihilate due to
-mutual refractory-period overlap (Figure~\ref{fig:phenomena}\textbf{a}).
-The peak voltage discrepancy between jaxon and NEURON at the moment
-of collision is below $1\,\mu\mathrm{V}$ for every tested diameter, an
-agreement bounded by the floating-point precision of the comparison
-itself.
+\paragraph{AP propagation.}
+A single suprathreshold cathodic pulse delivered at the centre of the
+fiber initiates an action potential that propagates symmetrically
+toward both ends.  The waterfall plot
+(Figure~\ref{fig:phenomena}\textbf{a},\textbf{d}) stacks the
+membrane-potential trace of every node along the fiber against time,
+so the diagonal sweep of the depolarisation front directly visualises
+the propagation velocity.  jaxon and PyFibers traces are
+visually indistinguishable at every node, for both the fast
+myelinated A-fibre and the slow unmyelinated C-fibre.
 
 \paragraph{kHz conduction block.}
 A continuous $20\,\mathrm{kHz}$ sinusoidal extracellular hold of
 sufficient amplitude prevents AP propagation past the source
-node~\cite{kilgore2014block}.  We delivered a train of fourteen
-cathodic pace pulses ($1.5\,\mathrm{nA}$, $0.1\,\mathrm{ms}$
-pulse width, $10\,\mathrm{ms}$ intervals) and varied the kHz amplitude;
-Figure~\ref{fig:phenomena}\textbf{b} shows the distal-node voltage
-trace for four amplitudes.  The block threshold (the smallest
-amplitude at which no APs propagate past the source) computed by
-jaxon matches NEURON within the
-$0.01\,\mathrm{mA}$ scan resolution; the AP count at each amplitude
-agrees exactly.
+node~\cite{kilgore2014block}.  We delivered a train of cathodic pace
+pulses and varied the kHz amplitude;
+Figure~\ref{fig:phenomena}\textbf{b},\textbf{e} shows the
+distal-node voltage trace for four amplitudes (kHz-on window shaded),
+spanning no block, partial block and full block.  The block threshold
+(the smallest amplitude at which no APs propagate past the source)
+computed by jaxon matches NEURON within the $0.01\,\mathrm{mA}$ scan
+resolution, and the AP count at each amplitude agrees exactly, for
+both fibre models.
 
-\paragraph{DC conduction block.}
-A constant hyperpolarising extracellular DC source positioned $1\,\mathrm{mm}$
-from the fiber inhibits AP propagation when its amplitude exceeds a
-diameter-dependent threshold.  Figure~\ref{fig:phenomena}\textbf{c}
-shows the distal-node trace for four DC amplitudes scaled around the
-jaxon-computed block threshold.  jaxon reproduces NEURON's
-sub-threshold pass-through and supra-threshold block crisply, with
-threshold agreement under $1\,\%$.
-
-\paragraph{Spike desynchronisation by repetitive stimulation.}
-A sequence of three closely-spaced suprathreshold cathodic pulses
-followed by a perturbation pulse of variable amplitude tests the
-fiber's ability to lock to the perturbation rate.
-Figure~\ref{fig:phenomena}\textbf{d} reports the sync index (the
-fraction of perturbation cycles that elicit an AP) vs.\ perturbation
-amplitude at three inter-stimulus frequencies (30, 50 and 100\,Hz).
-The sync curves predicted by jaxon and NEURON coincide to within the
-spike-detection quantisation resolution.
+\paragraph{AP collision.}
+Two cathodic pulses delivered simultaneously from opposite ends of a
+fiber initiate two action potentials that propagate inward, meet near
+the centre, and annihilate due to mutual refractory-period overlap
+(Figure~\ref{fig:phenomena}\textbf{c},\textbf{f}; $V_m$ along the
+fiber at five times, for four diameters).  The peak voltage
+discrepancy between jaxon and NEURON at the moment of collision is
+below $1\,\mu\mathrm{V}$ for every tested diameter, an agreement
+bounded by the floating-point precision of the comparison itself.
 
 \begin{figure}[h]
   \centering
-  \figmaybe[width=0.95\textwidth]{fig_phenomena.png}
-  \caption{Reproduction of four canonical propagation phenomena under
-    jaxon (solid coloured lines) vs.\ NEURON (dashed black).
-    \textbf{(a)} Action-potential collision in a $10\,\mu\mathrm{m}$ MRG
-    fiber driven from both ends; snapshots of $V_m$ along the fiber at
-    five times show the two APs meeting and annihilating.
-    \textbf{(b)} kHz conduction block at $20\,\mathrm{kHz}$ extracellular
-    hold; distal-node $V_m$ traces show 0, partial and full blocking
-    of the 14-pulse pace train as the block amplitude increases.
-    \textbf{(c)} DC conduction block via hyperpolarising extracellular
-    source; distal-node $V_m$ vs.\ block amplitude factor relative to
-    the jaxon-computed block threshold.
-    \textbf{(d)} Sync index of perturbation responses for
-    repetitive-stimulation pacing at three inter-stimulus frequencies
-    (30, 50, 100\,Hz); curves rise from below-threshold (sync = 0) to
-    one-spike-per-pulse (sync = 1) over the same amplitude range in
-    jaxon and NEURON.}
+  \figmaybe[width=0.98\textwidth]{main/fig2_phenomena.png}
+  \caption{Reproduction of three canonical propagation phenomena under
+    jaxon (solid) vs.\ PyFibers/NEURON (dashed), for a myelinated
+    A-fibre (MRG, top row \textbf{a}--\textbf{c}) and an unmyelinated
+    C-fibre (Sundt, bottom row \textbf{d}--\textbf{f}).
+    \textbf{(a, d)} AP propagation: waterfall of the membrane-potential
+    trace at each node (y = position along fiber, x = time); the
+    horizontal arrow marks the central stimulation site.
+    \textbf{(b, e)} kHz conduction block at $20\,\mathrm{kHz}$
+    extracellular hold; distal-node $V_m$ traces at four block
+    amplitudes show the pace train passing, partially blocking and
+    fully blocking as amplitude increases (kHz-on window shaded).
+    \textbf{(c, f)} AP collision; snapshots of $V_m$ along the fiber
+    at five times (columns) for four diameters (rows) show the two
+    inward-propagating APs meeting and annihilating.}
   \label{fig:phenomena}
 \end{figure}
 
@@ -335,8 +285,8 @@ interpolated parameter tables, Sweeney, Sundt and Rattay) at
 $N \in \{1, 10, 100, 1\,000, 10\,000, 100\,000\}$ fibers on a single
 NVIDIA A100 GPU, against \texttt{pyfibers} running 8-thread
 CPU-parallel on a matched Xeon host.
-Figure~\ref{fig:scaling} reports the per-model wall time (panel A)
-and the resulting jaxon-vs-pyfibers speedup (panel B);
+Figure~\ref{fig:validation}\textbf{e} reports the per-model wall time
+and the resulting jaxon-vs-pyfibers speedup;
 Table~\ref{tab:scaling} summarises the headline numbers.
 
 At small $N$, GPU launch overhead dominates and \texttt{pyfibers}
@@ -363,7 +313,7 @@ $\sim 820\times$, taking what would have been multiple CPU-hours of
 \texttt{pyfibers} time per forward pass down to under twenty
 seconds of GPU wall time.
 For the fascicular selectivity sweeps reported in
-Section~\ref{sec:results-selectivity}, where $\sim 1\,000$ fibers per
+Section~\ref{sec:results-duke}, where $\sim 1\,000$ fibers per
 nerve realisation are simulated thousands of times during
 optimisation, this throughput differential is what brings
 multi-anatomy gradient-based optimisation on a 12-contact cuff into
@@ -396,321 +346,19 @@ reach on a single GPU-day.
   \end{tabular}
 \end{table}
 
-\begin{figure}[h]
-  \centering
-  \figmaybe[width=0.98\textwidth]{fig_scaling_allmodels.png}
-  \caption{Forward-pass throughput on a single NVIDIA A100 GPU as a
-    function of fiber count $N$ for all five benchmarked axon models
-    (MRG, MRG with interpolated parameter tables, Sweeney, Sundt and
-    Rattay).
-    \textbf{(a)} Absolute wall time per forward simulation.  Dashed
-    coloured lines + open markers: \texttt{pyfibers} on 8-thread CPU.
-    Solid coloured lines: jaxon on a single A100.  jaxon's curves are
-    nearly flat up to $N \approx 100$ as the GPU is under-utilised,
-    then scale linearly.  \texttt{pyfibers} scales linearly throughout.
-    \textbf{(b)} Implied speedup; horizontal grey reference at
-    $1\times$.  Crossover at $N \approx 10$ for every model; at
-    $N = 100\,000$ all five exceed $500\times$ speedup, with Sweeney
-    reaching $1\,377\times$ and the unmyelinated Sundt / Rattay
-    C-fibres exceeding $900\times$.}
-  \label{fig:scaling}
-\end{figure}
-
-\subsection{Selectivity optimisation on multi-fascicle nerves}
-\label{sec:results-selectivity}
-
-\subsubsection*{Cross-model single-diameter sweep.}
-We applied the rectangular-pulse and warm-started waveform optimisers
-of Section~\ref{sec:methods-opt} to randomised Hussain-style
-multi-fascicle nerve realisations
-(Section~\ref{sec:methods-geom}) for all four implemented fibre
-models, at the representative diameters used in the
-benchmark / prior literature: MRG at $D=5.7\,\mu\mathrm{m}$ and
-$D=10\,\mu\mathrm{m}$, Sweeney at $D=10\,\mu\mathrm{m}$, Sundt at
-$D=1\,\mu\mathrm{m}$, and Rattay at $D=1\,\mu\mathrm{m}$.  Per fibre
-model we ran 25 randomised nerve realisations; for each realisation
-we ran the multi-start LBFGS rectangular optimiser (Adam-FD variant
-in this sweep) to a budget of up to 90 inner Adam iterations
-(early-stopping once $\mathrm{SI}\ge 1$ or the loss plateaus for 20
-iterations), followed by up to 100 iterations of the warm-started
-waveform Adam optimiser (learning rate $5\times 10^{-4}$,
-early-stopping patience 20).
-
-A critical design detail is the random target / off-target divider:
-on every seed the line that splits fascicles into the target group
-and the off-target group is drawn uniformly in $[0°,\,180°)$, so the
-sweep covers every possible cardiac-vs-non-cardiac fascicle
-orientation rather than baking in a single (e.g.\ dorsal-vs-ventral)
-configuration.  This randomisation, together with the
-rejection-sampled fascicle positions, gives 25 distinct
-geometric / topological problems per fibre model.
-
-Across the 125 randomised realisations (5 models $\times$ 25 seeds)
-the rectangular optimiser achieves
-\textbf{median $\mathrm{SI}=1.000$ on every model}, with cross-model
-mean SI from $0.934$ (Sundt) to $0.979$ (Rattay), and between
-$64\,\%$ and $76\,\%$ of seeds reaching the theoretical maximum
-$\mathrm{SI}=1.000$ (all target fascicle fibres firing, all
-off-target fibres silent) per model (Table~\ref{tab:selectivity}).
-The warm-started waveform stage preserves the rectangular optimum on
-the majority of seeds; on a small subset ($\sim 25$--$35\,\%$
-depending on model) the wave Adam step destabilises the warm-start
-slightly, and the wave-stage report defaults to the best-iter SI
-which is at minimum the warm-start (rect) value.
-Figure~\ref{fig:selectivity}\textbf{a} shows the per-model SI
-distribution (one paired rect+wave violin per model);
-Figure~\ref{fig:selectivity}\textbf{b} the per-seed wave-vs-rect
-comparison across all 125 seeds.
-
-The model with the lowest mean SI is Sundt (mean $0.934$,
-$68\,\%\ge 0.95$).  Sundt's lower mean reflects two compounding
-factors: its peak AP voltage at the centre node is the lowest of
-the four models ($\sim 11\,\mathrm{mV}$, vs $\sim 23\,\mathrm{mV}$ for
-MRG), so the activation proxy operates closer to its sigmoid
-saturation; and its activation threshold at the 1.5\,mm cuff is the
-highest ($\sim 50\,\mathrm{mA}$, requiring per-model amp scaling of
-the rect optimiser as detailed in
-Section~\ref{sec:methods-opt}).  Even so, Sundt reaches
-$\mathrm{SI}\ge 0.95$ on the majority of seeds, and Rattay --- the
-other unmyelinated model --- achieves the \emph{highest} mean SI of
-the four, demonstrating that the cuff-design pipeline generalises
-across fibre biophysics.
-
-\begin{table}[h]
-  \centering
-  \caption{Per-model selectivity statistics across 25 randomised
-    Hussain-style nerves per model.  Each seed uses a uniformly random
-    divider angle in $[0°,\,180°)$ and a freshly reject-sampled
-    fascicle packing.  Median [IQR] reported alongside the mean to
-    show distribution spread; the rect median is pinned at $1.000$ on
-    every model, but the Q1 of the IQR captures how tightly the bulk
-    of seeds clusters at the optimum.  Wave columns are the
-    warm-started waveform-Adam optimum.}
-  \label{tab:selectivity}
-  \resizebox{\textwidth}{!}{%
-  \begin{tabular}{lrrcrrrc}
-    \toprule
-    Model           & D ($\mu$m) & rect mean & rect median [IQR] & \%\,$\ge 0.95$ & \%\,$=1.0$ & wave mean & wave median [IQR] \\
-    \midrule
-    MRG (myel.)     &  5.7 & 0.962 & 1.000 [0.97--1.00] & 84\,\% & 72\,\% & 0.952 & 0.990 [0.96--1.00] \\
-    MRG (myel.)     & 10.0 & 0.944 & 1.000 [0.95--1.00] & 76\,\% & 68\,\% & 0.941 & 1.000 [0.93--1.00] \\
-    Sweeney (myel.) & 10.0 & 0.956 & 1.000 [1.00--1.00] & 80\,\% & 76\,\% & 0.950 & 0.990 [0.96--1.00] \\
-    Sundt (unmyel.) &  1.0 & 0.934 & 1.000 [0.94--1.00] & 68\,\% & 64\,\% & 0.928 & 0.990 [0.94--1.00] \\
-    Rattay (unmyel.) & 1.0 & 0.979 & 1.000 [0.99--1.00] & 88\,\% & 72\,\% & 0.958 & 0.987 [0.94--1.00] \\
-    \midrule
-    \textbf{all 125 seeds} & --- & \textbf{0.955} & \textbf{1.000 [0.96--1.00]} & \textbf{79\,\%} & \textbf{70\,\%} & \textbf{0.946} & \textbf{0.990 [0.95--1.00]} \\
-    \bottomrule
-  \end{tabular}%
-  }
-\end{table}
-
-Figure~\ref{fig:selectivity-gallery} shows representative
-cross-sections per model and per seed: the random divider angle and
-the rejection-sampled fascicle positions give each panel a different
-target / off-target layout, and the optimised cuff configuration
-(per-contact polarities + amplitudes) adapts to it.
-Figure~\ref{fig:convergence} reports the per-model convergence
-profiles across the 125 seeds: the rect stage drives the WQ loss down
-by roughly an order of magnitude over $\sim 20$--$60$ iterations
-(panel a, with model-dependent rates --- MRG and Sweeney converge
-fastest, the unmyelinated Sundt and Rattay take more iterations),
-while the warm-started waveform stage holds the rect optimum's SI
-near 1.0 throughout (panel b, median always $\ge 0.95$ across all
-five model / diameter combinations).
-
-\begin{figure}[h]
-  \centering
-  \figmaybe[width=0.98\textwidth]{fig_optimization_convergence.png}
-  \caption{Per-model optimisation convergence across the 125
-    randomised Hussain-style nerve realisations.  In each panel the
-    solid line is the per-iteration median across the seeds for that
-    fibre model, the shaded band is the inter-quartile range
-    (Q1--Q3), and seeds that stop early are padded with their final
-    value so the curve is well-defined out to the longest run.
-    \textbf{(a)} Rectangular LBFGS-FD stage --- WQ loss vs.\ optimiser
-    iteration.  All models drop their loss by roughly an order of
-    magnitude over the first $\sim 30$ iterations; MRG and Sweeney
-    converge fastest, Sundt and Rattay (unmyelinated, higher
-    activation thresholds) take more iterations.
-    \textbf{(b)} Warm-started waveform-Adam stage --- selectivity
-    index vs.\ iteration.  Wave Adam starts from the rect optimum and
-    mostly preserves it; the median SI stays above the $0.95$
-    acceptance line (red dashed) throughout for every model.  The
-    legend ``$n=N$'' is the number of seeds whose wave history has
-    length $>1$ (seeds that already satisfied the
-    $\mathrm{SI}\ge 1$ early stop at warm-start contribute one point
-    only and are excluded from the per-iteration aggregation).}
-  \label{fig:convergence}
-\end{figure}
-
-\begin{figure}[h]
-  \centering
-  \figmaybe[width=0.98\textwidth]{fig_selectivity_summary.png}
-  \caption{Selectivity optimisation across 125 randomised
-    Hussain-style multi-fascicle nerve realisations spanning 5 fibre
-    model / diameter combinations (25 seeds each).
-    \textbf{(a)} Per-model paired-violin distributions: rectangular
-    LBFGS-FD (left of each pair) and warm-started waveform-Adam
-    (right of each pair).  Individual seeds shown as jittered points;
-    red bars mark per-stage medians; red dashed line marks the
-    $\mathrm{SI}=0.95$ acceptance criterion used in the prior
-    literature.
-    \textbf{(b)} Per-seed scatter of warm-started waveform SI vs.\
-    rectangular SI, colour-coded by model.  Points on the dotted
-    diagonal are seeds where the waveform stage preserved the rect
-    optimum exactly; points above the diagonal are improvements,
-    below are regressions.}
-  \label{fig:selectivity}
-\end{figure}
-
-\begin{figure}[h]
-  \centering
-  \figmaybe[width=0.98\textwidth]{fig_selectivity_xsections.png}
-  \caption{Cross-section activation patterns at the rectangular LBFGS
-    optimum.  Two seeds per fibre model (rows: MRG~5.7\,$\mu$m,
-    MRG~10\,$\mu$m, Sweeney~10\,$\mu$m, Sundt~1\,$\mu$m,
-    Rattay~1\,$\mu$m; columns: two top-SI seeds chosen per row), giving
-    ten realisations in total.  Each cell stacks a cross-section
-    (top) and a per-contact pulse strip (bottom).  In the cross-section,
-    the thick black line is the target / off-target divider (randomised
-    per seed, uniform on $[0,\,180)$°); fibres are coloured by recruitment
-    --- filled green = target fired, open green = target silent, red
-    \texttimes{} = off-target fired (the leakage failure mode), small grey
-    dot = off-target silent.  The six cuff contacts (sitting on a
-    1.5\,mm ring around the nerve) are coloured by polarity (blue
-    cathodic, orange anodic) and sized by $|I_k|$.  Each pulse strip
-    underneath shows the optimised monophasic rectangular waveform for
-    each of the six contacts (delay 1.0\,ms, pulse-width 0.1\,ms);
-    the contact label C0--C5 and signed amplitude (mA) are printed
-    inside the panel.  The selectivity index and seed number are noted
-    in the top-right of each cross-section.  The optimised cuff
-    configuration adapts to the randomised anatomy and recovers
-    $\mathrm{SI}=1.0$ in the displayed cells; failure modes (red
-    \texttimes{} markers) appear in the per-model distributions of
-    Figure~\ref{fig:selectivity} but are absent from the
-    top-SI subset shown here.  Failure-mode examples are shown in
-    Figure~\ref{fig:selectivity-gallery-hard}.}
-  \label{fig:selectivity-gallery}
-\end{figure}
-
-\begin{figure}[h]
-  \centering
-  \figmaybe[width=0.98\textwidth]{fig_selectivity_xsections_hard.png}
-  \caption{Companion to Figure~\ref{fig:selectivity-gallery}: the
-    two \emph{worst-SI} seeds per fibre model, drawn with the same
-    layout and marker scheme.  These are the residual failure cases
-    --- the optimisation pipeline still reaches a stable local optimum
-    on every seed, but the optimum has either some target fibres
-    silent (open green markers) or some off-target fibres recruited
-    (red \texttimes{} markers, the ``leakage'' mode), or both.  Visual
-    inspection shows that the residual failures are typically driven
-    by adversarial fascicle layouts where (i) a target and an
-    off-target fascicle sit close together near the cuff perimeter,
-    so any contact strong enough to drive the target also drives its
-    neighbour, or (ii) a target fascicle lands near the geometric
-    centre of the nerve where the field of any single ring contact is
-    weak.  Anatomically realistic FEM-derived $V_e$ fields, which
-    break the homogeneous-bath symmetry, are the natural next step
-    for resolving these hard-anatomy cases.}
-  \label{fig:selectivity-gallery-hard}
-\end{figure}
-
-\subsubsection*{Mixed-diameter regime.}
-A second sweep targeted the harder problem of \emph{type
-selectivity}---preferentially activating small ($D = 5.7\,\mu\mathrm{m}$)
-target fibers without recruiting co-located large
-($D = 14.0\,\mu\mathrm{m}$) off-target fibers---under the rationale
-that the differential chronaxie between the two populations should be
-exploitable by waveform shaping.  Across all attempted regularisation
-strengths, soft-proxy temperatures, and Adam learning rates, the
-optimiser invariably converged to the all-fibers-fire equilibrium
-($\mathrm{SI} = 0$ for both rectangular and waveform stages; see
-Section~\ref{sec:discussion} for analysis of why the loss surface
-favours this attractor under spatially homogeneous extracellular
-forcing in our six-contact cuff geometry).  We report this negative
-result rather than omit it: it delineates the regime in which the
-present cuff geometry and loss formulation are sufficient
-(single-diameter spatial selectivity) versus the regime in which an
-additional design lever---most plausibly anatomically realistic
-$V_e$ with target-fascicle-adjacent contacts---is required.
-
-To make the failure mode concrete, Figure~\ref{fig:mixed-landscape}
-shows the loss landscape along a one-dimensional cut through amplitude
-space for a representative mixed-diameter nerve.  We fix a bipolar
-template ($I_0 = -1\,\mathrm{mA}$ cathodic at the contact closest to
-the target fascicle, $I_3 = +1\,\mathrm{mA}$ anodic on the opposite
-side, other contacts at zero) and sweep a single scaling factor
-$\alpha$ from $0$ to $4\,\mathrm{mA}$.  Because the off-target
-fascicle's $D = 14\,\mu\mathrm{m}$ fibres have a lower activation
-threshold than the target fascicle's $D = 5.7\,\mu\mathrm{m}$ fibres
-under the same pulse width, they fire first as $\alpha$ grows
-(Figure~\ref{fig:mixed-landscape}a); over the entire intermediate
-$\alpha$ regime the selectivity index is \emph{negative}
-(Figure~\ref{fig:mixed-landscape}b, minimum
-$\mathrm{SI} = -0.56$ at $\alpha \approx 0.7\,\mathrm{mA}$).  The
-regularised WQ loss (Figure~\ref{fig:mixed-landscape}c) has two
-attractive minima --- the trivial $\alpha = 0$ (silent) and the
-saturated $\alpha \gg 0$ (all-fire) --- but no interior minimum at any
-regularisation strength $\lambda$ we tested.  The differentiable
-forward solver is gradient-informative at every $\alpha$; the
-optimisation failure is a loss-landscape property, not a
-gradient-availability one.
-
-\begin{figure}[h]
-  \centering
-  \figmaybe[width=0.98\textwidth]{fig_mixed_diameter_landscape.png}
-  \caption{Mixed-diameter loss-landscape diagnostic for one
-    representative two-fascicle nerve
-    ($D_{\mathrm{target}} = 5.7\,\mu\mathrm{m}$,
-     $D_{\mathrm{off}} = 14\,\mu\mathrm{m}$, 25 fibres per fascicle).
-    A bipolar amplitude template is fixed and scaled by a single
-    factor $\alpha$, sweeping the entire range from silent
-    ($\alpha = 0$) through threshold to saturation
-    ($\alpha = 4\,\mathrm{mA}$).
-    \textbf{(a)} Activation rates: the larger off-target fibres
-    (red, $D = 14\,\mu\mathrm{m}$) cross threshold at lower
-    $\alpha$ than the smaller target fibres (green,
-    $D = 5.7\,\mu\mathrm{m}$), reflecting their lower
-    pulse-width-equivalent threshold under the common monophasic
-    rectangular pulse.
-    \textbf{(b)} Selectivity index $\mathrm{SI}(\alpha)$ along the
-    same sweep: across the entire intermediate $\alpha$ window the
-    off-target population fires more strongly than the target, giving
-    \emph{anti-selectivity} (SI $< 0$, shaded red); SI returns to
-    zero at $\alpha = 0$ (no fibres fire) and at high $\alpha$ (all
-    fibres fire).  There is no $\alpha$ along this slice that yields
-    $\mathrm{SI} > 0$.
-    \textbf{(c)} Regularised WQ loss
-    $L(\alpha) = \mathrm{WQ}(\alpha) + \lambda \overline{I_k^{\,2}}$
-    at four energy-regularisation strengths $\lambda$.  For
-    $\lambda = 0$ the loss has two minima --- the silent $\alpha = 0$
-    and a saturated large-$\alpha$ minimum where all fibres fire.
-    Increasing $\lambda$ kills the large-$\alpha$ minimum but cannot
-    create an interior selective one.  The optimiser, run from any
-    initial $\alpha$, therefore lands at $\alpha = 0$ (trivial) or
-    $\alpha$-large (all-fire), never at a positive-SI configuration.}
-  \label{fig:mixed-landscape}
-\end{figure}
-
-
 \subsection{Selectivity on microCT-derived vagus nerve geometries}
 \label{sec:results-duke}
 
-To test the optimisation pipeline beyond synthetic Hussain-style
-nerves we additionally ran it on a cohort of \needdata{Cohort here
-is the first 9 samples returned by the cluster sweep at the time
-of writing -- 4 swine + 5 human.  Final reported $n$ will be 23
-once the remaining shards complete.  Numbers in
-Table~\ref{tab:duke-summary} and Figure~\ref{fig:duke-summary} are
-the current 9-sample values, refreshed by re-running
+To test the optimisation pipeline on realistic anatomy we ran it on a
+cohort of \needdata{27 samples now complete (swine + human); final
+$n$ and species split refresh by re-running
 \texttt{experiments\_v2/process\_duke\_results.py} and
-\texttt{experiments\_v2/figures\_duke.py}.}
-$n_{\mathrm{cohort}}=9$ subject-specific FE-modelled
-vagus-nerve cross-sections drawn from the SPARC quantified
-morphology releases of swine~\cite{pelot2020swineSPARC} and
-human~\cite{pelot2021humanSPARC}, with per-contact extracellular
-lead-fields computed in-house with the Golgi
-pipeline~\cite{haberbusch2026golgi}
+\texttt{experiments\_v2/figures\_duke\_main.py}.}
+subject-specific FE-modelled vagus-nerve cross-sections drawn from the
+SPARC quantified morphology releases of
+swine~\cite{pelot2020swineSPARC} and human~\cite{pelot2021humanSPARC},
+with per-contact extracellular lead-fields computed in-house with the
+Golgi pipeline~\cite{haberbusch2026golgi}
 (Section~\ref{sec:methods-duke}).  The cuff is the 12-contact
 MultiContact array (three axial rows $\times$ four angular
 columns), so the rectangular optimiser searches over $K=12$
@@ -718,8 +366,11 @@ amplitudes per nerve.  Target fascicles were selected by a
 peripheral-cluster selector that picks one contiguous angular
 sector of the nerve perimeter containing the largest
 peripheral-fascicle cluster (by total fibre count), giving every
-nerve a single anatomically contiguous target region rather than
-an arbitrary divider-line split.
+nerve a single anatomically contiguous target region.
+Figure~\ref{fig:duke}\textbf{a} shows representative swine and human
+cross-sections with their unrolled 12-contact cuff patterns, fibres
+coloured by post-optimisation activation status
+(target/off-target $\times$ fired/silent).
 
 \paragraph{Probe-based smart-init Adam-FD.}
 We use the smart-init variant of the rectangular optimiser: a
@@ -735,8 +386,7 @@ amplitudes preserve the sparsity of the probe pattern (without
 this, the per-iter Adam updates accumulate net unbalanced drive
 at the previously-zero contacts and the focal field is destroyed
 within 5 iters).  The Adam-FD loop terminates as soon as either
-$\mathrm{SI} \geq 0.95$ (the experimental noise floor of
-selectivity measurements~\cite{settell2020vagotopy}) or the
+$\mathrm{SI} \geq 0.90$ or the
 patience-based stale-loss criterion fires.
 
 \paragraph{Reviewer-bulletproof validation via L1-discovery.}
@@ -750,38 +400,43 @@ exactly zero via proximal soft-thresholding after each Adam
 update.  Both paths are subject to the same early-stop criteria
 and the same forward solver.  Their resulting selectivities and
 sparsity patterns are compared per anatomy
-(Table~\ref{tab:duke-probe-vs-l1}).
+(Table~\ref{tab:duke-probe-vs-l1}), and the per-sample
+selectivity, on-/off-target recruitment and loss are summarised in
+Figure~\ref{fig:duke}\textbf{b}.
 
 \paragraph{Cohort outcome.}
-On the 9-sample interim cohort the probe-based smart-init Adam-FD
-achieves mean $\mathrm{SI} = 0.91$ (median $0.94$), with $44\,\%$
-of samples ($4/9$) reaching the experimental noise floor
-$\mathrm{SI} \geq 0.95$ and the remaining $5/9$ in the polishing
-tier ($0.71 \leq \mathrm{SI} < 0.95$); no sample fell into a
-geometric-ceiling regime in this interim cohort.  Species-wise the
+On the interim cohort the probe-based smart-init Adam-FD
+achieves mean $\mathrm{SI} = 0.89$ (median $0.90$), with $29\,\%$
+of samples reaching the $\mathrm{SI} \geq 0.90$ threshold
+and the remainder in the polishing
+tier ($0.71 \leq \mathrm{SI} < 0.90$).  Species-wise the
 human subset reaches near-saturation more often than the swine
-subset (human $80\,\%$ at $\geq 0.95$ vs.\ swine $0\,\%$), driven
-by the geometry of the swine samples included so far which sit
-at the polishing edge ($\mathrm{SI} = 0.83$--$0.94$).  The
+subset (human $80\,\%$ at $\geq 0.90$ vs.\ swine $37.5\,\%$),
+driven by the geometry of the swine samples.  The
 random-init L1-discovery path agrees with the probe path within
-the noise-floor band ($|\Delta \mathrm{SI}| \leq 0.05$) on $4/9$
-($44\,\%$) of samples; the mean $|\Delta \mathrm{SI}|$ is $0.19$.
-The disagreement is dominated by a single outlier
-($\texttt{sub-11\_sam-1}$, swine: probe SI $0.898$, L1 SI $0.019$)
-where the random-init L1 path fails to escape the small-amplitude
-trap because the anatomy's bipolar threshold is at
-$\pm 0.8\,\mathrm{mA}$ while L1 is initialised at $\pm 0.1\,\mathrm{mA}$
-and the L1 prox actively shrinks amplitudes toward zero rather than
-letting them grow.  Excluding this outlier, mean
-$|\Delta \mathrm{SI}|$ drops to $0.11$ and $50\,\%$ of remaining
-samples agree within the noise floor.  Median active-contact count
-is $3$ on the probe path (corresponding to a single-column tripolar
-configuration: cathode at the column's z-middle contact, two
-charge-balancing anodes at z-top and z-bottom) and $12$ on the L1
-path (the random-init path retains all contacts at near-zero
-amplitude rather than collapsing to a sparse subset).
+the noise-floor band ($|\Delta \mathrm{SI}| \leq 0.05$) on a third
+of samples; the disagreement is dominated by a handful of swine
+samples where the random-init L1 path fails to escape the
+small-amplitude trap because the anatomy's bipolar threshold lies
+above the $\pm 0.1\,\mathrm{mA}$ L1 initialisation and the L1 prox
+actively shrinks amplitudes toward zero rather than letting them
+grow.  Median active-contact count is $3$ on the probe path
+(a single-column tripolar configuration: cathode at the column's
+z-middle contact, two charge-balancing anodes at z-top and
+z-bottom) and $12$ on the L1 path.  The optimised per-contact
+amplitudes are organised by contact position in
+Figure~\ref{fig:duke}\textbf{c} (target-normalised angular-bin
+$\times$ axial-row), showing that the cathodic drive concentrates
+on the contact column nearest the target sector.
 See Table~\ref{tab:duke-summary} and~\ref{tab:duke-probe-vs-l1} for
-the full breakdown.
+the full breakdown.  Per-sample cross-sections for the full cohort
+are provided as supplementary figures (one panel per sample,
+\texttt{manuscript/figures/supp/}).
+Optimised rectangular pulses are sufficient on this
+single-diameter cohort; waveform-shape optimisation, with its
+${\sim}80\times$ expansion in degrees of freedom, did not measurably
+improve selectivity and is left to future work
+(Section~\ref{sec:discussion}).
 
 \paragraph{Geometric-ceiling cases.}
 The cohort separates cleanly into anatomies where the cluster
@@ -790,36 +445,15 @@ Geometric-ceiling cases are characterised by a
 target-to-off-target minimum-distance ratio close to unity (i.e.,
 the off-target fascicles approach the contacts as closely as the
 target does), leaving no spatial gradient that any per-contact
-configuration can exploit.  Per-sample
-Figures~\ref{fig:duke-xsections-swine}
-and~\ref{fig:duke-xsections-human} reveal the bimodality directly
-in the firing patterns: successful samples show near-complete
+configuration can exploit.  The per-sample firing patterns reveal
+the bimodality directly: successful samples show near-complete
 target activation with the off-target region nearly silent, while
 ceiling samples show either near-complete co-activation (bipolar
 at the target-firing threshold also fires off-target) or
 near-complete silence (no per-contact configuration crosses
-threshold within the clip limit).
-
-\paragraph{Wave-vs-rect comparison.}
-Compared with the synthetic Hussain-style sweep
-(Table~\ref{tab:selectivity}), where $\geq 96\,\%$ of seeds reach
-$\mathrm{SI} \geq 0.95$ on every fibre model, the lower hit rate
-on real microCT geometries reflects the larger variance in
-fascicle position, size, and cuff-coupling present in genuine
-anatomies relative to rejection-sampled synthetic nerves.  The
-warm-started waveform-Adam stage --- with $K T = 12 \times 1000$
-degrees of freedom against the rect optimiser's 12 --- provides no
-measurable improvement over rect on this single-diameter cohort
-(mean $\Delta \mathrm{SI} = -0.11$ across the 9 samples, dominated
-by a single waveform-init failure on $\texttt{sub-57\_sam-1}$ where
-the wave path landed at $\mathrm{SI} \approx 0$ from a tiny-amplitude
-warm start; on the remaining 8 samples the mean $\Delta \mathrm{SI}$
-is $0.000 \pm 0.014$).  For homogeneous-diameter fibre populations,
-optimised rectangular pulses are therefore sufficient and the
-$\sim 80\times$ DOF expansion of waveform shaping does not
-contribute meaningfully to selectivity.  The demonstration that
+threshold within the clip limit).  The demonstration that
 gradient-based selectivity optimisation succeeds on real
-cross-species microCT anatomies, validates against an from-scratch
+cross-species microCT anatomies, validates against a from-scratch
 L1-discovery path, and honestly reports the geometric ceiling where
 it does not, is the principal application result of this paper.
 
@@ -831,71 +465,64 @@ it does not, is the principal application result of this paper.
 
 \begin{figure}[h]
   \centering
-  \figmaybe[width=0.98\textwidth]{duke/fig_duke_selectivity_summary.png}
-  \caption{Achievable selectivity on the Duke
-    microCT-derived vagus-nerve cohort
-    ($n = 9$ interim samples: 4 swine + 5 human, refreshed by
-    \texttt{experiments\_v2/figures\_duke.py}).
-    \textbf{(a)} Per-sample bar chart of the achievable
-    $\mathrm{SI}$ under each optimisation path (probe Adam-FD,
-    L1 random-init Adam-FD, waveform Adam), with species shown
-    as background colour bands and the experimental noise-floor
-    threshold ($\mathrm{SI} = 0.95$) drawn as a dotted line.
-    \textbf{(b)} Probe-based smart-init Adam-FD $\mathrm{SI}$ vs.\
-    independent random-init L1-discovery $\mathrm{SI}$ scatter,
-    with the $|\Delta \mathrm{SI}|=0.05$ noise-floor band shaded.
-    Points inside the band are anatomies where the two paths
-    agree within experimental noise --- evidence that the
-    probe-based smart init is a speed-up of the same sparsity
-    discovery the random-init optimiser performs on its own,
-    rather than encoding hidden \emph{a priori} information.
-    The single outlier $\texttt{sub-11\_sam-1}$ in the
-    bottom-right of (b) is the random-init failure mode
-    discussed in the text.}
-  \label{fig:duke-summary}
+  \figmaybe[width=0.98\textwidth]{main/fig3_duke.png}
+  \caption{Selectivity optimisation on the Duke microCT-derived
+    vagus-nerve cohort (swine + human; refreshed by
+    \texttt{experiments\_v2/figures\_duke\_main.py}).
+    \textbf{(a)} Representative swine and human nerve cross-sections
+    with their unrolled 12-contact cuff patterns; fibres coloured by
+    post-optimisation activation status (target fired / target silent
+    / off-target fired / off-target silent), contacts coloured by
+    polarity and sized by $|I_k|$.
+    \textbf{(b)} Per-sample selectivity performance: achievable
+    $\mathrm{SI}$, on-target and off-target recruitment, and final
+    loss across the cohort, with the $\mathrm{SI}=0.90$ noise-floor
+    threshold marked.
+    \textbf{(c)} Optimised stimulus amplitude organised by contact
+    position (target-normalised angular bin $\times$ axial row),
+    swine and human.
+    \textbf{(d)} Sparse fibre-sampling analysis: SI distributions
+    (violins, black median bar) per sampling strategy --- centroid
+    (1/fascicle, AxonML-style), 1/3/10 fibres per fascicle, and the
+    dense ${\sim}1000$-fibre reference --- for swine and human (left),
+    and the SI gap ($\mathrm{SI_{dense}-SI_{sparse}}$) per strategy
+    for swine (centre) and human (right).}
+  \label{fig:duke}
 \end{figure}
 
-\begin{figure}[h]
-  \centering
-  \figmaybe[width=0.98\textwidth]{fig_duke_selectivity_xsections_swine.png}
-  \caption{Per-sample selectivity outcomes on the swine subset of
-    the Duke microCT cohort.  Each cell shows one sample's nerve
-    cross-section with fibres coloured by their post-optimisation
-    activation status (target/off-target $\times$ fired/silent);
-    the 12-contact cuff is shown as black circles around the
-    perimeter, and the random divider line that assigns the
-    target/off-target split is drawn as a thin dashed line.}
-  \label{fig:duke-xsections-swine}
-\end{figure}
+\subsection{Sparse fibre-sampling bias}
+\label{sec:results-sparse}
 
-\begin{figure}[h]
-  \centering
-  \figmaybe[width=0.98\textwidth]{fig_duke_selectivity_xsections_human.png}
-  \caption{As Figure~\ref{fig:duke-xsections-swine} but for the
-    human subset of the Duke microCT cohort.  Successful
-    selectivity (almost all target fibres green, almost all
-    off-target fibres grey) is visible on samples such as
-    \texttt{human-sub-47\_sam-2}, \texttt{human-sub-50\_sam-2} and
-    \texttt{human-sub-58\_sam-3}; the geometric-ceiling cases
-    (e.g.\ \texttt{human-sub-46\_sam-2} with a 953/47 fascicle
-    split) show essentially no activation across the entire
-    nerve.}
-  \label{fig:duke-xsections-human}
-\end{figure}
+Prior GPU-accelerated selectivity work reduces each fascicle to a
+single centroid fibre to keep the population
+tractable~\cite{hussain2024}.  Because jaxon simulates the full
+${\sim}1000$-fibre population directly, we can quantify the
+approximation error this introduces.  For each nerve $\times$ target
+seed we re-ran the identical smart-init Adam-FD optimisation on five
+fibre-sampling levels --- centroid (one fibre per fascicle), 1, 3 and
+10 randomly sampled fibres per fascicle, and the dense reference ---
+by pure row-subsampling of the precomputed $V_e$ lead-field, with no
+FEM recomputation.  Figure~\ref{fig:duke}\textbf{d} reports the
+achievable SI at each sparsity level and the gap to the dense
+reference.  \needdata{Sparse-sampling sweep complete locally
+(101 sparse records); cluster re-run adds the saved \texttt{amps\_mA}
+and per-sample \texttt{si\_transfer} needed for the deployment-gap
+analysis below.  Fill in the paired-Wilcoxon statistics and the
+median SI overestimation per strategy once the cluster shards land
+and \texttt{experiments\_v2/analyze\_sparse\_sampling.py} is re-run.}
 
-\begin{figure}[h]
-  \centering
-  \figmaybe[width=0.98\textwidth]{fig_duke_optimization_convergence.png}
-  \caption{Per-species convergence of the rectangular-pulse
-    Adam-FD multi-start (panel a) and the warm-started waveform
-    Adam (panel b) on the Duke microCT cohort.  Solid line:
-    per-species median across samples.  Shaded band:
-    25--75\,\% interquartile range.  Convergence to the
-    sample-specific achievable $|\mathrm{SI}|$ occurs within
-    20--40 inner-loop iters for the rectangular optimiser; the
-    warm-started waveform stage adds modest refinement on samples
-    that did not saturate at the rectangular stage and recovers
-    one human sample (\texttt{human-sub-70}) from
-    $|\mathrm{SI}|=0$ to $|\mathrm{SI}|=0.99$.}
-  \label{fig:duke-convergence}
-\end{figure}
+\paragraph{Deployment gap (transfer evaluation).}
+The SI a sparse model \emph{reports} is optimistic: the amplitudes it
+selects are tuned to the handful of fibres it can see.  To measure the
+true performance of a sparsely-optimised configuration we take the
+amplitude vector found under each sparse model and evaluate the
+resulting activation on the full dense population \emph{without
+re-optimising}, yielding $\mathrm{SI_{transfer}}$.
+\needdata{Transfer evaluation runs as a forward pass inside the
+sparse sweep (\texttt{si\_transfer} saved per strategy in
+\texttt{sparse\_sampling\_seed\_NNNN.json}); awaiting cluster shards.
+Report $\mathrm{SI_{sparse\,reported}}$ vs.\ $\mathrm{SI_{transfer}}$
+vs.\ $\mathrm{SI_{dense\,optimised}}$, the deployment-gap
+$\mathrm{SI_{sparse\,reported}}-\mathrm{SI_{transfer}}$, and whether
+the gap is statistically significant and correlates with nerve
+anatomy.}

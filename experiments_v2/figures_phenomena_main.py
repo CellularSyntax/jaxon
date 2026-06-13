@@ -316,7 +316,7 @@ def main() -> int:
     T_minus_B = c_width * 4.24 * FIG_W / (5.16 * FIG_H)
 
     # Row 1 (MRG, top)
-    B1 = 0.55
+    B1 = 0.47
     T1 = B1 + T_minus_B
 
     # Row 2 (Sundt, bottom)

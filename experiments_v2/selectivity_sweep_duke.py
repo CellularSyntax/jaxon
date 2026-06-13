@@ -239,6 +239,9 @@ L1_N_ITERS     = _env_int("L1_N_ITERS",     150)    # more than probe path
 SPARSE_SAMPLING_SWEEP = os.environ.get(
     "SPARSE_SAMPLING_SWEEP", "false"
 ).strip().lower() in ("1", "true", "yes", "y", "on")
+SPARSE_FORCE_RERUN = os.environ.get(
+    "SPARSE_FORCE_RERUN", "false"
+).strip().lower() in ("1", "true", "yes", "y", "on")
 SPARSE_N_PER_FASCICLE_LIST = [
     int(x.strip()) for x in
     os.environ.get("SPARSE_N_PER_FASCICLE_LIST", "1,3,10").split(",")
@@ -660,6 +663,19 @@ def _sparse_subsample_duke(duke: dict, n_per_fascicle: int | str,
     }
 
 
+def _eval_amps_on_dense(amps_mA: np.ndarray, seed_in: dict, dt: float) -> float:
+    """One forward pass: apply amps on the full dense fiber set, return SI."""
+    amps_j     = jnp.asarray(amps_mA, dtype=jnp.float64)
+    Ve_unit_j  = jnp.asarray(seed_in["Ve_unit"], dtype=jnp.float64)
+    pulse_j    = jnp.asarray(seed_in["pulse_mask"], dtype=jnp.float64)
+    node_idx_j = jnp.asarray(seed_in["node_indices"], dtype=jnp.int32)
+    u      = amps_j[:, None] * pulse_j[None, :]
+    Ve_seq = jnp.einsum("kt,kfn->ftn", -u, Ve_unit_j)
+    m_max  = batch_integrate_m_max(seed_in["fs_batch"], seed_in["s0_batch"], Ve_seq, dt)
+    acts   = np.asarray(activation_proxy_batch(m_max, node_idx_j))
+    return float(selectivity_index(acts, seed_in["target_mask"]))
+
+
 def _run_sparse_sweep(duke: dict, seed_in: dict) -> dict:
     """Optimize at each SPARSE_N_PER_FASCICLE_LIST density using the same
     target fascicle cluster as the dense run.  Returns a lightweight dict
@@ -699,7 +715,8 @@ def _run_sparse_sweep(duke: dict, seed_in: dict) -> dict:
                 "strategy": strat_name,
                 "n_per_fascicle": 1 if strat_name == "centroid" else int(n_per_fasc),
                 "n_fibers": n_tot, "n_target_fibers": 0,
-                "si": None, "wall_s": 0.0, "skipped": True,
+                "si": None, "si_transfer": None, "amps_mA": None,
+                "wall_s": 0.0, "skipped": True,
             })
             continue
 
@@ -720,10 +737,13 @@ def _run_sparse_sweep(duke: dict, seed_in: dict) -> dict:
             print(f"{label} [sparse] {lbl}: opt failed: {e}", flush=True)
             continue
 
-        si      = float(res["rect"]["achievable_si"])
-        wall_s  = time.time() - t0
+        si          = float(res["rect"]["achievable_si"])
+        amps_mA     = list(res["rect"]["amps_mA"])
+        si_transfer = _eval_amps_on_dense(np.asarray(amps_mA), seed_in, DT)
+        wall_s      = time.time() - t0
         print(f"{label} [sparse] {lbl:10s}: "
-              f"n={n_tot:4d}  n_tgt={n_tgt:4d}  SI={si:.3f}  ({wall_s:.0f}s)",
+              f"n={n_tot:4d}  n_tgt={n_tgt:4d}  SI={si:.3f}  "
+              f"SI_transfer={si_transfer:.3f}  ({wall_s:.0f}s)",
               flush=True)
         results.append({
             "strategy":       strat_name,
@@ -731,6 +751,8 @@ def _run_sparse_sweep(duke: dict, seed_in: dict) -> dict:
             "n_fibers":       n_tot,
             "n_target_fibers": n_tgt,
             "si":             si,
+            "si_transfer":    si_transfer,
+            "amps_mA":        amps_mA,
             "wall_s":         wall_s,
             "skipped":        False,
         })
@@ -742,6 +764,11 @@ def _run_sparse_sweep(duke: dict, seed_in: dict) -> dict:
         "dense_n_fibers": int(seed_in["nerve"].n_fibers),
         "dense_n_target": int(seed_in["target_mask"].sum()),
         "target_ids":     list(cluster_info["target_ids"]),
+        "pulse_shape":    PULSE_SHAPE,
+        "pulse_pw_ms":    float(PW_MS),
+        "pulse_asym_ratio": float(ASYM_RATIO) if PULSE_SHAPE == "biphasic_asym" else None,
+        "delay_ms":       float(DELAY_MS),
+        "fiber_diam_um":  float(FIBER_DIAMETER_UM),
         "results":        results,
     }
 
@@ -1517,29 +1544,31 @@ def main():
 
     seeds = list(range(SEED_START, SEED_END))
     for s in seeds:
-        out_path = OUT / f"data_seed_{s:04d}.json"
-        if out_path.exists():
-            print(f"[seed {s}] already exists at {out_path}; skipping",
-                  flush=True)
+        out_path   = OUT / f"data_seed_{s:04d}.json"
+        sparse_out = OUT / f"sparse_sampling_seed_{s:04d}.json"
+        dense_done  = out_path.exists()
+        sparse_done = sparse_out.exists() and not SPARSE_FORCE_RERUN
+
+        if dense_done and (not SPARSE_SAMPLING_SWEEP or sparse_done):
+            print(f"[seed {s}] already done; skipping", flush=True)
             continue
+
         seed_in = _build_seed(duke, s, verbose=True)
         if seed_in is None:
-            # _build_seed returns None when the cluster selector finds
-            # no acceptable target; nothing to optimise.  Skip cleanly.
             print(f"[seed {s}] no target -> no JSON written", flush=True)
             continue
         seed_in["fem_z_std_mean"] = fem_z_std_mean
         seed_in["fem_z_std_low"]  = fem_z_std_low
-        result = _run_one_seed(seed_in, verbose=True)
-        save_json(result, out_path)
-        print(f"[seed {s}] -> {out_path}", flush=True)
 
-        if SPARSE_SAMPLING_SWEEP:
-            sparse_out = OUT / f"sparse_sampling_seed_{s:04d}.json"
-            if not sparse_out.exists():
-                sparse_data = _run_sparse_sweep(duke, seed_in)
-                save_json(sparse_data, sparse_out)
-                print(f"[seed {s}] sparse -> {sparse_out}", flush=True)
+        if not dense_done:
+            result = _run_one_seed(seed_in, verbose=True)
+            save_json(result, out_path)
+            print(f"[seed {s}] -> {out_path}", flush=True)
+
+        if SPARSE_SAMPLING_SWEEP and not sparse_done:
+            sparse_data = _run_sparse_sweep(duke, seed_in)
+            save_json(sparse_data, sparse_out)
+            print(f"[seed {s}] sparse -> {sparse_out}", flush=True)
 
 
 if __name__ == "__main__":

@@ -1,46 +1,32 @@
 % Abstract — JNE limit ~250 words.  Structured paragraph (no labels).
 Peripheral nerve stimulation is a rapidly expanding therapeutic
-modality, but optimising electrode geometry and stimulus waveforms
-for fascicle-specific selectivity remains computationally expensive:
-state-of-the-art pipelines wrap the NEURON simulator from Python and
-require thousands of forward simulations per design candidate.
-We present \emph{jaxon}, a fully differentiable reimplementation of
-the canonical peripheral nerve fiber models---McIntyre--Richardson--Grill
-(MRG) myelinated axons, and the unmyelinated Sundt, Sweeney and Rattay
-C-fibers---in JAX.  Built on top of the \texttt{jaxley} differentiable
-Hodgkin--Huxley framework, jaxon adds a batched coupled-cable
-backward-Euler integrator that simulates hundreds of fibers in
-parallel on a single GPU and exposes end-to-end gradients with respect
-to per-contact stimulus amplitudes.
-We validate jaxon against \texttt{pyfibers}-wrapped NEURON on
-strength--duration thresholds across $D=0.3$--$16\,\mu\mathrm{m}$, eight
-stimulus waveforms and pulse widths from $0.02$ to $1\,\mathrm{ms}$:
-\textbf{$99.6\,\%$ of 943 test configurations agree to within $1\%$
-relative threshold error}, with peak errors of 0.39\,\% (MRG, 432
-configs), 0.46\,\% (Sundt, 240), 0.06\,\% (Sweeney, 31), and 2.24\,\%
-(Rattay, 240; four biphasic-cathodic edge cases at the shortest pulse
-width exceed $1\%$).  Conduction velocity matches NEURON to within
-$0.24\,\%$ across all models.  Benchmarking throughput
-against pyfibers on a single NVIDIA A100, jaxon achieves a
-\textbf{geometric-mean speedup of $\sim 820\times$ at $N=100\,000$
-across all five implemented axon models}, ranging from $527\times$
-on MRG-interpolated to $1\,377\times$ on Sweeney
-($5\,972$\,s\,$\to$\,4.3\,s), with $1\,006\times$ on Sundt and
-$929\times$ on Rattay C-fibers; jaxon crosses parity with pyfibers
-at $N\approx 10$ and dominates thereafter.  As a
-demonstration of the differentiability advantage, we use jaxon to
-optimise spatially selective fascicular stimulation on a cross-species
-cohort of microCT-segmented vagus nerve cross-sections from the SPARC
-consortium, optimising over a 12-contact MultiContact cuff with
-FEM-derived per-contact extracellular potentials: gradient-based
-rectangular-pulse amplitude optimisation recovers selective
-configurations on the anatomies where the cuff has spatial purchase,
-is cross-checked against an independent random-init L1-discovery path,
-and honestly reports the geometric ceiling at which the cuff
-cannot reach the assigned target fascicle.  Because jaxon simulates
-the full fibre population rather than a per-fascicle centroid, we
-further quantify the selectivity bias introduced by the centroid-only
-fibre sampling used in prior GPU-accelerated work.
-jaxon is open-source and designed to slot into existing peripheral nerve
-stimulation pipelines as a drop-in replacement for the NEURON forward
-solver, with the additional capability of gradient-based optimisation.
+modality, but optimising electrode geometry and stimulus parameters
+for fascicle-selective activation remains computationally expensive:
+state-of-the-art pipelines wrap the NEURON simulator and require
+thousands of forward simulations per design candidate.  We present
+\emph{jaxon}, a fully differentiable, GPU-native reimplementation in
+JAX of the canonical peripheral nerve fiber models, with no surrogate
+approximation: the myelinated McIntyre--Richardson--Grill (MRG) and
+Sweeney axons and the unmyelinated Sundt and Rattay C-fibers.  Built
+on the \texttt{jaxley} differentiable Hodgkin--Huxley framework, jaxon
+adds a batched coupled-cable backward-Euler integrator that simulates
+large fiber populations --- up to $10^{5}$ axons --- fully in parallel
+on a single GPU and exposes end-to-end gradients with respect to
+per-contact stimulus amplitudes.  Validated against
+\texttt{pyfibers}-wrapped NEURON across diameters
+$0.3$--$16\,\mu\mathrm{m}$, eight stimulus waveforms and pulse widths
+$0.02$--$1\,\mathrm{ms}$, \textbf{$99.6\,\%$ of 943 test
+configurations agree within $1\%$ relative threshold error} and
+conduction velocity matches to within $0.24\,\%$.  On a single NVIDIA
+A100, jaxon reaches a \textbf{geometric-mean speedup of
+$\sim\!820\times$ at $N = 100{,}000$ fibers} (up to $1{,}377\times$),
+crossing parity with NEURON at $N \approx 10$.  As a demonstration of
+the differentiability advantage, we optimise spatially selective
+fascicular stimulation on a cross-species cohort of microCT-segmented
+vagus nerves from the SPARC consortium, over a 12-contact cuff with
+FEM-derived extracellular fields: gradient-based optimisation recovers
+selective configurations where the cuff has spatial purchase and
+honestly reports the geometric ceiling where it cannot.  jaxon is
+open-source and slots into existing peripheral nerve stimulation
+pipelines as a drop-in, gradient-enabled replacement for the NEURON
+forward solver.

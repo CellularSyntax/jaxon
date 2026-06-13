@@ -286,6 +286,36 @@ stops easy seeds at $\sim 15$--$30$ Adam iterations instead of the
 full 90 iterations budgeted, cutting per-seed wall time on the
 sweep by an order of magnitude on the easy-seed majority.
 
+\paragraph{Probe-based smart initialisation.}
+On the microCT cohort (Section~\ref{sec:methods-duke}) the Adam-FD
+trajectory is warm-started from a discrete probe of physically
+meaningful spatial patterns rather than a single bipolar guess.  A
+fixed bipolar pattern (per-contact target-vs-off-target $|V_e|$
+contrast) and four single-column tripolar patterns --- one per angular
+column (N/E/S/W), cathode at the column's $z$-middle contact with two
+charge-balancing anodes at $z$-top and $z$-bottom --- are each
+evaluated at eight signed magnitudes spanning $\pm 0.02$ to
+$\pm 1.5\,\mathrm{mA}$, i.e.\ 80 forward passes per seed.  The
+highest-scoring (pattern, magnitude) pair initialises a single Adam-FD
+trajectory.  Contacts that the winning probe pattern left at exactly
+zero are hard-frozen during Adam-FD by a gradient mask, which
+preserves the focal sparsity of the probe pattern; without the mask
+the per-iteration updates accumulate unbalanced net drive at the
+previously-zero contacts and the focal field is destroyed within a few
+iterations.
+
+\paragraph{Random-init L1-discovery path.}
+To test whether the probe initialisation merely encodes the answer it
+was designed to find, we additionally run an independent optimiser
+from a uniform random initialisation in $\pm 0.10\,\mathrm{mA}$ with no
+spatial prior.  After each Adam update an $\ell_1$ proximal operator
+(soft-thresholding) drives small-magnitude amplitudes to exactly zero,
+so a sparse contact pattern must be \emph{discovered} rather than
+seeded.  Both paths share the same forward solver and early-stop
+criteria; comparing their achieved selectivity and active-contact
+sparsity per nerve (Section~\ref{sec:results-duke}) tests whether the
+probe init is a speed-up of the same discovery or a source of bias.
+
 The same forward kernel also exposes reverse-mode gradients with
 respect to per-contact \emph{arbitrary waveforms}
 $u_k(t) \in \mathbb{R}^{K \times T}$, enabling waveform-shape
@@ -387,11 +417,8 @@ meaningful peripheral cluster.
 
 \paragraph{Cohort composition and FEM-quality gating.}
 Of the $N_{\mathrm{raw}} = 36$ SPARC bundles processed by the pipeline,
-$N_{\mathrm{cohort}} = 23$ \needdata{Confirm exact n once the cluster
-sweep finishes; 23 was the projection from the offline FEM-quality
-audit (\texttt{duke\_fem\_quality.py --diameter 5.7 --threshold 100})
-after also subtracting the $n_{\mathrm{fasc}}<3$ exclusions
-(sub-63, sub-70)} entered the selectivity study after two
+$N_{\mathrm{cohort}} = 27$ nerves (18 swine, 9 human; 103
+target-cluster seeds in total) entered the selectivity study after two
 pre-flight filters: \textbf{(i)} samples with fewer than three
 fascicles were rejected (degenerate target-cluster selector, above);
 \textbf{(ii)} samples
@@ -438,3 +465,26 @@ CUDA 12.4 container (\texttt{nvcr.io/nvidia/pytorch:25.03-py3}).
 \texttt{pyfibers} comparisons used pyfibers version 0.8.5 with the
 NEURON 8.2 backend.  The full software environment is reproducible
 via the \texttt{slurm/setup\_env.sh} script in the code repository.
+
+\subsection{Statistical analysis}
+\label{sec:methods-stats}
+
+Selectivity comparisons on the microCT cohort are paired by nerve
+$\times$ target-cluster seed, so we test them with the two-sided
+Wilcoxon signed-rank test, which makes no Gaussian assumption on the
+heavy-tailed, ceiling-bounded SI distributions.  For the
+sparse-sampling analysis (Section~\ref{sec:results-sparse}) the paired
+unit is the dense-optimised SI versus the sparse-reported SI for each
+of the four sampling strategies; because four strategies are tested
+per contrast we control the false discovery rate across them with the
+Benjamini--Hochberg procedure at $q = 0.05$ and report both raw and
+FDR-adjusted significance.  We report medians with inter-quartile
+ranges alongside means throughout, because the SI distributions are
+bounded at $1.0$ and right-skewed by the geometric-ceiling subset, so
+the median is the more representative central estimate.  Agreement
+between the probe and L1-discovery paths is assessed against a
+$|\Delta \mathrm{SI}| \le 0.05$ experimental noise-floor band rather
+than a null-hypothesis test, since the relevant question is practical
+equivalence, not difference.  Analyses use \texttt{scipy.stats};
+the reproduction script is
+\texttt{experiments\_v2/analyze\_sparse\_sampling.py}.

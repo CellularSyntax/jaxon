@@ -350,10 +350,8 @@ reach on a single GPU-day.
 \label{sec:results-duke}
 
 To test the optimisation pipeline on realistic anatomy we ran it on a
-cohort of \needdata{27 samples now complete (swine + human); final
-$n$ and species split refresh by re-running
-\texttt{experiments\_v2/process\_duke\_results.py} and
-\texttt{experiments\_v2/figures\_duke\_main.py}.}
+cohort of $n_{\mathrm{cohort}} = 27$ (18 swine, 9 human; 103
+target-cluster seeds)
 subject-specific FE-modelled vagus-nerve cross-sections drawn from the
 SPARC quantified morphology releases of
 swine~\cite{pelot2020swineSPARC} and human~\cite{pelot2021humanSPARC},
@@ -405,39 +403,52 @@ selectivity, on-/off-target recruitment and loss are summarised in
 Figure~\ref{fig:duke}\textbf{b}.
 
 \paragraph{Cohort outcome.}
-On the interim cohort the probe-based smart-init Adam-FD
-achieves mean $\mathrm{SI} = 0.89$ (median $0.90$), with $29\,\%$
-of samples reaching the $\mathrm{SI} \geq 0.90$ threshold
-and the remainder in the polishing
-tier ($0.71 \leq \mathrm{SI} < 0.90$).  Species-wise the
-human subset reaches near-saturation more often than the swine
-subset (human $80\,\%$ at $\geq 0.90$ vs.\ swine $37.5\,\%$),
-driven by the geometry of the swine samples.  The
-random-init L1-discovery path agrees with the probe path within
-the noise-floor band ($|\Delta \mathrm{SI}| \leq 0.05$) on a third
-of samples; the disagreement is dominated by a handful of swine
-samples where the random-init L1 path fails to escape the
-small-amplitude trap because the anatomy's bipolar threshold lies
-above the $\pm 0.1\,\mathrm{mA}$ L1 initialisation and the L1 prox
-actively shrinks amplitudes toward zero rather than letting them
-grow.  Median active-contact count is $3$ on the probe path
-(a single-column tripolar configuration: cathode at the column's
-z-middle contact, two charge-balancing anodes at z-top and
-z-bottom) and $12$ on the L1 path.  The optimised per-contact
-amplitudes are organised by contact position in
-Figure~\ref{fig:duke}\textbf{c} (target-normalised angular-bin
-$\times$ axial-row), showing that the cathodic drive concentrates
-on the contact column nearest the target sector.
+Across the cohort (103 target-cluster seeds over 27 nerves) the
+probe-based smart-init Adam-FD achieves mean $\mathrm{SI} = 0.89$
+(median $0.95$), with $68\,\%$ of seeds reaching the
+$\mathrm{SI} \geq 0.90$ threshold (Table~\ref{tab:duke-summary}).
+Species-wise the swine subset reaches the threshold more often than
+the human subset ($74\,\%$ vs.\ $57\,\%$ of seeds at $\geq 0.90$;
+swine mean $0.928$, median $0.947$, $n = 68$; human mean $0.826$,
+median $0.930$, $n = 35$).  The lower human mean is driven by a heavy
+tail of geometric-ceiling anatomies (below) rather than a uniform
+downward shift: the human median ($0.930$) is close to the swine
+median, but a subset of human nerves on which the cuff cannot reach
+the target sector pulls the human mean down.  The median
+active-contact count is $3$ --- a single-column tripolar configuration
+(cathode at the column's $z$-middle contact, two charge-balancing
+anodes at $z$-top and $z$-bottom) --- showing that the optimiser
+converges to a focal, sparse drive.  The optimised per-contact
+amplitudes organised by contact position
+(Figure~\ref{fig:duke}\textbf{c}, target-normalised angular bin
+$\times$ axial row) confirm that the cathodic drive concentrates on
+the contact column nearest the target sector.
+
+\needdata{L1-discovery cross-validation pending: the 27-sample cohort
+sweep ran probe-only (\texttt{rect\_l1} is null on all 103 seeds).
+Re-run the sweep with the L1 path enabled, then
+\texttt{process\_duke\_results.py}, to populate the probe-vs-L1
+agreement (Table~\ref{tab:duke-probe-vs-l1}) and the numbers in this
+paragraph.}
+To rule out that the probe-based smart initialisation encodes
+\emph{a priori} knowledge of which contacts should be active, an
+independent random-init L1-discovery path
+(Section~\ref{sec:methods-opt}) optimises the same nerves from
+scratch; where the two paths agree within the experimental noise floor
+($|\Delta \mathrm{SI}| \leq 0.05$), the probe init is a speed-up of
+the same sparsity discovery the random-init optimiser performs on its
+own, rather than a source of bias.
 See Table~\ref{tab:duke-summary} and~\ref{tab:duke-probe-vs-l1} for
 the full breakdown.  Per-sample cross-sections and optimised cuff
 patterns for every nerve in the cohort, all seeds shown, are provided
 as Supplementary
 Figures~\ref{fig:supp-sub-4-sam-3}--\ref{fig:supp-human-sub-58-sam-3}.
-Optimised rectangular pulses are sufficient on this
-single-diameter cohort; waveform-shape optimisation, with its
-${\sim}80\times$ expansion in degrees of freedom, did not measurably
-improve selectivity and is left to future work
-(Section~\ref{sec:discussion}).
+Optimised rectangular pulses are sufficient on this single-diameter
+cohort: across all 103 seeds the warm-started waveform stage left the
+achievable SI essentially unchanged (mean $\Delta \mathrm{SI}$
+indistinguishable from zero), so the ${\sim}80\times$ expansion in
+degrees of freedom of waveform shaping buys no measurable selectivity
+and is left to future work (Section~\ref{sec:discussion}).
 
 \paragraph{Geometric-ceiling cases.}
 The cohort separates cleanly into anatomies where the cluster
@@ -454,9 +465,9 @@ at the target-firing threshold also fires off-target) or
 near-complete silence (no per-contact configuration crosses
 threshold within the clip limit).  The demonstration that
 gradient-based selectivity optimisation succeeds on real
-cross-species microCT anatomies, validates against a from-scratch
-L1-discovery path, and honestly reports the geometric ceiling where
-it does not, is the principal application result of this paper.
+cross-species microCT anatomies, and honestly reports the geometric
+ceiling where it does not, is the principal application result of this
+paper.
 
 % The two summary tables (tab:duke-summary and tab:duke-probe-vs-l1)
 % are auto-generated by experiments_v2/process_duke_results.py and
@@ -467,8 +478,21 @@ it does not, is the principal application result of this paper.
 }{%
   \needdata{figures/duke/duke\_tables.tex absent --- regenerate via
   \texttt{experiments\_v2/process\_duke\_results.py} to populate
-  Tables \ref{tab:duke-summary} and \ref{tab:duke-probe-vs-l1}.}%
+  Table~\ref{tab:duke-summary}.}%
 }
+
+% Placeholder so \ref{tab:duke-probe-vs-l1} resolves until the L1
+% sweep is run; process_duke_results.py will emit the real table.
+\begin{table}[h]
+  \centering
+  \caption{Probe-vs-L1 agreement on the Duke cohort \emph{(pending L1
+    sweep)}.}
+  \label{tab:duke-probe-vs-l1}
+  \needdata{L1-discovery path not yet run on the 27-sample cohort
+  (\texttt{rect\_l1} null on all 103 seeds).  Re-run the cluster sweep
+  with the L1 path enabled, then \texttt{process\_duke\_results.py}, to
+  populate this table.}
+\end{table}
 
 \begin{figure}[h]
   \centering
@@ -510,13 +534,30 @@ fibre-sampling levels --- centroid (one fibre per fascicle), 1, 3 and
 10 randomly sampled fibres per fascicle, and the dense reference ---
 by pure row-subsampling of the precomputed $V_e$ lead-field, with no
 FEM recomputation.  Figure~\ref{fig:duke}\textbf{d} reports the
-achievable SI at each sparsity level and the gap to the dense
-reference.  \needdata{Sparse-sampling sweep complete locally
-(101 sparse records); cluster re-run adds the saved \texttt{amps\_mA}
-and per-sample \texttt{si\_transfer} needed for the deployment-gap
-analysis below.  Fill in the paired-Wilcoxon statistics and the
-median SI overestimation per strategy once the cluster shards land
-and \texttt{experiments\_v2/analyze\_sparse\_sampling.py} is re-run.}
+achievable SI at each sparsity level and its gap to the dense
+reference.
+
+Across the cohort the dense optimum achieves a modestly but
+significantly higher selectivity than any sparse model reports.  The
+paired gap $\mathrm{SI_{dense}} - \mathrm{SI_{sparse}}$ is positive for
+every strategy (all 101 paired seeds: centroid median $+0.013$, mean
+$+0.043$; Wilcoxon signed-rank $p < 10^{-3}$) and shrinks
+monotonically as more fibres per fascicle are sampled (mean gap
+$+0.044$ at one random fibre per fascicle down to $+0.029$ at ten).
+The effect is small and highly consistent in swine (centroid median
+gap $+0.013$, $p < 10^{-3}$, $n = 68$) and heavy-tailed in human
+(centroid median gap ${\approx}\,0$ but mean $+0.099$, $p = 0.03$,
+$n = 33$): on most human nerves the sparse model recovers the dense
+SI, but on a subset of geometric-ceiling anatomies the full population
+is needed to find a selective configuration at all.  After
+Benjamini--Hochberg correction across the four sparsity levels the
+swine gaps remain significant whereas the human gaps do not,
+consistent with the median-zero, heavy-tailed human distribution.
+The implication is that centroid-only sampling --- as used in prior
+GPU-accelerated work~\cite{hussain2024} --- recovers most of the
+achievable spatial selectivity on typical anatomies but leaves a
+significant, anatomy-dependent shortfall on the hard, clinically
+relevant cases where fibre-level population structure matters.
 
 \paragraph{Deployment gap (transfer evaluation).}
 The SI a sparse model \emph{reports} is optimistic: the amplitudes it

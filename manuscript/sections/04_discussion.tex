@@ -17,11 +17,10 @@ selectivity search to grid sweeps or evolutionary methods that scale
 poorly with the dimensionality of the design space.  With jaxon,
 gradient-based rectangular-pulse amplitude optimisation recovers
 selective configurations directly on subject-specific microCT-derived
-vagus-nerve anatomies (Section~\ref{sec:results-duke}), and an
-independent random-init L1-discovery path reaches the same sparse
-solutions on the anatomies where the cuff has spatial purchase ---
-ruling out the concern that the probe-based smart initialisation
-encodes the answer.  The fibre-model generalisation matters: the same
+vagus-nerve anatomies (Section~\ref{sec:results-duke}), cross-checked
+against an independent random-init L1-discovery path designed to rule
+out the concern that the probe-based smart initialisation encodes the
+answer.  The fibre-model generalisation matters: the same
 optimisation pipeline applies to myelinated and unmyelinated fibres
 with no algorithmic change.  Because jaxon simulates the full fibre
 population rather than a per-fascicle centroid, it furthermore

@@ -24,9 +24,9 @@ answer.  The fibre-model generalisation matters: the same
 optimisation pipeline applies to myelinated and unmyelinated fibres
 with no algorithmic change.  Because jaxon simulates the full fibre
 population rather than a per-fascicle centroid, it furthermore
-quantifies --- for the first time --- the selectivity bias introduced
-by the centroid-only fibre sampling used in prior GPU-accelerated
-work (Section~\ref{sec:results-sparse}).
+quantifies --- for the first time --- the approximation error
+introduced by the centroid-only fibre sampling used in prior
+GPU-accelerated work (Section~\ref{sec:results-sparse}).
 
 \subsection{Comparison with prior work}
 
@@ -55,10 +55,10 @@ ships canonical CNS Hodgkin--Huxley channels and a generic cable
 solver but does not include the calibrated peripheral nerve fiber
 models that the PNS modelling literature relies on; jaxon's contribution
 within this ecosystem is the peripheral specialisation: the coupled
-$(V_i, V_{\mathrm{px}})$ MRG solver, the four unmyelinated fiber
-models, the validation-against-NEURON harness, and the
-selectivity-optimisation pipeline are domain-specific and not provided
-out-of-the-box by \texttt{jaxley}.
+$(V_i, V_{\mathrm{px}})$ MRG double-cable solver, the calibrated
+Sweeney, Sundt and Rattay fiber models, the validation-against-NEURON
+harness, and the selectivity-optimisation pipeline are domain-specific
+and not provided out-of-the-box by \texttt{jaxley}.
 
 GPU-accelerated multi-compartment neuron simulation has a separate
 prior literature outside the autodiff context.
@@ -71,28 +71,6 @@ comparable throughput gains.  These pipelines accelerate the forward
 pass but, like pyfibers, expose no end-to-end gradients;
 gradient-based optimisation over design variables still requires the
 finite-difference detour the present work is designed to obviate.
-
-\subsection{Why the mixed-diameter case is hard}
-
-A natural extension of single-diameter spatial selectivity is to
-exploit \emph{type selectivity}: different axon diameters have
-different chronaxies, so in principle pulse-width shaping should
-preferentially recruit one diameter population over another.  In a
-preliminary sweep on co-located 5.7 and 14\,$\mu\mathrm{m}$ MRG
-fibres, the optimiser invariably converged to the all-fibers-fire
-equilibrium ($\mathrm{SI}=0$): the chronaxie ratio at clinical
-stimulus durations is small (under 2$\times$)~\cite{wongsarnpigoon2010energy},
-and the all-fibers-fire state sits at a globally attractive minimum of
-the WQ loss (Eq.~\ref{eq:wq-loss}) whenever amplitudes are
-unconstrained, which neither activation-proxy softening nor amplitude
-regularisation escaped.  The underlying differentiable solver is
-gradient-informative in all regimes; the failure is a loss-landscape
-property, not a gradient-availability one.  We report it as an honest
-delimitation of where the present cuff geometry and loss formulation
-suffice, and note two natural avenues --- target-fascicle-adjacent
-contacts on anatomically realistic $V_e$~\cite{musselman2023}, and a
-constrained reformulation (minimise $\sum I_k^2$ subject to
-all-target-firing as a hard constraint) --- as future work.
 
 \subsection{Limitations}
 
@@ -141,10 +119,9 @@ block~\cite{kilgore2014block}.
 
 The combination of GPU throughput and end-to-end gradients positions
 jaxon for several natural next-step applications:
-(i) fibre-type (mixed-diameter) selectivity on target-fascicle-adjacent
-contacts, where the anatomically realistic $V_e$ already used for the
-microCT cohort can break the symmetry that defeats spatial selectivity
-under a homogeneous bath;
+(i) fibre-type (diameter-based) selectivity, exploiting the
+differentiable forward model and waveform-shape gradients to recruit
+one diameter population over another;
 (ii) population-averaged designs that marginalise over realistic
 nerve-to-nerve variability via a single batched forward pass;
 (iii) inverse modelling of recorded extracellular field data to

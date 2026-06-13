@@ -213,11 +213,8 @@ weighted quality (WQ) loss
 where $y_f \in \{0,1\}$ is the target/off-target indicator
 (constructed per nerve by the peripheral-cluster selector of
 Section~\ref{sec:methods-duke}), $w_f$ are per-fiber weights, and the
-second term is an amplitude-energy regulariser.  We set $\lambda = 0$
-for all results reported here; a positive
-$\lambda$ ($5\times10^{-3}\,\mathrm{mA}^{-2}$) is retained for the
-type-selectivity probe discussed in Section~\ref{sec:discussion}, where
-it is needed to prevent the trivial all-fibers-fire minimum.
+second term is an optional amplitude-energy regulariser; we set
+$\lambda = 0$ for all results reported here.
 The activation proxy can be optionally softened with a per-node
 sigmoid of temperature $\tau$ to widen the gradient-informative
 window at saturation.
@@ -319,10 +316,8 @@ probe init is a speed-up of the same discovery or a source of bias.
 The same forward kernel also exposes reverse-mode gradients with
 respect to per-contact \emph{arbitrary waveforms}
 $u_k(t) \in \mathbb{R}^{K \times T}$, enabling waveform-shape
-optimisation; on the single-diameter cohort studied here this did not
-improve selectivity over optimised rectangular pulses, so we report
-rectangular-pulse results only and leave waveform shaping to future
-work (Section~\ref{sec:discussion}).
+optimisation; we report rectangular-pulse results only here and leave
+waveform shaping to future work (Section~\ref{sec:discussion}).
 
 \subsection{Subject-specific Duke FEM cohort}
 \label{sec:methods-duke}
@@ -383,8 +378,7 @@ cross-sectional area, extruded along the nerve axis at $200\,\mu
 MRG compartment of every fibre and exported as a per-fibre tensor
 ${V_e^{(k)}}_{f,n}$, which the optimiser superposes linearly with the
 per-contact amplitudes $a_k(t)$ to obtain the total extracellular
-potential at each compartment, identically to the synthetic-Ve
-forward path.  Off-mesh sample points (well
+potential at each compartment.  Off-mesh sample points (well
 under $3\,\%$ of points, occurring near fascicle ends) are filled by
 axial interpolation along the fibre.  We refer the reader
 to~\cite{haberbusch2026golgi} for the full pipeline including

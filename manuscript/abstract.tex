@@ -10,23 +10,24 @@ approximation: the myelinated McIntyre--Richardson--Grill (MRG) and
 Sweeney axons and the unmyelinated Sundt and Rattay C-fibers.  Built
 on the \texttt{jaxley} differentiable Hodgkin--Huxley framework, jaxon
 adds a batched coupled-cable backward-Euler integrator that simulates
-large fiber populations --- up to $10^{5}$ axons --- fully in parallel
-on a single GPU and exposes end-to-end gradients with respect to
-per-contact stimulus amplitudes.  Validated against
+large fiber populations fully in parallel on a single GPU and exposes
+end-to-end gradients with respect to per-contact stimulus amplitudes.  Validated against
 \texttt{pyfibers}-wrapped NEURON across diameters
 $0.3$--$16\,\mu\mathrm{m}$, eight stimulus waveforms and pulse widths
 $0.02$--$1\,\mathrm{ms}$, \textbf{$99.6\,\%$ of 943 test
 configurations agree within $1\%$ relative threshold error} and
 conduction velocity matches to within $0.24\,\%$.  On a single NVIDIA
 A100, jaxon reaches a \textbf{geometric-mean speedup of
-$\sim\!820\times$ at $N = 100{,}000$ fibers} (up to $1{,}377\times$),
-crossing parity with NEURON at $N \approx 10$.  As a demonstration of
-the differentiability advantage, we optimise spatially selective
-fascicular stimulation on a cross-species cohort of microCT-segmented
-vagus nerves from the SPARC consortium, over a 12-contact cuff with
-FEM-derived extracellular fields: gradient-based optimisation recovers
-selective configurations where the cuff has spatial purchase and
-honestly reports the geometric ceiling where it cannot.  jaxon is
+$\sim\!820\times$} (up to $1{,}377\times$) at $N = 100{,}000$ fibers
+--- the largest population at which a NEURON timing comparison stays
+tractable, not a ceiling of jaxon --- crossing parity at
+$N \approx 10$.  To demonstrate the differentiability advantage, we
+optimise fascicle-selective stimulation on a cross-species cohort of
+microCT-segmented vagus nerves (SPARC consortium) over a 12-contact
+cuff with FEM-derived extracellular fields: gradient-based
+optimisation recovers selective configurations where the cuff has
+spatial purchase and reports the geometric ceiling where it does not.
+jaxon is
 open-source and slots into existing peripheral nerve stimulation
 pipelines as a drop-in, gradient-enabled replacement for the NEURON
 forward solver.

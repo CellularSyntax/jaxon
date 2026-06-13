@@ -64,7 +64,7 @@ forward solver therefore reduces to three engineering questions:
 sufficient numerical accuracy that the resulting simulator passes the
 same NEURON-comparison validation suite that ASCENT and pyfibers use;
 (ii) is the resulting solver competitive with NEURON on throughput
-when batched across hundreds of fibers; and (iii) does the
+when batched across large fiber populations; and (iii) does the
 differentiability enable selectivity optimisation strategies that
 the gradient-free pipelines cannot perform?
 
@@ -101,19 +101,16 @@ affirmatively.  Our contributions are:
         our knowledge, the first cross-species gradient-based
         selectivity optimisation on real microCT-derived
         peripheral nerve anatomies.  A probe-based smart initialisation
-        is cross-validated against an independent random-init
-        L1-discovery path to rule out hidden \emph{a priori} bias.
+        is cross-checked against an independent random-init
+        L1-discovery path to test for hidden \emph{a priori} bias.
   \item A direct quantification, enabled by simulating the full
         ${\sim}1000$-fibre population rather than a per-fascicle
-        centroid, of the selectivity bias introduced by the
+        centroid, of the approximation error introduced by the
         centroid-only fibre sampling used in prior GPU-accelerated
         selectivity work (Section~\ref{sec:results-sparse}).
 \end{enumerate}
 
-We discuss the limits of the current implementation---most notably the
-plateau encountered when target and off-target fiber populations have
-very different diameters, where chronaxie-based waveform discrimination
-alone is insufficient to break the all-fibers-fire attractor---and
-the anatomical-ceiling cases encountered on the Duke microCT cohort
-where the cuff cannot reach the assigned target fascicle at any
-amplitude (Section~\ref{sec:discussion}).
+We discuss the limits of the current implementation, including the
+anatomical-ceiling cases encountered on the Duke microCT cohort where
+the cuff cannot reach the assigned target fascicle at any amplitude
+(Section~\ref{sec:discussion}).

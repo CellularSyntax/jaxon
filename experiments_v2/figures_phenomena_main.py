@@ -148,7 +148,72 @@ def _panel_a(gs_cell, fig, dc_data: dict | None,
     return ax
 
 
-# ── Panel b: DC depolarization block ──────────────────────────────────────────
+# ── DC-block waterfall (mid-fibre init, one-arm block) ────────────────────────
+
+def _panel_block_waterfall(gs_cell, fig, blk: dict | None,
+                           v_rest: float = V_REST,
+                           t_max: float | None = None,
+                           stride: int = 2) -> plt.Axes:
+    """Node-vs-time waterfall: AP initiated mid-fibre; a sustained cathodic field
+    at the block node (red line) blocks the lower arm while the upper arm
+    propagates.  Vm clipped for display so the overdriven block node doesn't
+    dominate the y-scale."""
+    ax = fig.add_subplot(gs_cell)
+    if blk is None:
+        ax.text(0.5, 0.5, "data missing", ha="center", va="center",
+                transform=ax.transAxes, fontsize=FS_SM, color="#AAAAAA")
+        return ax
+
+    t_jax  = np.array(blk["jax_t_ms"])
+    t_pf   = np.array(blk["pf_t_ms"])
+    vm_jax = np.array(blk["jax_vm_nodes"])    # [n_t, n_nodes]
+    vm_pf  = np.array(blk["pf_vm_nodes"])
+    pos    = np.array(blk["node_pos_mm"])
+    if t_max is None:
+        t_max = float(blk.get("tstop_ms", t_jax[-1]))
+
+    jm = t_jax <= t_max; pm = t_pf <= t_max
+    t_jax, vm_jax = t_jax[jm], vm_jax[jm]
+    t_pf,  vm_pf  = t_pf[pm],  vm_pf[pm]
+
+    # Clip the overdriven block node for a readable waterfall.
+    vclip = (v_rest - 12.0, 55.0)
+    vm_jax = np.clip(vm_jax, *vclip)
+    vm_pf  = np.clip(vm_pf,  *vclip)
+
+    plot_idx     = list(range(0, len(pos), stride))
+    plot_spacing = (pos[-1] - pos[0]) / max(len(plot_idx) - 1, 1)
+    y_scale      = plot_spacing * 0.5 / (40.0 - v_rest)
+
+    for i in plot_idx:
+        y_off = pos[i]
+        ax.plot(t_pf,  y_off + (vm_pf[:,  i] - v_rest) * y_scale, color=C_PF,
+                lw=0.6, alpha=0.9, label="PyFibers" if i == 0 else None)
+        ax.plot(t_jax, y_off + (vm_jax[:, i] - v_rest) * y_scale, color=C_JAX,
+                lw=0.6, ls="--", alpha=0.9, label="JAXON" if i == 0 else None)
+
+    # Block-node marker (electrode) + init arrow.
+    blk_pos = float(blk["block_pos_mm"])
+    ax.axhline(blk_pos, color="#C00000", lw=0.8, ls=":", zorder=1)
+    ax.annotate("", xy=(0.0, blk_pos), xytext=(-t_max * 0.06, blk_pos),
+                arrowprops=dict(arrowstyle="-|>", color="#C00000", lw=1.4,
+                                mutation_scale=11), annotation_clip=False)
+    init_pos = float(blk.get("init_pos_mm", pos[len(pos) // 2]))
+    stim_t   = float(blk.get("delay_ms", 1.0))
+    ax.annotate("", xy=(stim_t, init_pos), xytext=(stim_t - t_max * 0.06, init_pos),
+                arrowprops=dict(arrowstyle="-|>", color="black", lw=1.4,
+                                mutation_scale=11))
+
+    ax.set_xlabel("time (ms)")
+    ax.set_ylabel("position (mm)")
+    ax.set_xlim(0, t_max)
+    ax.set_ylim(pos[0] - plot_spacing * 0.5, pos[-1] + plot_spacing * 0.5)
+    ax.legend(loc="lower right", bbox_to_anchor=(1.0, 1.02),
+              ncol=2, frameon=False, fontsize=FS_SM, borderaxespad=0)
+    return ax
+
+
+# ── Panel b: kHz frequency block (supplementary only) ─────────────────────────
 
 WIN_ON  = 50.0     # ms — block field on  (shaded band)
 WIN_OFF = 100.0    # ms — block field off
@@ -287,15 +352,17 @@ def _panel_c(gs_cell, fig, coll_data: dict | None,
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
-# One row per fiber model.  ``suffix`` selects the outputs/<phenomenon><suffix>/
-# directories; ``v_rest``/``t_max``/``stride`` tune the per-model panel display.
-# A-fibers (myelinated) first, then C-fibers (unmyelinated), matching fig1.
+# 2x2 model super-grid (row-major): MRG, Sweeney (A-fibers) on top; Sundt,
+# Rattay (C-fibers) on the bottom.  ``suffix`` selects outputs/<phenomenon><suffix>/;
+# ``t_max``/``stride`` tune the AP-propagation waterfall (block waterfall uses its
+# own tstop).
 MODELS = [
-    dict(key="mrg",     label="MRG\n(A-fiber)",     suffix="",         v_rest=-80.0, t_max=3.5, stride=2),
-    dict(key="sweeney", label="Sweeney\n(A-fiber)", suffix="_sweeney", v_rest=-80.0, t_max=3.5, stride=2),
-    dict(key="sundt",   label="Sundt\n(C-fiber)",   suffix="_sundt",   v_rest=-60.0, t_max=8.0, stride=2),
-    dict(key="rattay",  label="Rattay\n(C-fiber)",  suffix="_rattay",  v_rest=-70.0, t_max=8.0, stride=2),
+    dict(key="MRG",     ftype="A-fiber", suffix="",         v_rest=-80.0, t_max=3.5, stride=2),
+    dict(key="Sweeney", ftype="A-fiber", suffix="_sweeney", v_rest=-80.0, t_max=3.5, stride=2),
+    dict(key="Sundt",   ftype="C-fiber", suffix="_sundt",   v_rest=-60.0, t_max=8.0, stride=2),
+    dict(key="Rattay",  ftype="C-fiber", suffix="_rattay",  v_rest=-70.0, t_max=8.0, stride=2),
 ]
+_GRID_POS = [(0, 0), (0, 1), (1, 0), (1, 1)]   # row, col for each MODELS entry
 
 
 def _load_model(suffix: str) -> tuple:
@@ -310,69 +377,53 @@ def _load_model(suffix: str) -> tuple:
     return (_load(_p("dc_block")), _load(_p("depol_block")), _load(_p("ap_collision")))
 
 
+def _sub_heading(fig, x, y, letter, title) -> None:
+    """Compact per-panel heading (smaller than _heading) for the dense 2x2 grid."""
+    fig.text(x, y, letter, transform=fig.transFigure, fontsize=12,
+             fontweight="bold", va="bottom", ha="left", clip_on=False)
+    fig.text(x + 0.013, y, title, transform=fig.transFigure, fontsize=8.5,
+             va="bottom", ha="left", clip_on=False)
+
+
 def main() -> int:
-    # ── Column layout (identical for every row) ───────────────────────────────
-    FIG_W   = 14.0
-    L, R    = 0.06, 0.98
-    col_gap = 0.05
-    panel_w = (R - L) - 2 * col_gap
-
-    a_w = panel_w * 0.35
-    b_w = panel_w * 0.23
-
-    a_l = L;              a_r = a_l + a_w
-    b_l = a_r + col_gap;  b_r = b_l + b_w
-    c_l = b_r + col_gap;  c_r = R
-    c_width = c_r - c_l
-
-    # ── Vertical layout: stack one band per model ─────────────────────────────
-    # Panel c (4 rows × 5 cols of square subplots) fixes the physical row
-    # height; derived in inches so adding rows just grows the figure rather
-    # than squashing the panels.
-    n_rows       = len(MODELS)
-    row_panel_in = c_width * 4.24 * FIG_W / 5.16   # square-subplot constraint
-    row_head_in  = 1.05                            # heading + legend band per row
-    top_in, bot_in = 0.30, 0.55
-    FIG_H = bot_in + top_in + n_rows * (row_panel_in + row_head_in)
-
+    # 2x2 model super-grid; each quadrant holds 3 phenomenon columns
+    # (AP propagation | DC block | AP collision).  Wide landscape.
+    FIG_W, FIG_H = 22.0, 10.5
     fig = plt.figure(figsize=(FIG_W, FIG_H))
 
-    def _gs(left, right, bot, top):
-        return gridspec.GridSpec(1, 1, figure=fig,
-                                 left=left, right=right, bottom=bot, top=top)
-
-    letters = "abcdefghijklmnopqrstuvwxyz"
-    label_x = L - 0.04
+    outer = gridspec.GridSpec(2, 2, figure=fig,
+                              left=0.045, right=0.99, bottom=0.06, top=0.90,
+                              wspace=0.16, hspace=0.34)
 
     for i, m in enumerate(MODELS):
-        dc_data, khz_data, coll_data = _load_model(m["suffix"])
+        r, c = _GRID_POS[i]
+        dc_data, blk_data, coll_data = _load_model(m["suffix"])
 
-        # Band i from the top: heading band sits above the panel band.
-        block_top_in = FIG_H - top_in - i * (row_panel_in + row_head_in)
-        panel_top_in = block_top_in - row_head_in
-        panel_bot_in = panel_top_in - row_panel_in
-        T = panel_top_in / FIG_H
-        B = panel_bot_in / FIG_H
-
-        _panel_a(_gs(a_l, a_r, B, T)[0, 0], fig, dc_data,
+        inner = gridspec.GridSpecFromSubplotSpec(
+            1, 3, subplot_spec=outer[r, c],
+            width_ratios=[1.1, 1.0, 1.35], wspace=0.42,
+        )
+        _panel_a(inner[0, 0], fig, dc_data,
                  v_rest=m["v_rest"], t_max=m["t_max"], stride=m["stride"])
-        _panel_b(_gs(b_l, b_r, B, T)[0, 0], fig, khz_data, v_rest=m["v_rest"])
-        _panel_c(_gs(c_l, c_r, B, T)[0, 0], fig, coll_data, v_rest=m["v_rest"])
+        _panel_block_waterfall(inner[0, 1], fig, blk_data,
+                               v_rest=m["v_rest"], stride=m["stride"])
+        _panel_c(inner[0, 2], fig, coll_data, v_rest=m["v_rest"])
 
-        # Headings for this row (a/b/c, d/e/f, ...).
-        y = T + 0.025 * (12.0 / FIG_H)   # keep ~constant physical offset
-        for col_l, lett, title in [
-            (a_l, letters[3 * i + 0], "AP propagation"),
-            (b_l, letters[3 * i + 1], "DC block"),
-            (c_l, letters[3 * i + 2], "AP collision"),
-        ]:
-            _heading(fig, col_l, y, lett, title)
+        # Per-phenomenon headings, positioned from each sub-cell.
+        for j, (lett, title) in enumerate([
+            ("abcdefghijkl"[3 * i + 0], "AP propagation"),
+            ("abcdefghijkl"[3 * i + 1], "DC block"),
+            ("abcdefghijkl"[3 * i + 2], "AP collision"),
+        ]):
+            bb = inner[0, j].get_position(fig)
+            _sub_heading(fig, bb.x0 - 0.010, bb.y1 + 0.006, lett, title)
 
-        # Row label at the left margin.
-        fig.text(label_x, (B + T) / 2, m["label"],
-                 transform=fig.transFigure, fontsize=FS_SM,
-                 va="center", ha="right", rotation=90,
-                 color="#555555", style="italic", clip_on=False)
+        # Model name centred above the quadrant.
+        bbq = outer[r, c].get_position(fig)
+        fig.text((bbq.x0 + bbq.x1) / 2, bbq.y1 + 0.040,
+                 f"{m['key']}  ({m['ftype']})",
+                 transform=fig.transFigure, ha="center", va="bottom",
+                 fontsize=12, fontweight="bold", color=C_REST)
 
     for ext in (".png", ".svg"):
         p = OUT_DIR / f"fig2_phenomena{ext}"

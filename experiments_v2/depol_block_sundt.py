@@ -1,13 +1,15 @@
-"""DC depolarization block — Sundt C-fiber.
+"""DC depolarization block — Sundt C-fiber (waterfall, one-arm block).
 
-A sustained cathodic extracellular field at mid-fiber depolarises the nodes into
-Na inactivation, blocking propagation of paced APs while the field is on.
-Deterministic (no kHz), so JAX and PyFibers reproduce it to the AP.
+A single AP is initiated intracellularly at the MIDDLE node and propagates both
+ways.  A sustained cathodic extracellular field at an offset (block) node holds
+that region in Na inactivation, blocking the downward arm while the upward arm
+propagates freely — an asymmetric "V" in the node-vs-time waterfall.  Single
+blocking amplitude.  Deterministic, so JAX and PyFibers match node-for-node.
 
 Outputs (outputs/depol_block_sundt/)
 ------------------------------------
   data_depol_block_sundt.json
-  fig_depol_block_sundt_traces.png
+  fig_depol_block_sundt.png
 
 Run from project root:
     python experiments_v2/depol_block_sundt.py
@@ -48,32 +50,22 @@ from experiments_v2.utils import ensure_dir, save_json
 
 OUT = ensure_dir(ROOT / "outputs" / "depol_block_sundt")
 
-# ── shared setup ──────────────────────────────────────────────────────────────
-DIAMETER  = 1.0     # µm — representative Sundt C-fiber
-N_NODES   = 25
+# ── shared constants ──────────────────────────────────────────────────────────
 CELSIUS   = 37.0
-DT        = 0.005   # ms — DC block needs no fine kHz resolution
-TSTOP     = 150.0   # ms
+DT        = 0.005    # ms
+TSTOP     = 6.0      # ms
+DELAY     = 1.0      # ms
+N_NODES   = 101
 N_STEPS   = int(TSTOP / DT)
+SIGMA     = 10.0     # S/m (block electrode)
+SRC_H     = 100.0    # µm
 
-WIN_ON    = 50.0    # ms — block field on
-WIN_OFF   = 100.0   # ms — block field off
+INIT_AMP_NA = 2.0
+INIT_PW_MS  = 0.2
+BLOCK_FRAC  = 0.25
+BLOCK_AMP_MA = -15.0
 
-SRC_X     = 0.0
-SRC_Y     = 100.0   # µm
-SRC_I0    = 1.0
-SIGMA     = 10.0    # S/m
-
-PACE_LOC      = 0.1
-PACE_START    = 15.0    # ms
-PACE_INTERVAL = 20.0    # ms
-PACE_N        = 7       # pulses (3 inside the block window)
-PACE_PW       = 0.2     # ms
-PACE_AMP_NA   = 0.5     # nA
-
-AP_DETECT_LOC = 0.9
-# Cathodic (negative) block-field amplitudes: control + deep-block regime.
-AMPLITUDES    = [0.0, -8.0, -15.0, -30.0]   # mA
+DIAMETER  = 1.0      # µm
 
 # SundtAxon channel constants
 GNABAR  = 0.04;  GKDRBAR = 0.04;  G_PAS  = 1e-4
@@ -85,27 +77,22 @@ ZETAN   = -5.0;  ZETAL   =  2.0
 GMN     =  0.4;  GML     =  1.0
 
 
-def waveform_full(t: float) -> float:
-    """Sustained DC block field, on for t in [WIN_ON, WIN_OFF]."""
-    return 1.0 if WIN_ON < t < WIN_OFF else 0.0
-
-
-def _build_jax_setup():
+def _make_jax_setup():
     _, geom = build_sundt(diameter=DIAMETER, n_nodes=N_NODES)
     nodes   = node_indices(geom)
     centers = np.array(section_centers_um(geom))
     n_comp  = geom.n_comp
 
-    fiber_length_um = centers[-1] + (centers[-1] - centers[-2])
-    z_mid = fiber_length_um / 2.0
-    Ve_unit = np.asarray(point_source_potentials_mV(
-        list(centers),
-        src_x_um=SRC_X, src_y_um=SRC_Y, src_z_um=z_mid,
-        i0_mA=SRC_I0, sigma_S_m=SIGMA,
-    ))
+    init_node  = nodes[len(nodes) // 2]
+    block_node = nodes[int(round(BLOCK_FRAC * (len(nodes) - 1)))]
 
     geom_c = dataclasses.replace(geom, cm_uF_cm2=[CM] * n_comp)
     static  = arrays_from_geometry(geom_c, DT)
+
+    Ve_block = np.asarray(point_source_potentials_mV(
+        list(centers), src_x_um=0.0, src_y_um=SRC_H,
+        src_z_um=float(centers[block_node]), i0_mA=1.0, sigma_S_m=SIGMA,
+    ))
 
     A_in = static["A_in_cm2"]
     v0   = jnp.float64(V_REST)
@@ -136,142 +123,78 @@ def _build_jax_setup():
         i_ion = (g_na*(Vm-ENA) + g_k*(Vm-EK) + G_PAS*(Vm-E_PAS)) * A_in * 1e6
         return g_tot, i_ion, (M2, H2, N2, L2)
 
-    pace_node = nodes[int(round(PACE_LOC * (len(nodes) - 1)))]
-    far_node  = nodes[int(round(AP_DETECT_LOC * (len(nodes) - 1)))]
-    t_step    = (np.arange(N_STEPS) + 1) * DT
-    i_intra   = np.zeros((N_STEPS, n_comp), dtype=np.float64)
-    for ps in PACE_START + np.arange(PACE_N) * PACE_INTERVAL:
-        on = (t_step >= ps) & (t_step < ps + PACE_PW)
-        i_intra[on, pace_node] = PACE_AMP_NA
-
-    pulse_mask = np.zeros(N_STEPS, dtype=np.float64)
-    pulse_mask[(t_step > WIN_ON) & (t_step < WIN_OFF)] = 1.0   # sustained DC field
+    t_step  = (np.arange(N_STEPS) + 1) * DT
+    i_intra = np.zeros((N_STEPS, n_comp), dtype=np.float64)
+    on = (t_step >= DELAY) & (t_step < DELAY + INIT_PW_MS)
+    i_intra[on, init_node] = INIT_AMP_NA
+    pulse_mask = np.ones(N_STEPS, dtype=np.float64)
 
     return dict(
         geom=geom, static=static, membrane_fn=membrane_fn, state0=state0,
-        nodes=nodes, centers=centers, pace_node=pace_node, far_node=far_node,
-        Ve_unit=Ve_unit, i_intra=i_intra, pulse_mask=pulse_mask,
-        t_axis=t_step,
+        nodes=nodes, centers=centers, init_node=init_node, block_node=block_node,
+        Ve_block=Ve_block, i_intra=i_intra, pulse_mask=pulse_mask, t_axis=t_step,
     )
 
 
-def _count_aps(vm: np.ndarray, v_thresh: float = -20.0):
-    rises = np.where((vm[:-1] <= v_thresh) & (vm[1:] > v_thresh))[0]
-    if len(rises) == 0:
-        return 0, None
-    t_axis = (np.arange(len(vm)) + 1) * DT
-    return int(len(rises)), float(t_axis[rises[-1]])
+def _jax_waterfall(S, amp_mA: float) -> np.ndarray:
+    Ve = jnp.asarray(S["Ve_block"], dtype=jnp.float64) * amp_mA
+    (Vi_all, Vp_all), _ = integrate(
+        S["static"], S["membrane_fn"], S["state0"],
+        Ve, jnp.asarray(S["pulse_mask"]), DT, v_rest=V_REST, record="all",
+        i_intra=jnp.asarray(S["i_intra"]),
+    )
+    return np.asarray(Vi_all) - np.asarray(Vp_all)
 
 
-_JAX  = None
-_JIT  = None
-
-
-def _jax_run(amp_mA: float):
-    global _JAX, _JIT
-    if _JAX is None:
-        _JAX = _build_jax_setup()
-        S = _JAX
-        Ve_unit_j    = jnp.asarray(S["Ve_unit"], dtype=jnp.float64)
-        pulse_mask_j = jnp.asarray(S["pulse_mask"])
-        i_intra_j    = jnp.asarray(S["i_intra"])
-        far_node     = int(S["far_node"])
-
-        @jax.jit
-        def _run(amp):
-            Ve = Ve_unit_j * amp
-            vm_far_trace, _ = integrate(
-                S["static"], S["membrane_fn"], S["state0"],
-                Ve, pulse_mask_j, DT, v_rest=V_REST,
-                record="center", center_comp=far_node,
-                i_intra=i_intra_j,
-            )
-            return vm_far_trace
-        _JIT = _run
-
-    vm_far = np.asarray(_JIT(jnp.float64(amp_mA)))
-    n_aps, last_t = _count_aps(vm_far)
-    return n_aps, last_t, vm_far
-
-
-def _pf_run(amp_mA: float):
+def _pf_waterfall(S, amp_mA: float):
     fiber = build_sundt_pyfibers(diameter=DIAMETER, n_nodes=N_NODES, temperature=CELSIUS)
-    fiber.potentials = fiber.point_source_potentials(
-        SRC_X, SRC_Y, fiber.length / 2.0, SRC_I0, SIGMA,
-    )
     fiber.record_vm()
-    fiber.add_intrinsic_activity(
-        loc=PACE_LOC, start_time=PACE_START,
-        avg_interval=PACE_INTERVAL, num_stims=PACE_N,
+    fiber.potentials = fiber.point_source_potentials(
+        0.0, SRC_H, float(S["centers"][S["block_node"]]), 1.0, SIGMA,
     )
-    stim = ScaledStim(waveform=waveform_full, dt=DT, tstop=TSTOP)
-    n_aps, ap_time = stim.run_sim(amp_mA, fiber)
-    vm_far = np.array(fiber.vm[fiber.loc_index(AP_DETECT_LOC)])
-    t_pf   = np.array(stim.time)
-    return int(n_aps), (float(ap_time) if ap_time is not None else None), vm_far, t_pf
+    fiber.add_intrinsic_activity(loc=0.5, start_time=DELAY, avg_interval=1e9, num_stims=1)
+    stim = ScaledStim(waveform=lambda t: 1.0, dt=DT, tstop=TSTOP)
+    stim.run_sim(amp_mA, fiber)
+    vm = np.array([np.array(v) for v in fiber.vm])
+    return np.array(stim.time), vm.T
 
 
 def main():
-    print("=== DC depolarization block — Sundt C-fiber ===")
-    print(f"D={DIAMETER} µm  N={N_NODES}  dt={DT} ms   block on {WIN_ON}-{WIN_OFF} ms\n")
+    print(f"=== DC block (waterfall) — Sundt C-fiber  block={BLOCK_AMP_MA} mA ===\n")
+    S = _make_jax_setup()
+    nodes = S["nodes"]; centers = S["centers"]
 
-    results = []
-    for amp in AMPLITUDES:
-        print(f"--- amp = {amp} mA ---", flush=True)
-        t0 = time.time()
-        n_jax, last_jax, vm_jax = _jax_run(amp)
-        print(f"  JAX     : {n_jax} APs  last_t={last_jax}  ({time.time()-t0:.1f}s)")
-        t0 = time.time()
-        n_pf, last_pf, vm_pf, t_pf = _pf_run(amp)
-        print(f"  PyFibers: {n_pf} APs  last_t={last_pf}  ({time.time()-t0:.1f}s)")
-        results.append({
-            "amp_mA":     amp,
-            "n_aps_pf":   n_pf,
-            "last_pf":    last_pf,
-            "n_aps_jax":  n_jax,
-            "last_jax":   last_jax,
-            "t_pf_ms":    t_pf.tolist(),
-            "vm_pf_90":   vm_pf.tolist(),
-            "vm_jax_90":  vm_jax.tolist(),
-        })
+    t0 = time.time()
+    jax_nodes = _jax_waterfall(S, BLOCK_AMP_MA)[:, nodes]
+    print(f"  JAX waterfall {jax_nodes.shape}  peak {jax_nodes.max():.1f} mV  ({time.time()-t0:.1f}s)")
+    t0 = time.time()
+    t_pf, pf_nodes = _pf_waterfall(S, BLOCK_AMP_MA)
+    print(f"  PyFibers waterfall {pf_nodes.shape}  peak {pf_nodes.max():.1f} mV  ({time.time()-t0:.1f}s)")
 
-    fig, axes = plt.subplots(len(AMPLITUDES), 1, figsize=(10, 2.5*len(AMPLITUDES)),
-                              sharex=True, constrained_layout=True)
-    for ax, res in zip(axes, results):
-        t_pf  = np.array(res["t_pf_ms"])
-        vm_pf = np.array(res["vm_pf_90"])
-        vm_jx = np.array(res["vm_jax_90"])
-        t_jx  = (np.arange(len(vm_jx)) + 1) * DT
-        ax.plot(t_pf, vm_pf, color="C0", lw=1.0,
-                label=f"PyFibers ({res['n_aps_pf']} APs)")
-        ax.plot(t_jx, vm_jx, color="C1", lw=0.8, ls="--",
-                label=f"JAXON ({res['n_aps_jax']} APs)")
-        ax.axvspan(WIN_ON, WIN_OFF, alpha=0.2, color="red")
-        ax.set_ylabel(f"{res['amp_mA']} mA\nVm (mV)")
-        ax.set_ylim(-80, 40)
-        if ax is axes[0]:
-            ax.legend(loc="upper right", fontsize=8)
-    axes[-1].set_xlabel("Time (ms)")
-    fig.suptitle(f"DC depolarization block — Sundt D={DIAMETER} µm", fontsize=11)
-    path = OUT / "fig_depol_block_sundt_traces.png"
-    fig.savefig(path, dpi=150, bbox_inches="tight")
-    print(f"\n  -> {path}")
+    t_jax = (np.arange(N_STEPS) + 1) * DT
+    node_pos_mm = centers[nodes] / 1000.0
+    block_pos_mm = float(centers[S["block_node"]]) / 1000.0
+    init_pos_mm  = float(centers[S["init_node"]]) / 1000.0
+
+    inter = node_pos_mm[1] - node_pos_mm[0]
+    scale = (inter * 0.7) / 150.0
+    fig, ax = plt.subplots(figsize=(8, 6), constrained_layout=True)
+    for i, y0 in enumerate(node_pos_mm):
+        ax.plot(t_pf,  y0 + (pf_nodes[:, i]  - V_REST) * scale, color="C0", lw=0.6)
+        ax.plot(t_jax, y0 + (jax_nodes[:, i] - V_REST) * scale, color="C1", lw=0.6, ls="--")
+    ax.axhline(block_pos_mm, color="red", lw=0.8, ls=":")
+    ax.set_xlim(0, TSTOP); ax.set_xlabel("time (ms)"); ax.set_ylabel("node position (mm)")
+    ax.set_title(f"Sundt DC block waterfall — block {BLOCK_AMP_MA} mA @ {block_pos_mm:.2f} mm")
+    fig.savefig(OUT / "fig_depol_block_sundt.png", dpi=150, bbox_inches="tight")
+    print(f"  -> {OUT / 'fig_depol_block_sundt.png'}")
 
     save_json({
-        "fiber_model":   "SUNDT",
-        "diameter_um":   DIAMETER,
-        "n_nodes":       N_NODES,
-        "dt_ms":         DT,
-        "tstop_ms":      TSTOP,
-        "win_on_ms":     WIN_ON,
-        "win_off_ms":    WIN_OFF,
-        "src_y_um":      SRC_Y,
-        "sigma_S_m":     SIGMA,
-        "pace":          {"loc": PACE_LOC, "start_ms": PACE_START,
-                          "interval_ms": PACE_INTERVAL, "n_pulses": PACE_N,
-                          "amp_nA": PACE_AMP_NA},
-        "ap_detect_loc": AP_DETECT_LOC,
-        "results":       results,
+        "fiber_model": "SUNDT", "diameter_um": DIAMETER, "n_nodes": N_NODES,
+        "dt_ms": DT, "tstop_ms": TSTOP, "block_amp_mA": BLOCK_AMP_MA,
+        "block_pos_mm": block_pos_mm, "init_pos_mm": init_pos_mm,
+        "node_pos_mm": node_pos_mm.tolist(), "jax_t_ms": t_jax.tolist(),
+        "jax_vm_nodes": jax_nodes.tolist(), "pf_t_ms": t_pf.tolist(),
+        "pf_vm_nodes": pf_nodes.tolist(),
     }, OUT / "data_depol_block_sundt.json")
     print(f"  -> {OUT / 'data_depol_block_sundt.json'}")
     print("\n=== Done ===")

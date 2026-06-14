@@ -1,9 +1,13 @@
 """Figure 2: Propagation phenomena — PyFibers vs JAXON.
 
-Three panels (16:9 landscape, 14 × 7.875 in):
-  a  — AP propagation: waterfall line-plot (y=position, x=time, one trace per node)
-  b  — kHz frequency block: Vm vs time at distal node, 4 amplitude levels
-  c  — AP collision: Vm vs node # at 5 time points × 4 diameters
+One row per fiber model (MRG, Sweeney, Sundt, Rattay), three panels each:
+  AP propagation     — waterfall line-plot (y=position, x=time, one trace per node)
+  kHz frequency block — Vm vs time at distal node, 4 amplitude levels
+  AP collision        — Vm vs node # at 5 time points × 4 diameters
+
+Models are configured in MODELS; each reads outputs/<phenomenon><suffix>/.
+Rows whose data is missing render as placeholders, so the figure builds before
+every model's sims have been generated.
 
 Run from project root:
     python -m experiments_v2.figures_phenomena_main
@@ -144,10 +148,10 @@ def _panel_a(gs_cell, fig, dc_data: dict | None,
     return ax
 
 
-# ── Panel b: kHz frequency block ──────────────────────────────────────────────
+# ── Panel b: DC depolarization block ──────────────────────────────────────────
 
-KHZ_ON  = 50.0
-KHZ_OFF = 100.0
+WIN_ON  = 50.0     # ms — block field on  (shaded band)
+WIN_OFF = 100.0    # ms — block field off
 _SKIP   = 20
 
 
@@ -179,7 +183,7 @@ def _panel_b(gs_cell, fig, khz_data: dict | None,
         vpf  = _vpf[:_n:_SKIP]
         vjx  = _vjx[:_n:_SKIP]
 
-        ax.axvspan(KHZ_ON, KHZ_OFF, color="#FFCCCC", alpha=0.45, zorder=0, lw=0)
+        ax.axvspan(WIN_ON, WIN_OFF, color="#FFCCCC", alpha=0.45, zorder=0, lw=0)
         ax.plot(t, vpf, color=C_PF,  lw=1.0)
         ax.plot(t, vjx, color=C_JAX, lw=0.9, ls="--")
         ax.axhline(v_rest, color=C_REST, lw=0.3, ls=":", zorder=0)
@@ -283,75 +287,89 @@ def _panel_c(gs_cell, fig, coll_data: dict | None,
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+# One row per fiber model.  ``suffix`` selects the outputs/<phenomenon><suffix>/
+# directories; ``v_rest``/``t_max``/``stride`` tune the per-model panel display.
+# A-fibers (myelinated) first, then C-fibers (unmyelinated), matching fig1.
+MODELS = [
+    dict(key="mrg",     label="MRG\n(A-fiber)",     suffix="",         v_rest=-80.0, t_max=3.5, stride=2),
+    dict(key="sweeney", label="Sweeney\n(A-fiber)", suffix="_sweeney", v_rest=-80.0, t_max=3.5, stride=2),
+    dict(key="sundt",   label="Sundt\n(C-fiber)",   suffix="_sundt",   v_rest=-60.0, t_max=8.0, stride=2),
+    dict(key="rattay",  label="Rattay\n(C-fiber)",  suffix="_rattay",  v_rest=-70.0, t_max=8.0, stride=2),
+]
+
+
+def _load_model(suffix: str) -> tuple:
+    """Load (propagation, DC-block, collision) JSONs for one model suffix.
+
+    Columns: AP propagation (legacy 'dc_block' dir), DC depolarization block
+    ('depol_block'), AP collision.  (kHz block moved to a supplementary figure.)
+    """
+    def _p(stem: str) -> Path:
+        name = f"{stem}{suffix}"
+        return ROOT / "outputs" / name / f"data_{name}.json"
+    return (_load(_p("dc_block")), _load(_p("depol_block")), _load(_p("ap_collision")))
+
+
 def main() -> int:
-    # ── MRG data (row 1) ──────────────────────────────────────────────────────
-    dc_data   = _load(ROOT / "outputs" / "dc_block"          / "data_dc_block.json")
-    khz_data  = _load(ROOT / "outputs" / "khz_block"         / "data_khz_block.json")
-    coll_data = _load(ROOT / "outputs" / "ap_collision"       / "data_ap_collision.json")
-    # ── Sundt data (row 2) ───────────────────────────────────────────────────
-    dc_s   = _load(ROOT / "outputs" / "dc_block_sundt"    / "data_dc_block_sundt.json")
-    khz_s  = _load(ROOT / "outputs" / "khz_block_sundt"   / "data_khz_block_sundt.json")
-    coll_s = _load(ROOT / "outputs" / "ap_collision_sundt" / "data_ap_collision_sundt.json")
-
-    # ── Figure: 14 × 12 in (two panel rows, same column structure) ───────────
-    FIG_W, FIG_H = 14.0, 12.0
-    fig = plt.figure(figsize=(FIG_W, FIG_H))
-
-    # Column layout — identical for both rows
+    # ── Column layout (identical for every row) ───────────────────────────────
+    FIG_W   = 14.0
     L, R    = 0.06, 0.98
     col_gap = 0.05
-    W       = R - L
-    panel_w = W - 2 * col_gap
+    panel_w = (R - L) - 2 * col_gap
 
     a_w = panel_w * 0.35
     b_w = panel_w * 0.23
-    c_w = panel_w * 0.42
 
     a_l = L;              a_r = a_l + a_w
     b_l = a_r + col_gap;  b_r = b_l + b_w
     c_l = b_r + col_gap;  c_r = R
+    c_width = c_r - c_l
 
-    # Square-subplot height constraint (panels c and f: 4 rows × 5 cols)
-    c_width   = c_r - c_l
-    T_minus_B = c_width * 4.24 * FIG_W / (5.16 * FIG_H)
+    # ── Vertical layout: stack one band per model ─────────────────────────────
+    # Panel c (4 rows × 5 cols of square subplots) fixes the physical row
+    # height; derived in inches so adding rows just grows the figure rather
+    # than squashing the panels.
+    n_rows       = len(MODELS)
+    row_panel_in = c_width * 4.24 * FIG_W / 5.16   # square-subplot constraint
+    row_head_in  = 1.05                            # heading + legend band per row
+    top_in, bot_in = 0.30, 0.55
+    FIG_H = bot_in + top_in + n_rows * (row_panel_in + row_head_in)
 
-    # Row 1 (MRG, top)
-    B1 = 0.47
-    T1 = B1 + T_minus_B
-
-    # Row 2 (Sundt, bottom)
-    B2 = 0.05
-    T2 = B2 + T_minus_B
+    fig = plt.figure(figsize=(FIG_W, FIG_H))
 
     def _gs(left, right, bot, top):
         return gridspec.GridSpec(1, 1, figure=fig,
-                                 left=left, right=right,
-                                 bottom=bot, top=top)
+                                 left=left, right=right, bottom=bot, top=top)
 
-    # ── Draw panels ───────────────────────────────────────────────────────────
-    _panel_a(_gs(a_l, a_r, B1, T1)[0, 0], fig, dc_data)
-    _panel_b(_gs(b_l, b_r, B1, T1)[0, 0], fig, khz_data)
-    _panel_c(_gs(c_l, c_r, B1, T1)[0, 0], fig, coll_data)
-
-    _panel_a(_gs(a_l, a_r, B2, T2)[0, 0], fig, dc_s,   v_rest=-60.0, t_max=8.0, stride=2)
-    _panel_b(_gs(b_l, b_r, B2, T2)[0, 0], fig, khz_s,  v_rest=-60.0)
-    _panel_c(_gs(c_l, c_r, B2, T2)[0, 0], fig, coll_s, v_rest=-60.0)
-
-    # ── Headings ──────────────────────────────────────────────────────────────
-    y1 = T1 + 0.025
-    _heading(fig, a_l, y1, "a", "AP propagation")
-    _heading(fig, b_l, y1, "b", "kHz frequency block")
-    _heading(fig, c_l, y1, "c", "AP collision")
-
-    y2 = T2 + 0.025
-    _heading(fig, a_l, y2, "d", "AP propagation")
-    _heading(fig, b_l, y2, "e", "kHz frequency block")
-    _heading(fig, c_l, y2, "f", "AP collision")
-
-    # Row labels at left margin, vertically centred in each row
+    letters = "abcdefghijklmnopqrstuvwxyz"
     label_x = L - 0.04
-    for bot, top, txt in [(B1, T1, "MRG\n(A-fiber)"), (B2, T2, "Sundt\n(C-fiber)")]:
-        fig.text(label_x, (bot + top) / 2, txt,
+
+    for i, m in enumerate(MODELS):
+        dc_data, khz_data, coll_data = _load_model(m["suffix"])
+
+        # Band i from the top: heading band sits above the panel band.
+        block_top_in = FIG_H - top_in - i * (row_panel_in + row_head_in)
+        panel_top_in = block_top_in - row_head_in
+        panel_bot_in = panel_top_in - row_panel_in
+        T = panel_top_in / FIG_H
+        B = panel_bot_in / FIG_H
+
+        _panel_a(_gs(a_l, a_r, B, T)[0, 0], fig, dc_data,
+                 v_rest=m["v_rest"], t_max=m["t_max"], stride=m["stride"])
+        _panel_b(_gs(b_l, b_r, B, T)[0, 0], fig, khz_data, v_rest=m["v_rest"])
+        _panel_c(_gs(c_l, c_r, B, T)[0, 0], fig, coll_data, v_rest=m["v_rest"])
+
+        # Headings for this row (a/b/c, d/e/f, ...).
+        y = T + 0.025 * (12.0 / FIG_H)   # keep ~constant physical offset
+        for col_l, lett, title in [
+            (a_l, letters[3 * i + 0], "AP propagation"),
+            (b_l, letters[3 * i + 1], "DC block"),
+            (c_l, letters[3 * i + 2], "AP collision"),
+        ]:
+            _heading(fig, col_l, y, lett, title)
+
+        # Row label at the left margin.
+        fig.text(label_x, (B + T) / 2, m["label"],
                  transform=fig.transFigure, fontsize=FS_SM,
                  va="center", ha="right", rotation=90,
                  color="#555555", style="italic", clip_on=False)

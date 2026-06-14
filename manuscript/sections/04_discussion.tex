@@ -2,19 +2,19 @@
 \label{sec:discussion}
 
 Using population-scale differentiable simulation, we have shown that
-the reduced-order fibre sampling standard in GPU-accelerated
-selectivity modelling --- reducing each fascicle to one or a few
-representative fibres --- systematically overestimates the selectivity
+the reduced-order fiber sampling standard in GPU-accelerated
+selectivity modeling --- reducing each fascicle to one or a few
+representative fibers --- systematically overestimates the selectivity
 actually delivered to the nerve.  The error is not a fixed offset: this
 \emph{deployment penalty} is governed by fascicular architecture, the
-number of fibres per target fascicle, and is therefore small in swine
+number of fibers per target fascicle, and is therefore small in swine
 (median $0.03$) but large in human (median $0.27$), a translational
 bias that reduced-order models cannot detect because they never
-simulate the fibres the bias acts on.  Mechanistically the penalty is
+simulate the fibers the bias acts on.  Mechanistically the penalty is
 a failure to recruit the large human target fascicle from a field
-tuned to a few sampled fibres, not off-target spill or reduced drive.
+tuned to a few sampled fibers, not off-target spill or reduced drive.
 This was measurable only because jaxon simulates the full
-${\sim}1000$-fibre population: a fully differentiable, GPU-native
+${\sim}1000$-fiber population: a fully differentiable, GPU-native
 reimplementation of the canonical MRG, Sweeney, Sundt and Rattay axon
 models that reproduces NEURON ($99.6\,\%$ of $943$ configurations under
 the $1\,\%$ criterion) at a geometric-mean $\sim\!820\times$ throughput
@@ -32,7 +32,7 @@ on the full population to expose the penalty
 
 The closest direct comparator is pyfibers~\cite{hussain2024}, which
 established the convention of wrapping NEURON axon models from Python
-and using random-search / FD-gradient optimisation for selectivity
+and using random-search / FD-gradient optimization for selectivity
 design.  jaxon's contribution relative to pyfibers is twofold:
 (i) the JAX implementation removes the Python-NEURON IPC overhead
 that limits pyfibers throughput and makes vmap-batched parallel-fiber
@@ -53,11 +53,11 @@ work~\cite{chen2018neuralode}.  \texttt{jaxley} provides the
 underlying multi-compartment HH machinery used by jaxon's solver.  \texttt{jaxley}
 ships canonical CNS Hodgkin--Huxley channels and a generic cable
 solver but does not include the calibrated peripheral nerve fiber
-models that the PNS modelling literature relies on; jaxon's contribution
+models that the PNS modeling literature relies on; jaxon's contribution
 within this ecosystem is the peripheral specialisation: the coupled
 $(V_i, V_{\mathrm{px}})$ MRG double-cable solver, the calibrated
 Sweeney, Sundt and Rattay fiber models, the validation-against-NEURON
-harness, and the selectivity-optimisation pipeline are domain-specific
+harness, and the selectivity-optimization pipeline are domain-specific
 and not provided out-of-the-box by \texttt{jaxley}.
 
 GPU-accelerated multi-compartment neuron simulation has a separate
@@ -74,27 +74,27 @@ supports intracellular current injection only,
 \texttt{CoreNEURON}~\cite{kumbhar2019coreneuron} does not implement
 NEURON's \texttt{extracellular} mechanism, and \texttt{Arbor} models
 no extracellular fields --- so CPU-based NEURON has remained the only
-established simulator of extracellular peripheral-fibre stimulation.
+established simulator of extracellular peripheral-fiber stimulation.
 This is why our throughput comparison is against CPU NEURON, and why
 jaxon's GPU-native extracellular forward pass is itself a capability
 gap that the existing GPU simulators do not fill.  These pipelines
 also accelerate only the forward pass and, like pyfibers, expose no
-end-to-end gradients; gradient-based optimisation over design
+end-to-end gradients; gradient-based optimization over design
 variables still requires the finite-difference detour the present work
 is designed to obviate.
 
 \subsection{Limitations}
 
 \paragraph{Scope of the deployment-penalty finding.}
-The penalty is established \emph{in silico}, at a single fibre diameter
+The penalty is established \emph{in silico}, at a single fiber diameter
 ($5.7\,\mu\mathrm{m}$ MRG), with one cuff and one FE pipeline, on 29
 nerves (11 human).  We therefore frame fascicular architecture as the
 \emph{driver} the penalty scales with (per-nerve Spearman
-$r = +0.72$; fibres-per-fascicle mediates the species gap), not as a
+$r = +0.72$; fibers-per-fascicle mediates the species gap), not as a
 manipulated cause, and we expect the magnitude --- though not the
-direction --- to depend on diameter, fibre-type mix, cuff geometry and
+direction --- to depend on diameter, fiber-type mix, cuff geometry and
 the conductivity model.  Confirming the effect across diameters and
-fibre populations, and anchoring it experimentally, is the natural next
+fiber populations, and anchoring it experimentally, is the natural next
 step; jaxon's throughput makes the required population-scale sweeps
 tractable.
 
@@ -104,7 +104,7 @@ cuff (three axial rows $\times$ four angular columns) at a fixed
 radius.  Larger contact counts, conformable cuffs and multi-cuff
 arrays are increasingly common in clinical practice but were out of
 scope for the present paper; jaxon's per-contact amplitude
-parameterisation extends to arbitrary contact layouts with no change
+parameterization extends to arbitrary contact layouts with no change
 to the solver.
 
 \paragraph{Simplified cuff finite-element model.}
@@ -114,7 +114,7 @@ fully device-faithful encapsulation/electrode-impedance solve.  jaxon's
 interface accepts $V_e$ as a pre-computed
 $[K, n_{\mathrm{fiber}}, n_{\mathrm{comp}}]$ tensor and so is agnostic
 to its origin, so a higher-fidelity FEM can be substituted without
-touching the optimisation pipeline.
+touching the optimization pipeline.
 
 \paragraph{No biological variability in fiber parameters.}
 All fibers in a given diameter share identical channel densities,
@@ -143,16 +143,16 @@ block~\cite{kilgore2014block}.
 
 The combination of GPU throughput and end-to-end gradients positions
 jaxon for several natural next-step applications:
-(i) fibre-type (diameter-based) selectivity, exploiting the
+(i) fiber-type (diameter-based) selectivity, exploiting the
 differentiable forward model and waveform-shape gradients to recruit
 one diameter population over another;
 (ii) population-averaged designs that marginalise over realistic
 nerve-to-nerve variability via a single batched forward pass;
-(iii) inverse modelling of recorded extracellular field data to
+(iii) inverse modeling of recorded extracellular field data to
 infer fiber recruitment from cuff-recorded compound action
 potentials~\cite{vissamsetti2025cap}; and
 (iv) closed-loop adaptive stimulation policies trained by
 backpropagation through the forward model.  Each of these would
 require a gradient-free pipeline to perform thousands or millions
 of redundant forward simulations; with jaxon, they reduce to standard
-gradient-based optimisation.
+gradient-based optimization.

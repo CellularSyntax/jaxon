@@ -6,8 +6,8 @@ growing range of indications including drug-resistant epilepsy,
 treatment-resistant depression, rheumatoid arthritis, heart failure
 and chronic pain~\cite{howland2014vns,koopman2016vns,bonaz2017vagus,deferrari2011cardiofit}.
 Because peripheral nerves carry mixed populations of motor, sensory
-and autonomic fibers organised into anatomically distinct fascicles
-whose number, calibre and somatotopic ordering vary substantially
+and autonomic fibers organized into anatomically distinct fascicles
+whose number, caliber and somatotopic ordering vary substantially
 across species and individuals~\cite{settell2020vagotopy,pelot2023humanvagus},
 the therapeutic question is rarely \emph{whether} to stimulate but
 \emph{which subset} of fibers to engage---a problem of
@@ -34,18 +34,18 @@ pyfibers~\cite{hussain2024} have made this workflow accessible, but
 they share a fundamental cost: every candidate design requires
 \emph{thousands} of independent NEURON forward simulations, run
 serially over CPU cores, with no mechanism to compute the gradient of
-a selectivity objective with respect to design variables.  Optimisation
+a selectivity objective with respect to design variables.  Optimization
 over the resulting cost landscape is consequently restricted to
 gradient-free methods---grid sweeps, finite-difference
 approximations~\cite{hussain2024} or evolutionary
 search~\cite{aristovich2021}---scaling poorly to the high-dimensional
 spaces opened up by waveform shaping or many-contact cuffs.
-A second, less-examined economy compounds the first: to keep the fibre
+A second, less-examined economy compounds the first: to keep the fiber
 count manageable, these pipelines typically reduce each fascicle to a
-single representative (centroid) fibre~\cite{hussain2024}.  Whether
+single representative (centroid) fiber~\cite{hussain2024}.  Whether
 this reduction preserves the selectivity of candidate designs --- or
 quietly biases it --- has not been tested, because testing it demands
-simulating the full fibre population under the very fields the reduced
+simulating the full fiber population under the very fields the reduced
 model selects.
 
 Recent work in differentiable simulation suggests an alternative.
@@ -54,7 +54,7 @@ the Hodgkin--Huxley membrane equations and multi-compartment cable
 dynamics can be expressed in JAX~\cite{jax2018} so that gradients
 of arbitrary scalar functions of the membrane trajectory are
 available via reverse-mode automatic differentiation, all within a
-single GPU-vectorised forward pass.  In the central nervous system
+single GPU-vectorized forward pass.  In the central nervous system
 context, this has enabled gradient-based inference of channel
 densities and morphological parameters at unprecedented scale.
 For peripheral nerve fiber models, however, the differentiable
@@ -63,8 +63,8 @@ requires a coupled $(V_i, V_{\mathrm{px}})$ backward-Euler integration
 that is not provided out-of-the-box, the other models (the myelinated
 Sweeney and the unmyelinated Sundt and Rattay) each carry
 calibration-sensitive constants that must match NEURON's analytic
-solver to bench-marking accuracy~\cite{musselman2023}, and selectivity
-optimisation requires a batched-fiber forward solver that vectorises
+solver to benchmarking accuracy~\cite{musselman2023}, and selectivity
+optimization requires a batched-fiber forward solver that vectorizes
 across large fiber populations on a single device.  Building the differentiable peripheral nerve
 forward solver therefore reduces to three engineering questions:
 (i) can the coupled MRG cable equations be expressed in JAX with
@@ -72,11 +72,11 @@ sufficient numerical accuracy that the resulting simulator passes the
 same NEURON-comparison validation suite that ASCENT and pyfibers use;
 (ii) is the resulting solver competitive with NEURON on throughput
 when batched across large fiber populations; and (iii) does the
-differentiability enable selectivity optimisation strategies that
+differentiability enable selectivity optimization strategies that
 the gradient-free pipelines cannot perform?
 
 In this paper we use population-scale differentiable simulation to ask
-whether the reduced-order fibre sampling that keeps selectivity models
+whether the reduced-order fiber sampling that keeps selectivity models
 tractable biases the selectivity they predict --- and we find that it
 does, systematically and in a species-dependent way.  Our
 contributions are:
@@ -84,11 +84,11 @@ contributions are:
 \begin{enumerate}
   \item \textbf{The central finding.}  On a cross-species cohort of
         microCT-segmented vagus nerves, stimulation configurations
-        optimised on sparsely-sampled fibres --- the per-fascicle
+        optimized on sparsely-sampled fibers --- the per-fascicle
         reduction used in GPU-accelerated selectivity
         work~\cite{hussain2024} --- lose substantial selectivity when
-        deployed on the full fibre population.  This \emph{deployment
-        penalty} scales with the number of fibres per target fascicle
+        deployed on the full fiber population.  This \emph{deployment
+        penalty} scales with the number of fibers per target fascicle
         and thereby differs systematically between species (small in
         swine, large in human), exposing a translational bias that
         reduced-order models cannot detect
@@ -100,16 +100,16 @@ contributions are:
         strength--duration, conduction-velocity and intracellular-trace
         benchmarks ($99.6\,\%$ of 943 configurations within $1\,\%$)
         and $\sim\!820\times$ faster than \texttt{pyfibers} at
-        $N=100{,}000$ fibres on a single A100 --- fast enough to
-        optimise and re-score whole-nerve populations
+        $N=100{,}000$ fibers on a single A100 --- fast enough to
+        optimize and re-score whole-nerve populations
         (Sections~\ref{sec:results-validation}--\ref{sec:results-scaling}).
   \item \textbf{The pipeline.}  An end-to-end differentiable
-        selectivity-optimisation method over per-contact stimulus
+        selectivity-optimization method over per-contact stimulus
         amplitudes, exposing exact gradients that gradient-free PNS
         pipelines lack, demonstrated on 29 microCT-derived vagus
         anatomies with FEM-computed extracellular fields --- to our
         knowledge the first cross-species gradient-based selectivity
-        optimisation on real microCT nerve geometry
+        optimization on real microCT nerve geometry
         (Section~\ref{sec:results-duke}).
 \end{enumerate}
 

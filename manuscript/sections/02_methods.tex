@@ -3,12 +3,12 @@
 
 \begin{figure}[h]
   \centering
-  \figmaybe[width=0.98\textwidth]{main/concept_overview_fig.jpeg}
+  \figmaybe[width=0.98\textwidth]{main/fig0_concept_overview.png}
   \caption{Overview of the jaxon differentiable pipeline.
-    \textbf{Top left --- forward-and-optimise loop.}  A per-contact
+    \textbf{Top left --- forward-and-optimize loop.}  A per-contact
     stimulus $I_k(t)$ drives the superposed extracellular field
     $V_e = \sum_k I_k\,V_e^{(k)}$; the coupled-cable GPU solver
-    integrates the membrane dynamics of every fibre in parallel and
+    integrates the membrane dynamics of every fiber in parallel and
     aggregates them into a fascicle-selectivity objective
     $\mathcal{L}$.  Because the whole pipeline is built on
     \texttt{jaxley}/JAX, the gradient
@@ -20,14 +20,14 @@
     cross-section is segmented and embedded in the 12-contact
     MultiContact cuff finite-element model, from which the per-contact
     extracellular lead fields $V_e^{(k)}$ are computed.
-    \textbf{Bottom left --- fibre models and validation.}  The four
-    implemented fibre models (myelinated MRG and Sweeney; unmyelinated
+    \textbf{Bottom left --- fiber models and validation.}  The four
+    implemented fiber models (myelinated MRG and Sweeney; unmyelinated
     Sundt and Rattay) and their strength--duration agreement with
     \texttt{pyfibers}/NEURON.
-    \textbf{Bottom right --- selectivity optimisation on the cohort.}
-    Two example nerves with the optimised cuff pattern (cathode blue,
+    \textbf{Bottom right --- selectivity optimization on the cohort.}
+    Two example nerves with the optimized cuff pattern (cathode blue,
     anode orange, inactive white, over the cuff's four angular columns
-    $\times$ three axial rows) and fibres coloured by recruitment
+    $\times$ three axial rows) and fibers colored by recruitment
     (target fired / target silent / off-target fired / off-target
     silent); the peripheral target-fascicle cluster is tinted green.}
   \label{fig:overview}
@@ -36,41 +36,40 @@
 \subsection{Axon models}
 \label{sec:methods-models}
 
-jaxon implements four canonical peripheral nerve fibre models: the
+jaxon implements four canonical peripheral nerve fiber models: the
 myelinated McIntyre--Richardson--Grill (MRG) double-cable and Sweeney
 single-cable axons, and the unmyelinated Sundt and Rattay
-C-fibres~\cite{mcintyre2002,sweeney1987,sundt2015,rattay1989analysis}.
+C-fibers~\cite{mcintyre2002,sweeney1987,sundt2015,rattay1989analysis}.
 Each carries its published channel set and diameter-dependent geometry
 (resting potentials $-80$\,mV for MRG/Sweeney, $-60$\,mV Sundt,
 $-70$\,mV Rattay); the MRG model is a coupled $(V_i, V_{\mathrm{px}})$
 double cable, the others single cables.  The governing equations and
-all constants are given in
-Appendix~\ref{sec:app-equations}--\ref{sec:app-models}; all four share
+all constants are given in the Supplementary Material; all four share
 a common compartment-level interface (\texttt{FiberStatics},
 \texttt{batch\_integrate\_m\_max}), so the library extends to further
-models without solver changes.  Figure~\ref{fig:overview} summarises
-the forward-and-optimise pipeline, FE construction, validation and
-cohort optimisation.
+models without solver changes.  Figure~\ref{fig:overview} summarizes
+the forward-and-optimize pipeline, FE construction, validation and
+cohort optimization.
 
 \paragraph{Coupled solver and batched forward pass.}
 The MRG double cable is integrated by a backward-Euler scheme in which
 the capacitance-free periaxonal equation is eliminated by a Schur
 complement and the resulting tridiagonal system solved by a
-JAX-compatible Thomas sweep (Appendix~\ref{sec:app-equations}).  The
-forward pass for one fibre is wrapped in \texttt{jax.lax.scan} over
-time steps and returns, for optimisation, only the per-compartment
+JAX-compatible Thomas sweep (Supplementary Material).  The
+forward pass for one fiber is wrapped in \texttt{jax.lax.scan} over
+time steps and returns, for optimization, only the per-compartment
 maximum of the Na$^+$ activation gate $\mathbf{m}_{\mathrm{Na}}$ --- a
 differentiable recruitment proxy --- at $\ge\!2$ orders of magnitude
-lower memory than the full trace.  For $N$ fibres under the same
-electrode, the per-fibre static parameters are stacked and a single
+lower memory than the full trace.  For $N$ fibers under the same
+electrode, the per-fiber static parameters are stacked and a single
 \texttt{jax.vmap} call compiles to one $N$-way XLA kernel, eliminating
-the per-fibre Python overhead that dominates NEURON pipelines and
+the per-fiber Python overhead that dominates NEURON pipelines and
 driving the throughput gain (Section~\ref{sec:results-scaling}).  At
 $\Delta t = 5\,\mu\mathrm{s}$ the MRG threshold agreement with NEURON
 has median $0.04\,\%$ and peak $0.39\,\%$ relative error over all 432
 configurations (Table~\ref{tab:validation-sd}).
 
-\subsection{Selectivity optimisation}
+\subsection{Selectivity optimization}
 \label{sec:methods-opt}
 
 \paragraph{Loss function.}
@@ -88,33 +87,33 @@ weighted quality (WQ) loss
 where $y_f \in \{0,1\}$ is the target/off-target indicator
 (constructed per nerve by the peripheral-cluster selector of
 Section~\ref{sec:methods-duke}), $w_f$ are per-fiber weights, and the
-second term is an optional amplitude-energy regulariser; we set
+second term is an optional amplitude-energy regularizer; we set
 $\lambda = 0$ for all results reported here.
 The activation proxy can be optionally softened with a per-node
 sigmoid of temperature $\tau$ to widen the gradient-informative
 window at saturation.
 
-\paragraph{Amplitude optimisation.}
+\paragraph{Amplitude optimization.}
 For rectangular biphasic pulses the design variable is the per-contact
 amplitude vector $\mathbf{I} \in \mathbb{R}^K$.  jaxon supports Adam
 with finite-difference gradients~\cite{kingma2015adam} (reusing the
 forward kernel over the $K$ probes) and autodiff multi-start
 L-BFGS~\cite{liu1989lbfgs}; both start from a bipolar $V_e$-weighted
-initialisation and use per-model amplitude scales that track the
+initialization and use per-model amplitude scales that track the
 single-contact activation thresholds, which span two orders of
 magnitude across models ($\sim 0.3$ MRG, $\sim 0.2$ Sweeney,
 $\sim 30$ Rattay, $\sim 50\,\mathrm{mA}$ Sundt; defaults in
-Appendix Table~\ref{tab:opt-hparams}).  The loop early-stops when the
+Supplementary Table~\ref{tab:opt-hparams}).  The loop early-stops when the
 hard SI reaches target or the loss stalls for $20$ iterations.  On the
 microCT cohort the trajectory is warm-started by a discrete probe of
 physically meaningful spatial patterns --- one bipolar and four
 single-column tripolar (one per angular column, cathode at the
 column's $z$-middle contact with charge-balancing anodes) --- each
 scored at eight magnitudes ($80$ forward passes per seed); the best
-initialises the trajectory, with the probe's zero contacts frozen by a
+initializes the trajectory, with the probe's zero contacts frozen by a
 gradient mask to preserve focal sparsity.  The same kernel exposes
 gradients with respect to arbitrary per-contact waveforms $u_k(t)$,
-enabling waveform-shape optimisation, which we leave to future work.
+enabling waveform-shape optimization, which we leave to future work.
 
 \subsection{Subject-specific Duke FEM cohort}
 \label{sec:methods-duke}
@@ -137,27 +136,27 @@ solves the linear electro-quasistatic problem
 $\nabla \cdot (\sigma \nabla V) = 0$ in FEniCSx with literature
 conductivities and a zero-thickness perineurium contact impedance,
 giving a per-contact extracellular lead field $V_e^{(k)}$
-(full construction, conductivities and the optimiser defaults in
-Appendix~\ref{sec:app-details}).
+(full construction, conductivities and the optimizer defaults in the
+Supplementary Material).
 
-\paragraph{Fibre sampling.}
-$1\,000$ straight axial fibre trajectories per nerve are seeded by
+\paragraph{Fiber sampling.}
+$1\,000$ straight axial fiber trajectories per nerve are seeded by
 rejection sampling inside the fascicles in proportion to fascicle
 cross-sectional area, extruded along the nerve axis at $200\,\mu
 \mathrm{m}$ steps.  The lead fields $V_e^{(k)}$ are sampled at every
-MRG compartment of every fibre and exported as a per-fibre tensor
-${V_e^{(k)}}_{f,n}$, which the optimiser superposes linearly with the
+MRG compartment of every fiber and exported as a per-fiber tensor
+${V_e^{(k)}}_{f,n}$, which the optimizer superposes linearly with the
 per-contact amplitudes $a_k(t)$ to obtain the total extracellular
 potential at each compartment.  Off-mesh sample points (well
 under $3\,\%$ of points, occurring near fascicle ends) are filled by
-axial interpolation along the fibre.  We refer the reader
+axial interpolation along the fiber.  We refer the reader
 to~\cite{haberbusch2026golgi} for the full pipeline including
 benchmarks, mesh-convergence tests, and the geometry-rendering and
 volume-field-export utilities used to validate every sample by visual
 inspection prior to inclusion in the cohort.
 
 \paragraph{Target and off-target selection.}
-Rather than an arbitrary divider line, the target/off-target labelling
+Rather than an arbitrary divider line, the target/off-target labeling
 $y_f$ in Eq.~(\ref{eq:wq-loss}) is set per nerve by a
 peripheral-fascicle cluster selector that matches what the cuff can
 physically steer.  Fascicles whose centroid lies in the outer
@@ -165,13 +164,13 @@ radial band of the nerve (beyond the $0.32$ radius quantile) form the
 peripheral pool; a $90^\circ$ angular sector --- the angular
 resolution of the cuff's four contact columns --- is then slid around
 the perimeter in $5^\circ$ steps, and every sector containing at least
-$50$ fibres drawn
+$50$ fibers drawn
 from the peripheral pool is a valid target window.  For each nerve we
 select \emph{four} such windows, chosen by farthest-point sampling on
 the circle from a random anchor so that they are spread maximally
 around the cross-section; these four windows are the four ``seeds''
-optimised per nerve.  The peripheral fascicles inside the selected
-sector are labelled target ($y_f = 1$) and all remaining fibres
+optimized per nerve.  The peripheral fascicles inside the selected
+sector are labeled target ($y_f = 1$) and all remaining fibers
 off-target ($y_f = 0$).  This produces a single anatomically
 contiguous, cuff-reachable target region per seed --- rather than a
 topologically arbitrary split --- and the four seeds probe four
@@ -186,16 +185,15 @@ target-cluster seeds in total) entered the selectivity study after two
 pre-flight filters: \textbf{(i)} samples with fewer than three
 fascicles were rejected (degenerate target-cluster selector, above);
 \textbf{(ii)} samples
-whose per-channel mean of the per-fibre standard deviation of
+whose per-channel mean of the per-fiber standard deviation of
 ${V_e^{(k)}}_{f,n}$ along $n$ fell below $100\,\mathrm{mV/mA}$ (at the
-$5.7\,\mu\mathrm{m}$ MRG fibre diameter we use throughout) were
+$5.7\,\mu\mathrm{m}$ MRG fiber diameter we use throughout) were
 rejected as having insufficient FE-mesh $z$-resolution between
 adjacent contact rows: in such samples the cathode-middle minus
 guard-outer subtraction that defines tripolar field steering
-collapses to zero and the optimiser is unable to obtain selective
+collapses to zero and the optimizer is unable to obtain selective
 activation regardless of which spatial pattern it explores.  The
-quality metric and threshold are reproducible via
-\texttt{experiments\_v2/duke\_fem\_quality.py} in the released code.
+quality metric and threshold are defined in the released code.
 
 \subsection{Validation protocol}
 \label{sec:methods-validation}
@@ -204,13 +202,12 @@ For each model we drove jaxon and \texttt{pyfibers}-wrapped NEURON with
 identical stimuli and compared three quantities against NEURON: the
 strength--duration threshold (terminal node, $\mathrm{PW} \in
 [0.02,1.0]\,\mathrm{ms}$), the conduction velocity over the published
-diameter range, and the full centre-node intracellular trace; agreement
-to $<\!1\,\%$ on all three was required for acceptance.  Reproduction
-scripts are \texttt{experiments\_v2/validate\_\{mrg,sundt,sweeney,rattay\}.py}.
-All results were produced on one NVIDIA A100 (40\,GB) with
-\texttt{jax} 0.6.2 / \texttt{jaxley} 0.13.0 (CUDA 12.4) and pyfibers
-0.8.5 (NEURON 8.2); the environment is reproducible via
-\texttt{slurm/setup\_env.sh}.
+diameter range, and the full center-node intracellular trace; agreement
+to $<\!1\,\%$ on all three was required for acceptance.  All results
+were produced on one NVIDIA A100 (40\,GB) with \texttt{jax} 0.6.2 /
+\texttt{jaxley} 0.13.0 (CUDA 12.4) and pyfibers 0.8.5 (NEURON 8.2); the
+full environment and reproduction code are available in the project
+repository.
 
 \subsection{Statistical analysis}
 \label{sec:methods-stats}
@@ -222,13 +219,13 @@ heavy-tailed, ceiling-bounded SI distributions.  For the
 sparse-sampling analysis (Section~\ref{sec:results-sparse}) the
 independent unit is the nerve: per-seed values are averaged within each
 nerve before testing, so that nerves rather than nested seeds are the
-units of replication.  The deployment penalty (dense-optimised SI minus
-sparse-optimised transfer SI) is tested per species and sampling
+units of replication.  The deployment penalty (dense-optimized SI minus
+sparse-optimized transfer SI) is tested per species and sampling
 strategy with two-sided Wilcoxon signed-rank tests, Holm-corrected
 across the eight species $\times$ strategy cells; the species
 difference in penalty is tested with the Mann--Whitney $U$ test, and its
-anatomical driver --- the number of fibres per target fascicle --- with
-Spearman rank correlation.  Seeds whose dense optimisation did not
+anatomical driver --- the number of fibers per target fascicle --- with
+Spearman rank correlation.  Seeds whose dense optimization did not
 converge (dense $\mathrm{SI} < 0.5$; 4 of 116) are excluded from the
 dense-versus-sparse comparisons as they provide no valid ceiling.  We
 report medians with inter-quartile ranges alongside means throughout,

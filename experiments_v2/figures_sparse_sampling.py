@@ -103,6 +103,14 @@ def _load() -> list[dict]:
                                       abs(rect.get("final_si", _nan))))
             dense_firing = rect.get("firing") or {}
 
+            # Target geometry: fibers per target fascicle (= target size / #
+            # target fascicles) — the dominant correlate of the transfer penalty.
+            cl = dense_d.get("cluster") or {}
+            n_tgt_fibers = cl.get("n_target_fibers")
+            n_tgt_fasc   = len(cl.get("target_ids", []))
+            fibers_per_target_fasc = (n_tgt_fibers / n_tgt_fasc
+                                      if (n_tgt_fibers and n_tgt_fasc) else _nan)
+
             # Per-strategy maps keyed by (strategy, n_per_fascicle):
             #   si           = in-sample SI on the sparse model
             #   si_transfer  = sparse-optimised amps re-evaluated on the FULL nerve
@@ -137,6 +145,9 @@ def _load() -> list[dict]:
                 dense_firing=dense_firing,
                 transfer_firing=fir_tr_by_xi,
                 n_fasc=int(sparse_d.get("dense_n_fibers", 0)),  # fiber count proxy
+                n_target_fibers=n_tgt_fibers,
+                n_target_fascicles=n_tgt_fasc,
+                fibers_per_target_fasc=fibers_per_target_fasc,
             ))
     return rows
 

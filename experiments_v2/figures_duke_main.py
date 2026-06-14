@@ -663,13 +663,29 @@ def _pfmt(p):
     return "p<0.001" if p < 1e-3 else f"p={p:.3f}"
 
 
+_DENSE_MIN = 0.5   # seeds whose dense optimisation failed are not a valid ceiling
+
+
+def _mean_transfer(r) -> float:
+    v = [r["si_transfer"][xi] for xi, *_ in _D_SPARSE
+         if np.isfinite(r["si_transfer"].get(xi, np.nan))]
+    return float(np.mean(v)) if v else np.nan
+
+
 def _panel_d(gs, fig, sparse_rows: list[dict]) -> plt.Axes:
-    """Sparse fiber-sampling: dense-optimised SI ceiling vs sparse-optimised
-    TRANSFER SI on the full nerve, per nerve, swine | human.  Star = transfer vs
-    dense (per-nerve one-sided Wilcoxon, Holm-corrected across the 8 cells)."""
-    gs_inner = gridspec.GridSpecFromSubplotSpec(1, 2, subplot_spec=gs, wspace=0.10)
+    """Sparse fiber-sampling, per nerve: dense ceiling vs sparse-optimised
+    transfer SI (swine | human), and the mechanism — penalty vs target-fascicle
+    size.  Seeds whose dense optimisation failed (dense_si < _DENSE_MIN) are
+    excluded (no valid ceiling).  Stars: transfer vs dense (two-sided per-nerve
+    Wilcoxon, Holm-corrected across the 8 cells)."""
+    rows = [r for r in sparse_rows
+            if np.isfinite(r.get("dense_si", np.nan)) and r["dense_si"] >= _DENSE_MIN]
+
+    gs_inner = gridspec.GridSpecFromSubplotSpec(
+        1, 3, subplot_spec=gs, wspace=0.42, width_ratios=[1.0, 1.0, 1.25])
     ax_sw = fig.add_subplot(gs_inner[0])
     ax_hu = fig.add_subplot(gs_inner[1], sharey=ax_sw)
+    ax_me = fig.add_subplot(gs_inner[2])
 
     # Holm-adjusted transfer-vs-dense p-values across both species × 4 strategies.
     def _pen(xi):
@@ -678,7 +694,7 @@ def _panel_d(gs, fig, sparse_rows: list[dict]) -> plt.Axes:
     cells = [(sp, xi) for sp in ("swine", "human") for xi, *_ in _D_SPARSE]
     raw = []
     for sp, xi in cells:
-        pen = _ps_mean(sparse_rows, sp, _pen(xi))
+        pen = _ps_mean(rows, sp, _pen(xi))
         raw.append(stats.wilcoxon(pen, alternative="two-sided").pvalue
                    if pen.size >= 6 else np.nan)
     padj = {c: a for c, a in zip(cells, _holm(raw))}
@@ -686,13 +702,12 @@ def _panel_d(gs, fig, sparse_rows: list[dict]) -> plt.Axes:
     rng = np.random.default_rng(42)
     for ax, sp in [(ax_sw, "swine"), (ax_hu, "human")]:
         col = PALETTE[sp]
-        dense = _ps_mean(sparse_rows, sp, lambda r: r["dense_si"])
+        dense = _ps_mean(rows, sp, lambda r: r["dense_si"])
         dlo, dhi = _boot_ci(dense)
         ax.axhspan(dlo, dhi, color=PALETTE["lgrey"], alpha=0.30, zorder=0)
         ax.axhline(float(dense.mean()), color=PALETTE["grey"], ls="--", lw=0.8, zorder=1)
         for gi, (xi, _, _, lbl) in enumerate(_D_SPARSE):
-            tr = _ps_mean(sparse_rows, sp,
-                          lambda r, xi=xi: r["si_transfer"].get(xi, np.nan))
+            tr = _ps_mean(rows, sp, lambda r, xi=xi: r["si_transfer"].get(xi, np.nan))
             if not tr.size:
                 continue
             ax.scatter(gi + rng.uniform(-0.13, 0.13, tr.size), tr, s=8, color=col,
@@ -710,21 +725,48 @@ def _panel_d(gs, fig, sparse_rows: list[dict]) -> plt.Axes:
         ax.tick_params(axis="x", length=0)
         _place_icons(ax, [(float(gi), t[1], t[2]) for gi, t in enumerate(_D_SPARSE)],
                      zoom=0.24, y_offset_pt=-12)
-        # Species title between the glyph icons and the panel heading,
-        # drawn on top of everything.
         _t = ax.set_title(sp.capitalize(), fontsize=FS_SM + 1, color=col,
                           weight="bold", y=1.18)
         _t.set_zorder(1000)
     ax_sw.set_ylabel("SI (full nerve)")
     plt.setp(ax_hu.get_yticklabels(), visible=False)
-
-    # Both series are SI evaluated on the FULL nerve; they differ only in what
-    # the stimulus was optimised on (dense vs sparse fiber model).
     leg = [Line2D([], [], color=PALETTE["grey"], ls="--", label="dense-optimised"),
            Line2D([], [], marker="o", ls="none", mfc=PALETTE["dgrey"], mec="black",
                   label="sparse-optimised")]
     ax_sw.legend(handles=leg, frameon=False, fontsize=FS_SM - 1,
                  loc="lower left", handlelength=1.4, borderaxespad=0.3)
+
+    # ── mechanism: deployment penalty vs target-fascicle size (per nerve) ──────
+    byn = defaultdict(lambda: {"fpf": [], "pen": []}); spof = {}
+    for r in rows:
+        mt = _mean_transfer(r); fpf = r.get("fibers_per_target_fasc", np.nan)
+        if np.isfinite(mt) and np.isfinite(fpf):
+            spof[r["sample"]] = r["species"]
+            byn[r["sample"]]["fpf"].append(fpf)
+            byn[r["sample"]]["pen"].append(r["dense_si"] - mt)
+    nf  = {s: float(np.mean(v["fpf"])) for s, v in byn.items()}
+    npn = {s: float(np.mean(v["pen"])) for s, v in byn.items()}
+    for sp in ("swine", "human"):
+        ss = [s for s in nf if spof[s] == sp]
+        ax_me.scatter([nf[s] for s in ss], [npn[s] for s in ss], s=14,
+                      color=PALETTE[sp], alpha=0.6, edgecolors="none", label=sp.capitalize())
+    allx = np.array([nf[s] for s in nf]); ally = np.array([npn[s] for s in nf])
+    if allx.size >= 5:
+        b = np.polyfit(np.log(allx), ally, 1)
+        xx = np.geomspace(allx.min(), allx.max(), 60)
+        ax_me.plot(xx, b[0] * np.log(xx) + b[1], color=PALETTE["grey"], ls="--", lw=1.0)
+        rho, pv = stats.spearmanr(allx, ally)
+        ax_me.text(0.05, 0.96, f"$r$={rho:+.2f}\n{_pfmt(pv)}",
+                   transform=ax_me.transAxes, va="top", ha="left", fontsize=FS_SM)
+    ax_me.axhline(0, color=PALETTE["lgrey"], lw=0.6)
+    ax_me.set_xscale("log")
+    ax_me.set_xlabel("fibers / target fascicle", fontsize=FS_SM)
+    ax_me.set_ylabel(r"penalty  $\mathrm{SI_{dense}}-\mathrm{SI_{transfer}}$", fontsize=FS_SM)
+    ax_me.tick_params(labelsize=FS_SM)
+    ax_me.legend(frameon=False, fontsize=FS_SM - 1, loc="lower right")
+    _tm = ax_me.set_title("mechanism", fontsize=FS_SM + 1, color=PALETTE["dgrey"],
+                          weight="bold", y=1.18)
+    _tm.set_zorder(1000)
     return ax_sw
 
 
@@ -775,8 +817,9 @@ def main() -> int:
     a_l, a_r = L,           L + a_w
     b_l, b_r = a_r + col_gap, a_r + col_gap + b_w
 
-    # Bottom-row column widths: c and d equal
-    c_w = d_w = (W - col_gap) / 2.0
+    # Bottom-row column widths: d is wider (3 sub-panels) than c
+    c_w = (W - col_gap) * 0.40
+    d_w = (W - col_gap) * 0.60
     c_l, c_r = L,           L + c_w
     d_l, d_r = c_r + col_gap, c_r + col_gap + d_w
 

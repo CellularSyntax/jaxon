@@ -650,9 +650,9 @@ def _draw_xsection(ax, sample_dir_name: str, raw: dict,
         ax.add_patch(Circle((0.0, 0.0), _R_in, facecolor="#f0f7fd",
                             edgecolor="none", zorder=0.5))
 
-    # Nerve outline.
+    # Nerve outline (epineurium interior tinted a very light yellow).
     ax.fill(outline[:, 0], outline[:, 1],
-              facecolor="#fafafa", edgecolor="#555555", linewidth=0.5,
+              facecolor="#fcfae6", edgecolor="#555555", linewidth=0.5,
               zorder=1)
     # Fascicle fills (no edge here — outlines drawn on top of fibers below).
     for f in fascs:

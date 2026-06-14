@@ -301,18 +301,6 @@ the per-iteration updates accumulate unbalanced net drive at the
 previously-zero contacts and the focal field is destroyed within a few
 iterations.
 
-\paragraph{Random-init L1-discovery path.}
-To test whether the probe initialisation merely encodes the answer it
-was designed to find, we additionally run an independent optimiser
-from a uniform random initialisation in $\pm 0.10\,\mathrm{mA}$ with no
-spatial prior.  After each Adam update an $\ell_1$ proximal operator
-(soft-thresholding) drives small-magnitude amplitudes to exactly zero,
-so a sparse contact pattern must be \emph{discovered} rather than
-seeded.  Both paths share the same forward solver and early-stop
-criteria; comparing their achieved selectivity and active-contact
-sparsity per nerve (Section~\ref{sec:results-duke}) tests whether the
-probe init is a speed-up of the same discovery or a source of bias.
-
 The same forward kernel also exposes reverse-mode gradients with
 respect to per-contact \emph{arbitrary waveforms}
 $u_k(t) \in \mathbb{R}^{K \times T}$, enabling waveform-shape
@@ -467,18 +455,19 @@ Selectivity comparisons on the microCT cohort are paired by nerve
 $\times$ target-cluster seed, so we test them with the two-sided
 Wilcoxon signed-rank test, which makes no Gaussian assumption on the
 heavy-tailed, ceiling-bounded SI distributions.  For the
-sparse-sampling analysis (Section~\ref{sec:results-sparse}) the paired
-unit is the dense-optimised SI versus the sparse-reported SI for each
-of the four sampling strategies; because four strategies are tested
-per contrast we control the false discovery rate across them with the
-Benjamini--Hochberg procedure at $q = 0.05$ and report both raw and
-FDR-adjusted significance.  We report medians with inter-quartile
-ranges alongside means throughout, because the SI distributions are
-bounded at $1.0$ and right-skewed by the geometric-ceiling subset, so
-the median is the more representative central estimate.  Agreement
-between the probe and L1-discovery paths is assessed against a
-$|\Delta \mathrm{SI}| \le 0.05$ experimental noise-floor band rather
-than a null-hypothesis test, since the relevant question is practical
-equivalence, not difference.  Analyses use \texttt{scipy.stats};
-the reproduction script is
-\texttt{experiments\_v2/analyze\_sparse\_sampling.py}.
+sparse-sampling analysis (Section~\ref{sec:results-sparse}) the
+independent unit is the nerve: per-seed values are averaged within each
+nerve before testing, so that nerves rather than nested seeds are the
+units of replication.  The deployment penalty (dense-optimised SI minus
+sparse-optimised transfer SI) is tested per species and sampling
+strategy with two-sided Wilcoxon signed-rank tests, Holm-corrected
+across the eight species $\times$ strategy cells; the species
+difference in penalty is tested with the Mann--Whitney $U$ test, and its
+anatomical driver --- the number of fibres per target fascicle --- with
+Spearman rank correlation.  Seeds whose dense optimisation did not
+converge (dense $\mathrm{SI} < 0.5$; 4 of 116) are excluded from the
+dense-versus-sparse comparisons as they provide no valid ceiling.  We
+report medians with inter-quartile ranges alongside means throughout,
+because the SI distributions are bounded at $1.0$ and right-skewed by
+the geometric-ceiling subset, so the median is the more representative
+central estimate.  Analyses use \texttt{scipy.stats}.

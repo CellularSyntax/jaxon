@@ -100,14 +100,15 @@ affirmatively.  Our contributions are:
         (Section~\ref{sec:results-duke}).  This is, to
         our knowledge, the first cross-species gradient-based
         selectivity optimisation on real microCT-derived
-        peripheral nerve anatomies.  A probe-based smart initialisation
-        is cross-checked against an independent random-init
-        L1-discovery path to test for hidden \emph{a priori} bias.
+        peripheral nerve anatomies.
   \item A direct quantification, enabled by simulating the full
         ${\sim}1000$-fibre population rather than a per-fascicle
-        centroid, of the approximation error introduced by the
-        centroid-only fibre sampling used in prior GPU-accelerated
-        selectivity work (Section~\ref{sec:results-sparse}).
+        centroid, of the \emph{deployment penalty} incurred when a
+        configuration optimised on sparsely-sampled fibres is deployed
+        on the full nerve, and of its anatomical driver --- the number
+        of fibres per target fascicle --- which we show mediates a
+        cross-species gap in transferable selectivity
+        (Section~\ref{sec:results-sparse}).
 \end{enumerate}
 
 We discuss the limits of the current implementation, including the

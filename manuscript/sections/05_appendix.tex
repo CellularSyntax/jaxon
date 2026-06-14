@@ -341,3 +341,51 @@ relation~\cite{pelot2020perineurium} (swine) or the anti-claudin-1
 masks (human).  Because the problem is linear, the block matrix is
 LU-factorised once with MUMPS and one $1\,\mathrm{A}$ solve per contact
 yields the lead field $V_e^{(k)}$ in V/A for each of the 12 contacts.
+
+\section{Validation breakdowns}
+\label{sec:app-validation}
+
+\begin{table}[h]
+  \centering
+  \caption{Threshold error breakdown per stimulus waveform,
+    aggregated across all four fibre models and their published
+    diameter ranges.  Apart from a handful of biphasic cathodic-first
+    configurations at the four smallest Rattay diameters, every
+    waveform passes the $1\,\%$ tolerance on every diameter tested.}
+  \label{tab:validation-sd-per-wf}
+  \begin{tabular}{lrccrr}
+    \toprule
+    Waveform & $n$ & median [IQR] err. & 95\textsuperscript{th} \%ile & peak err. & \%\,$<1\%$ \\
+    \midrule
+    Monophasic cathodic       & 120 & 0.08\,\% [0.04--0.23] & 0.40\,\% & 0.44\,\% & 100.0\,\% \\
+    Monophasic anodic         & 114 & 0.12\,\% [0.05--0.21] & 0.38\,\% & 0.41\,\% & 100.0\,\% \\
+    Biphasic cathodic-first   & 115 & 0.08\,\% [0.03--0.19] & 0.38\,\% & 2.24\,\% &  96.5\,\% \\
+    Biphasic anodic-first     & 114 & 0.08\,\% [0.03--0.17] & 0.39\,\% & 0.42\,\% & 100.0\,\% \\
+    Sinusoidal                & 120 & 0.05\,\% [0.03--0.23] & 0.39\,\% & 0.43\,\% & 100.0\,\% \\
+    Sawtooth                  & 120 & 0.07\,\% [0.04--0.27] & 0.41\,\% & 0.46\,\% & 100.0\,\% \\
+    Exponential decay         & 120 & 0.07\,\% [0.03--0.23] & 0.41\,\% & 0.44\,\% & 100.0\,\% \\
+    Gaussian                  & 120 & 0.05\,\% [0.03--0.25] & 0.37\,\% & 0.42\,\% & 100.0\,\% \\
+    \midrule
+    \textbf{total}           & \textbf{943} & \textbf{0.08\,\% [0.03--0.20]} & \textbf{0.40\,\%} & \textbf{2.24\,\%} & \textbf{99.6\,\%} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{table}[h]
+  \centering
+  \caption{Conduction velocity agreement against NEURON at each tested
+    diameter.  Sweeney is restricted to $D=10\,\mu\mathrm{m}$ by the
+    1987 convention (see Table~\ref{tab:validation-sd} caption).}
+  \label{tab:validation-cv}
+  \small
+  \begin{tabular}{l p{5.4cm} cr}
+    \toprule
+    Model    & diameters tested ($\mu$m) & median err.\ [IQR] & peak err.\ \\
+    \midrule
+    MRG      & 5.7, 7.3, 8.7, 10.0, 11.5, 12.8, 14.0, 15.0, 16.0  & $<0.01$\,\% [0.00--0.00]  & $<0.01$\,\% \\
+    Sundt    & 0.3, 0.5, 0.8, 1.0, 1.2                             & $0.09$\,\% [0.08--0.16]   & $0.24$\,\%  \\
+    Sweeney  & 10                                                  & $<0.01$\,\% [0.00--0.00]  & $<0.01$\,\% \\
+    Rattay   & 0.3, 0.5, 0.8, 1.0, 1.5                             & $0.05$\,\% [0.02--0.05]   & $0.13$\,\%  \\
+    \bottomrule
+  \end{tabular}
+\end{table}

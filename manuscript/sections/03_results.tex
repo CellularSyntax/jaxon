@@ -80,87 +80,15 @@ precision (Figure~\ref{fig:validation}\textbf{a}).
   \end{tabular}
 \end{table}
 
-Table~\ref{tab:validation-sd} aggregates across all eight stimulus
-waveforms.  Because waveform shape couples nonlinearly into the
-strength--duration relationship and into the activation
-proxy~\cite{grill1995stimulus,wongsarnpigoon2010energy}, we also
-report the breakdown per waveform aggregated across all four fiber
-models (Table~\ref{tab:validation-sd-per-wf}).  Seven of the eight
-waveforms agree to within $1\,\%$ on \emph{every} configuration
-tested; the only exceptions are four biphasic cathodic-first
-configurations of the smallest Rattay diameters (already discussed
-above), and even there 96.5\,\% of the 115 biphasic-cath-first
-configurations remain below the $1\,\%$ tolerance.  The visual
-analogue is the per-waveform error distribution in
-Figure~\ref{fig:validation}\textbf{c}, which reports the spread of
-relative threshold errors per waveform aggregated across the full
-per-model sweep.
-
-\begin{table}[h]
-  \centering
-  \caption{Threshold error breakdown per stimulus waveform,
-    aggregated across all four fiber models and their published
-    diameter ranges (8 waveforms $\times$ ${\sim}120$ configurations
-    each).  All eight waveform shapes used in the sweep are reported
-    --- monophasic cathodic, monophasic anodic, biphasic
-    cathodic-first, biphasic anodic-first, sinusoidal, sawtooth,
-    exponentially-decaying and Gaussian (cf.\ Section~\ref{sec:methods-validation}).
-    Apart from a handful of biphasic cathodic-first configurations at
-    the four smallest Rattay diameters, every other waveform passes
-    the $1\,\%$ tolerance on every diameter tested.}
-  \label{tab:validation-sd-per-wf}
-  \begin{tabular}{lrccrr}
-    \toprule
-    Waveform & $n$ & median [IQR] err. & 95\textsuperscript{th} \%ile & peak err. & \%\,$<1\%$ \\
-    \midrule
-    Monophasic cathodic       & 120 & 0.08\,\% [0.04--0.23] & 0.40\,\% & 0.44\,\% & 100.0\,\% \\
-    Monophasic anodic         & 114 & 0.12\,\% [0.05--0.21] & 0.38\,\% & 0.41\,\% & 100.0\,\% \\
-    Biphasic cathodic-first   & 115 & 0.08\,\% [0.03--0.19] & 0.38\,\% & 2.24\,\% &  96.5\,\% \\
-    Biphasic anodic-first     & 114 & 0.08\,\% [0.03--0.17] & 0.39\,\% & 0.42\,\% & 100.0\,\% \\
-    Sinusoidal                & 120 & 0.05\,\% [0.03--0.23] & 0.39\,\% & 0.43\,\% & 100.0\,\% \\
-    Sawtooth                  & 120 & 0.07\,\% [0.04--0.27] & 0.41\,\% & 0.46\,\% & 100.0\,\% \\
-    Exponential decay         & 120 & 0.07\,\% [0.03--0.23] & 0.41\,\% & 0.44\,\% & 100.0\,\% \\
-    Gaussian                  & 120 & 0.05\,\% [0.03--0.25] & 0.37\,\% & 0.42\,\% & 100.0\,\% \\
-    \midrule
-    \textbf{total}           & \textbf{943} & \textbf{0.08\,\% [0.03--0.20]} & \textbf{0.40\,\%} & \textbf{2.24\,\%} & \textbf{99.6\,\%} \\
-    \bottomrule
-  \end{tabular}
-\end{table}
-
-Conduction velocity (CV) is independently sensitive to the
-internodal and nodal time constants and so probes a different
-component of the model.  Table~\ref{tab:validation-cv} reports the
-CV agreement across the published diameter range of each model.
-For MRG, Sweeney and Rattay the median error rounds to zero across
-every tested diameter; the Sundt model shows a peak $0.24\,\%$
-error at the smallest tested diameter ($D=0.3\,\mu\mathrm{m}$).
-For Rattay, the AP peak voltage at the centre node sits near
-$-4\,\mathrm{mV}$ (well below the $0\,\mathrm{mV}$ crossing
-threshold conventionally used elsewhere in the suite), so CV
-extraction uses a $-30\,\mathrm{mV}$ crossing threshold instead;
-under this convention the CV agreement is sub-percent across the
-full diameter range.
-
-\begin{table}[h]
-  \centering
-  \caption{Conduction velocity agreement against NEURON, evaluated
-    at each tested diameter for each model.  Diameter sets follow
-    the parameterisation range published with each model.  Sweeney
-    is restricted to $D=10\,\mu\mathrm{m}$ by Sweeney 1987
-    convention (see Table~\ref{tab:validation-sd} caption).}
-  \label{tab:validation-cv}
-  \small
-  \begin{tabular}{l p{5.4cm} cr}
-    \toprule
-    Model    & diameters tested ($\mu$m) & median err.\ [IQR] & peak err.\ \\
-    \midrule
-    MRG      & 5.7, 7.3, 8.7, 10.0, 11.5, 12.8, 14.0, 15.0, 16.0  & $<0.01$\,\% [0.00--0.00]  & $<0.01$\,\% \\
-    Sundt    & 0.3, 0.5, 0.8, 1.0, 1.2                             & $0.09$\,\% [0.08--0.16]   & $0.24$\,\%  \\
-    Sweeney  & 10                                                  & $<0.01$\,\% [0.00--0.00]  & $<0.01$\,\% \\
-    Rattay   & 0.3, 0.5, 0.8, 1.0, 1.5                             & $0.05$\,\% [0.02--0.05]   & $0.13$\,\%  \\
-    \bottomrule
-  \end{tabular}
-\end{table}
+Seven of the eight waveforms agree within $1\,\%$ on \emph{every}
+configuration; the lone exceptions are the four biphasic cathodic-first
+Rattay cases above (and even there $96.5\,\%$ pass).  Conduction
+velocity, which probes the internodal and nodal time constants, agrees
+to a median $<0.1\,\%$ across all models and diameters (peak $0.24\,\%$
+for Sundt at $D=0.3\,\mu\mathrm{m}$).  Per-waveform and per-diameter
+breakdowns are in Appendix
+Tables~\ref{tab:validation-sd-per-wf}--\ref{tab:validation-cv}; the
+per-waveform error distribution is Figure~\ref{fig:validation}\textbf{c}.
 
 Figure~\ref{fig:validation} compactly summarises the validation and
 the computational-efficacy result for all four models in a single

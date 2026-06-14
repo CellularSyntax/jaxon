@@ -72,6 +72,7 @@ ENA    = 45.0     # mV
 EK     = -82.0    # mV
 
 DIAMETERS    = [0.3, 0.5, 0.8, 1.0]   # µm
+REP_DIAM_UM  = 0.8                     # representative diameter for the main-figure waterfall
 PULSE_AMP_NA = 0.5                     # nA
 PULSE_PW_MS  = 0.2                     # ms
 # Snapshot times from pulse onset; chosen so pre-/during-/post-collision
@@ -170,6 +171,12 @@ def _run_one_diameter(D: float) -> dict:
         "snapshot_t_ms":      SNAPSHOT_TS,
         "vm_peak_mV":         float(Vm_all.max()),
         "vm_peak_pf_mV":      float(vm_pf.max()),
+        # Full node-vs-time waterfall (for the main-figure collision panel).
+        "node_pos_mm":        centers[nodes] / 1000.0,
+        "jax_wf":             Vm_all[:, nodes],
+        "pf_wf":              vm_pf.T,
+        "t_jax":              (np.arange(N_STEPS) + 1) * DT,
+        "t_pf":               t_pf,
     }
 
 
@@ -212,6 +219,17 @@ def main():
     print(f"=== AP collision — Rattay C-fiber ===")
     results = [_run_one_diameter(D) for D in DIAMETERS]
 
+    _rep = next((r for r in results
+                 if abs(r["diameter_um"] - REP_DIAM_UM) < 1e-6), results[-1])
+    waterfall = {
+        "diameter_um":  _rep["diameter_um"],
+        "node_pos_mm":  _rep["node_pos_mm"].tolist(),
+        "jax_t_ms":     _rep["t_jax"].tolist(),
+        "jax_vm_nodes": _rep["jax_wf"].tolist(),
+        "pf_t_ms":      _rep["t_pf"].tolist(),
+        "pf_vm_nodes":  _rep["pf_wf"].tolist(),
+    }
+
     save_json({
         "diameters_um":   DIAMETERS,
         "snapshot_t_ms":  SNAPSHOT_TS,
@@ -222,6 +240,7 @@ def main():
         "tstop_ms":       TSTOP,
         "n_nodes":        N_NODES,
         "celsius":        CELSIUS,
+        "waterfall":      waterfall,
         "results": [
             {
                 "diameter_um":            r["diameter_um"],

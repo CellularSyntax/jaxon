@@ -213,6 +213,57 @@ def _panel_block_waterfall(gs_cell, fig, blk: dict | None,
     return ax
 
 
+# ── AP-collision waterfall (two APs annihilate at mid-fibre) ──────────────────
+
+def _panel_collision_waterfall(gs_cell, fig, coll: dict | None,
+                               v_rest: float = V_REST,
+                               stride: int = 2) -> plt.Axes:
+    """Node-vs-time waterfall: APs launched from both ends propagate inward and
+    annihilate at the middle (they do not cross).  Single representative
+    diameter."""
+    ax = fig.add_subplot(gs_cell)
+    wf = (coll or {}).get("waterfall")
+    if wf is None:
+        ax.text(0.5, 0.5, "data missing", ha="center", va="center",
+                transform=ax.transAxes, fontsize=FS_SM, color="#AAAAAA")
+        return ax
+
+    t_jax  = np.array(wf["jax_t_ms"]); t_pf = np.array(wf["pf_t_ms"])
+    vm_jax = np.array(wf["jax_vm_nodes"]); vm_pf = np.array(wf["pf_vm_nodes"])
+    pos    = np.array(wf["node_pos_mm"])
+    t_max  = float(coll.get("tstop_ms", t_jax[-1]))
+
+    jm = t_jax <= t_max; pm = t_pf <= t_max
+    t_jax, vm_jax = t_jax[jm], vm_jax[jm]
+    t_pf,  vm_pf  = t_pf[pm],  vm_pf[pm]
+
+    plot_idx     = list(range(0, len(pos), stride))
+    plot_spacing = (pos[-1] - pos[0]) / max(len(plot_idx) - 1, 1)
+    y_scale      = plot_spacing * 0.5 / (40.0 - v_rest)
+
+    for i in plot_idx:
+        y_off = pos[i]
+        ax.plot(t_pf,  y_off + (vm_pf[:,  i] - v_rest) * y_scale, color=C_PF,
+                lw=0.6, alpha=0.9, label="PyFibers" if i == 0 else None)
+        ax.plot(t_jax, y_off + (vm_jax[:, i] - v_rest) * y_scale, color=C_JAX,
+                lw=0.6, ls="--", alpha=0.9, label="JAXON" if i == 0 else None)
+
+    # Init arrows at both ends (APs launched inward).
+    stim_t = float(coll.get("delay_ms", 0.1))
+    for y_end in (pos[0], pos[-1]):
+        ax.annotate("", xy=(stim_t, y_end), xytext=(stim_t - t_max * 0.06, y_end),
+                    arrowprops=dict(arrowstyle="-|>", color="black", lw=1.4,
+                                    mutation_scale=11))
+
+    ax.set_xlabel("time (ms)")
+    ax.set_ylabel("position (mm)")
+    ax.set_xlim(0, t_max)
+    ax.set_ylim(pos[0] - plot_spacing * 0.5, pos[-1] + plot_spacing * 0.5)
+    ax.legend(loc="lower right", bbox_to_anchor=(1.0, 1.02),
+              ncol=2, frameon=False, fontsize=FS_SM, borderaxespad=0)
+    return ax
+
+
 # ── Panel b: kHz frequency block (supplementary only) ─────────────────────────
 
 WIN_ON  = 50.0     # ms — block field on  (shaded band)
@@ -386,13 +437,13 @@ def _sub_heading(fig, x, y, letter, title) -> None:
 
 
 def main() -> int:
-    # 2x2 model super-grid; each quadrant holds 3 phenomenon columns
-    # (AP propagation | DC block | AP collision).  Wide landscape.
-    FIG_W, FIG_H = 22.0, 10.5
+    # 2x2 model super-grid; each quadrant holds 3 phenomenon columns, all
+    # node-vs-time waterfalls (AP propagation | DC block | AP collision).
+    FIG_W, FIG_H = 18.0, 9.0
     fig = plt.figure(figsize=(FIG_W, FIG_H))
 
     outer = gridspec.GridSpec(2, 2, figure=fig,
-                              left=0.045, right=0.99, bottom=0.06, top=0.90,
+                              left=0.05, right=0.99, bottom=0.07, top=0.90,
                               wspace=0.16, hspace=0.34)
 
     for i, m in enumerate(MODELS):
@@ -401,13 +452,14 @@ def main() -> int:
 
         inner = gridspec.GridSpecFromSubplotSpec(
             1, 3, subplot_spec=outer[r, c],
-            width_ratios=[1.1, 1.0, 1.35], wspace=0.42,
+            width_ratios=[1.0, 1.0, 1.0], wspace=0.40,
         )
         _panel_a(inner[0, 0], fig, dc_data,
                  v_rest=m["v_rest"], t_max=m["t_max"], stride=m["stride"])
         _panel_block_waterfall(inner[0, 1], fig, blk_data,
                                v_rest=m["v_rest"], stride=m["stride"])
-        _panel_c(inner[0, 2], fig, coll_data, v_rest=m["v_rest"])
+        _panel_collision_waterfall(inner[0, 2], fig, coll_data,
+                                   v_rest=m["v_rest"], stride=m["stride"])
 
         # Per-phenomenon headings, positioned from each sub-cell.
         for j, (lett, title) in enumerate([

@@ -68,6 +68,7 @@ EL     = -80.01   # mV
 ENA    = 35.64    # mV
 
 DIAMETERS    = [5.7, 8.7, 10.0, 14.0]   # µm — myelinated A-fiber range
+REP_DIAM_UM  = 10.0                       # representative diameter for the main-figure waterfall
 PULSE_AMP_NA = 2.0                       # nA
 PULSE_PW_MS  = 0.1                       # ms
 SNAPSHOT_TS  = [0.125, 0.5, 1.0, 1.5, 2.0]   # ms after pulse onset
@@ -167,6 +168,12 @@ def _run_one_diameter(D: float) -> dict:
         "snapshot_t_ms":      SNAPSHOT_TS,
         "vm_peak_mV":         float(Vm_all.max()),
         "vm_peak_pf_mV":      float(vm_pf.max()),
+        # Full node-vs-time waterfall (for the main-figure collision panel).
+        "node_pos_mm":        centers[nodes] / 1000.0,
+        "jax_wf":             Vm_all[:, nodes],
+        "pf_wf":              vm_pf.T,
+        "t_jax":              (np.arange(N_STEPS) + 1) * DT,
+        "t_pf":               t_pf,
     }
 
 
@@ -209,6 +216,17 @@ def main():
     print(f"=== AP collision — Sweeney A-fiber ===")
     results = [_run_one_diameter(D) for D in DIAMETERS]
 
+    _rep = next((r for r in results
+                 if abs(r["diameter_um"] - REP_DIAM_UM) < 1e-6), results[-1])
+    waterfall = {
+        "diameter_um":  _rep["diameter_um"],
+        "node_pos_mm":  _rep["node_pos_mm"].tolist(),
+        "jax_t_ms":     _rep["t_jax"].tolist(),
+        "jax_vm_nodes": _rep["jax_wf"].tolist(),
+        "pf_t_ms":      _rep["t_pf"].tolist(),
+        "pf_vm_nodes":  _rep["pf_wf"].tolist(),
+    }
+
     save_json({
         "diameters_um":   DIAMETERS,
         "snapshot_t_ms":  SNAPSHOT_TS,
@@ -219,6 +237,7 @@ def main():
         "tstop_ms":       TSTOP,
         "n_nodes":        N_NODES,
         "celsius":        CELSIUS,
+        "waterfall":      waterfall,
         "results": [
             {
                 "diameter_um":            r["diameter_um"],

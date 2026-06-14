@@ -517,11 +517,14 @@ def _metric_bar(ax: plt.Axes, rows: list[dict], field: str, ylabel: str,
 
 def _paired_metric(ax, nerves: list[dict], dkey: str, tkey: str,
                    ylabel: str, scale: float = 1.0,
-                   ylim: tuple | None = None) -> None:
+                   ylim: tuple | None = None,
+                   pvals: dict | None = None) -> None:
     """Per species, two bars (dense vs sparse-transfer): bar = mean, symmetric
     error = SEM (centred on the bar top), with a per-nerve strip.  Dense = solid
-    fill, transfer = hatched."""
+    fill, transfer = hatched.  Optional Holm-adjusted p per species drawn as a
+    bracket above each pair."""
     rng = np.random.default_rng(0)
+    data_top = {"swine": 0.0, "human": 0.0}
     for xi, sp in enumerate(["swine", "human"]):
         col = PALETTE[sp]
         for which, key, dx, hatch, alpha in [
@@ -534,6 +537,7 @@ def _paired_metric(ax, nerves: list[dict], dkey: str, tkey: str,
                 continue
             mean = float(np.mean(vals))
             sem = float(np.std(vals, ddof=1) / np.sqrt(vals.size)) if vals.size > 1 else 0.0
+            data_top[sp] = max(data_top[sp], float(vals.max()), mean + sem)
             ax.bar(xi + dx, mean, width=0.34, color=col, alpha=alpha,
                    edgecolor=col if hatch else "none", linewidth=0.5,
                    hatch=hatch, zorder=2)
@@ -550,6 +554,24 @@ def _paired_metric(ax, nerves: list[dict], dkey: str, tkey: str,
     ax.tick_params(labelsize=FS_SM)
     if ylim is not None:
         ax.set_ylim(*ylim)
+
+    # significance brackets (dense vs sparse, per species)
+    if pvals:
+        y0, y1 = ax.get_ylim()
+        span = y1 - y0
+        need_top = y1
+        for xi, sp in enumerate(["swine", "human"]):
+            p = pvals.get(sp)
+            if p is None or not np.isfinite(p):
+                continue
+            yb = data_top[sp] + 0.07 * span
+            ax.plot([xi - 0.20, xi - 0.20, xi + 0.20, xi + 0.20],
+                    [yb - 0.025 * span, yb, yb, yb - 0.025 * span],
+                    color="#444444", lw=0.8, zorder=6)
+            ax.text(xi, yb + 0.01 * span, _pfmt(p), ha="center", va="bottom",
+                    fontsize=FS_SM - 1, color="#222222", zorder=6)
+            need_top = max(need_top, yb + 0.13 * span)
+        ax.set_ylim(y0, need_top)
 
 
 def _panel_b(gs, fig, pairs: list[dict]) -> plt.Axes:
@@ -578,20 +600,40 @@ def _panel_b(gs, fig, pairs: list[dict]) -> plt.Axes:
     ax_off = fig.add_subplot(gs_inner[1, 0])
     ax_cur = fig.add_subplot(gs_inner[1, 1])
 
-    _paired_metric(ax_si,  nerves, "dense_si",  "trans_si",  "SI", ylim=(0, 1.10))
-    _paired_metric(ax_on,  nerves, "dense_tgt", "trans_tgt", "on-target (%)",
-                   scale=100.0, ylim=(0, 110))
-    _paired_metric(ax_off, nerves, "dense_off", "trans_off", "off-target (%)",
-                   scale=100.0)
-    _paired_metric(ax_cur, nerves, "dense_cur", "trans_cur", "total current (mA)")
+    metrics = [
+        (ax_si,  "dense_si",  "trans_si",  "SI",                 1.0,   (0, 1.10)),
+        (ax_on,  "dense_tgt", "trans_tgt", "on-target (%)",      100.0, (0, 110)),
+        (ax_off, "dense_off", "trans_off", "off-target (%)",     100.0, None),
+        (ax_cur, "dense_cur", "trans_cur", "total current (mA)", 1.0,   None),
+    ]
+
+    # paired dense-vs-sparse Wilcoxon per (metric × species), Holm across the 8.
+    cells, raw = [], []
+    for mi, (_, dk, tk, *_rest) in enumerate(metrics):
+        for sp in ("swine", "human"):
+            d = np.array([n[dk] for n in nerves if n["species"] == sp
+                          and np.isfinite(n[dk]) and np.isfinite(n[tk])])
+            t = np.array([n[tk] for n in nerves if n["species"] == sp
+                          and np.isfinite(n[dk]) and np.isfinite(n[tk])])
+            try:
+                p = stats.wilcoxon(d, t, alternative="two-sided").pvalue \
+                    if d.size >= 6 else np.nan
+            except ValueError:        # all-zero differences
+                p = np.nan
+            cells.append((mi, sp)); raw.append(p)
+    padj = {c: a for c, a in zip(cells, _holm(raw))}
+
+    for mi, (ax, dk, tk, ylabel, scale, ylim) in enumerate(metrics):
+        _paired_metric(ax, nerves, dk, tk, ylabel, scale=scale, ylim=ylim,
+                       pvals={sp: padj[(mi, sp)] for sp in ("swine", "human")})
 
     leg = [mpatches.Patch(facecolor=PALETTE["grey"], alpha=0.45, edgecolor="none",
                           label="dense"),
            mpatches.Patch(facecolor="white", alpha=1.0, edgecolor=PALETTE["grey"],
                           hatch="////", label="sparse")]
-    ax_off.legend(handles=leg, frameon=False, fontsize=FS_SM - 1,
-                  loc="upper center", handlelength=1.0, ncol=2, columnspacing=0.8,
-                  borderpad=0.0)
+    ax_on.legend(handles=leg, frameon=False, fontsize=FS_SM - 1,
+                 loc="lower right", bbox_to_anchor=(1.02, 1.04), ncol=2,
+                 columnspacing=0.8, handlelength=1.0, borderpad=0.0)
     return ax_si
 
 

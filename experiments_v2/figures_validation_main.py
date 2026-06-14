@@ -21,7 +21,6 @@ import numpy as np
 import matplotlib as mpl
 import matplotlib.gridspec as gridspec
 import matplotlib.lines as mlines
-import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 
 ROOT    = Path(__file__).resolve().parent.parent
@@ -130,57 +129,6 @@ def _pulse_icon_xy(kind: str):
     if kind == "gaussian":          # gaussian cathodic bump
         return t, -np.exp(-((t - 0.50) / 0.09) ** 2)
     return t, z
-
-
-def _cyl_gradient(color, n: int = 256, hi: float = 0.35):
-    """Vertical brightness gradient (top->bottom row order) that gives a
-    horizontal cylinder its rounded-surface sheen: a highlight in the upper
-    third fading to shade at the top and (more) bottom edges."""
-    base = np.array(mpl.colors.to_rgb(color))
-    v = np.linspace(1.0, -1.0, n)                       # +1 top .. -1 bottom
-    f = (1.0 - np.clip(np.abs(v - hi) / 1.35, 0.0, 1.0))[:, None]
-    light = base[None, :] + (1.0 - base[None, :]) * np.clip((f - 0.5) * 2.0, 0, 1) * 0.75
-    dark  = base[None, :] * (0.42 + 0.58 * np.clip(f * 2.0, 0, 1))
-    return np.where(f >= 0.5, light, dark).reshape(n, 1, 3)
-
-
-def _draw_cylinder(ax, color, x0, x1, r, border="#3a3a3a", ex=None):
-    """Draw one horizontal, 3D-stylised cylinder spanning x0..x1 at height
-    +/-r (data coords).  Caller sets the inset axis limits / turns it off."""
-    if ex is None:
-        ex = min(0.055, (x1 - x0) * 0.16)               # end-ellipse half-width
-    crgb = np.array(mpl.colors.to_rgb(color))
-    # receding back rim (left)
-    ax.add_patch(mpatches.Ellipse((x0, 0), 2 * ex, 2 * r, facecolor=tuple(crgb * 0.55),
-                                  edgecolor=border, lw=0.4, zorder=1))
-    # curved body with vertical sheen
-    ax.imshow(_cyl_gradient(color), extent=(x0, x1, -r, r), aspect="auto",
-              interpolation="bilinear", zorder=2)
-    # top / bottom silhouette
-    ax.plot([x0, x1], [r, r],  color=border, lw=0.45, zorder=3, solid_capstyle="butt")
-    ax.plot([x0, x1], [-r, -r], color=border, lw=0.45, zorder=3, solid_capstyle="butt")
-    # front circular face (right)
-    ax.add_patch(mpatches.Ellipse((x1, 0), 2 * ex, 2 * r,
-                                  facecolor=tuple(crgb + (1 - crgb) * 0.22),
-                                  edgecolor=border, lw=0.4, zorder=4))
-
-
-def _draw_axon_glyph(ax, color, r: float = 0.6, myelinated: bool = False,
-                     border: str = "#3a3a3a"):
-    """Small horizontal axon icon drawn from 3D cylinders.  Myelinated =
-    cylindrical internodes separated by node-of-Ranvier gaps over a thin
-    core; unmyelinated = one cylinder.  ``r`` is the half-thickness."""
-    ax.set_xlim(-0.02, 1.02)
-    ax.set_ylim(-1.08, 1.08)
-    ax.axis("off")
-    if myelinated:
-        cr = np.array(mpl.colors.to_rgb(color)) * 0.6
-        ax.plot([0.04, 0.96], [0, 0], color=tuple(cr), lw=1.6,
-                solid_capstyle="butt", zorder=0)
-        for x0, x1 in [(0.05, 0.32), (0.385, 0.655), (0.72, 0.95)]:
-            _draw_cylinder(ax, color, x0, x1, r, border=border, ex=0.028)
-    else:
-        _draw_cylinder(ax, color, 0.05, 0.95, r, border=border)
 
 
 # ── Data helpers ──────────────────────────────────────────────────────────────
@@ -565,21 +513,6 @@ def _panel_c(gs_cell, fig, rows: list[dict]) -> plt.Axes:
     ax_dia.set_xlim(-0.6, len(DIAM_BINS) - 0.4)
     ax_dia.set_yscale("log")
     ax_dia.tick_params(axis="x", length=0)
-
-    # Headroom + axon-thickness glyph over each diameter box (thin -> thick).
-    _dlo, _dhi = ax_dia.get_ylim()
-    ax_dia.set_ylim(_dlo, _dhi * 4.5)
-    _dxspan = (len(DIAM_BINS) - 0.4) - (-0.6)
-    _dwf    = 0.74 / _dxspan
-    _nb     = len(DIAM_BINS)
-    for xi in range(_nb):
-        xf = (xi - (-0.6)) / _dxspan
-        ic = ax_dia.inset_axes([xf - _dwf / 2, 0.83, _dwf, 0.15])
-        ic.set_xlim(-0.02, 1.02)
-        ic.set_ylim(-1.08, 1.08)
-        ic.axis("off")
-        r = 0.30 + 0.62 * (xi / max(_nb - 1, 1))      # thin -> thick
-        _draw_cylinder(ic, dia_colors[xi], 0.10, 0.82, r)
     return ax_sc
 
 
@@ -588,9 +521,9 @@ def _panel_d(gs_cell, fig) -> plt.Axes:
     gs_in = gridspec.GridSpecFromSubplotSpec(1, 2, subplot_spec=gs_cell, wspace=0.45)
     ax_a  = fig.add_subplot(gs_in[0])
     ax_c  = fig.add_subplot(gs_in[1])
-    for models, ax, title, myel in [
-        (["MRG", "Sweeney"], ax_a, "A-fibres", True),
-        (["Sundt", "Rattay"], ax_c, "C-fibres", False),
+    for models, ax, title in [
+        (["MRG", "Sweeney"], ax_a, "A-fibres"),
+        (["Sundt", "Rattay"], ax_c, "C-fibres"),
     ]:
         all_diams = []
         for m in models:
@@ -617,9 +550,6 @@ def _panel_d(gs_cell, fig) -> plt.Axes:
         ax.text(0.04, 0.96, title, transform=ax.transAxes,
                 ha="left", va="top", fontsize=FS_SM,
                 color=PALETTE["grey"], weight="semibold")
-        # Myelinated (A) vs unmyelinated (C) axon glyph, upper-left.
-        gic = ax.inset_axes([0.06, 0.77, 0.20, 0.14])
-        _draw_axon_glyph(gic, PALETTE["grey"], r=0.6, myelinated=myel)
         ax.set_xlabel(r"fibre diameter (µm)")
         ax.set_ylabel("CV (m/s)")
         ax.set_ylim(bottom=0)

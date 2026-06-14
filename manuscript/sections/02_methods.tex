@@ -64,21 +64,18 @@ lower memory than the full trace.  For $N$ fibers under the same
 electrode, the per-fiber static parameters are stacked and a single
 \texttt{jax.vmap} call compiles to one $N$-way XLA kernel, eliminating
 the per-fiber Python overhead that dominates NEURON pipelines and
-driving the throughput gain (Section~\ref{sec:results-scaling}).  At
-$\Delta t = 5\,\mu\mathrm{s}$ the MRG threshold agreement with NEURON
-has median $0.04\,\%$ and peak $0.39\,\%$ relative error over all 432
-configurations (Table~\ref{tab:validation-sd}).
+driving the throughput gain (Section~\ref{sec:results-scaling}).  We
+integrate at $\Delta t = 5\,\mu\mathrm{s}$.
 
 \subsection{Selectivity optimization}
 \label{sec:methods-opt}
 
 \paragraph{Loss function.}
-For each fiber $f$, let $a_f \in [0,1]$ denote a differentiable
-activation proxy computed as the minimum of $\max_t
-\mathbf{m}_{\mathrm{Na}}(t)$ at the two terminal compartments of the
-fiber---a quantity that is near 1 if the fiber fires and the action
-potential propagates to both ends, and near 0 otherwise.  We use the
-weighted quality (WQ) loss
+For each fiber $f$, the differentiable activation proxy
+$a_f \in [0,1]$ is the minimum of $\max_t \mathbf{m}_{\mathrm{Na}}(t)$
+at the two terminal compartments --- near 1 when an action potential
+propagates to both ends, near 0 otherwise.  We use the weighted
+quality (WQ) loss
 \begin{equation}
   L_{\mathrm{WQ}} = \sum_f w_f \left[ y_f (1 - a_f) + (1 - y_f) a_f \right]
                  + \lambda \cdot \frac{1}{K} \sum_k I_k^2,
@@ -89,9 +86,6 @@ where $y_f \in \{0,1\}$ is the target/off-target indicator
 Section~\ref{sec:methods-duke}), $w_f$ are per-fiber weights, and the
 second term is an optional amplitude-energy regularizer; we set
 $\lambda = 0$ for all results reported here.
-The activation proxy can be optionally softened with a per-node
-sigmoid of temperature $\tau$ to widen the gradient-informative
-window at saturation.
 
 \paragraph{Amplitude optimization.}
 For rectangular biphasic pulses the design variable is the per-contact
@@ -139,61 +133,22 @@ giving a per-contact extracellular lead field $V_e^{(k)}$
 (full construction, conductivities and the optimizer defaults in the
 Supplementary Material).
 
-\paragraph{Fiber sampling.}
-$1\,000$ straight axial fiber trajectories per nerve are seeded by
-rejection sampling inside the fascicles in proportion to fascicle
-cross-sectional area, extruded along the nerve axis at $200\,\mu
-\mathrm{m}$ steps.  The lead fields $V_e^{(k)}$ are sampled at every
-MRG compartment of every fiber and exported as a per-fiber tensor
-${V_e^{(k)}}_{f,n}$, which the optimizer superposes linearly with the
-per-contact amplitudes $a_k(t)$ to obtain the total extracellular
-potential at each compartment.  Off-mesh sample points (well
-under $3\,\%$ of points, occurring near fascicle ends) are filled by
-axial interpolation along the fiber.  We refer the reader
-to~\cite{haberbusch2026golgi} for the full pipeline including
-benchmarks, mesh-convergence tests, and the geometry-rendering and
-volume-field-export utilities used to validate every sample by visual
-inspection prior to inclusion in the cohort.
-
-\paragraph{Target and off-target selection.}
-Rather than an arbitrary divider line, the target/off-target labeling
-$y_f$ in Eq.~(\ref{eq:wq-loss}) is set per nerve by a
-peripheral-fascicle cluster selector that matches what the cuff can
-physically steer.  Fascicles whose centroid lies in the outer
-radial band of the nerve (beyond the $0.32$ radius quantile) form the
-peripheral pool; a $90^\circ$ angular sector --- the angular
-resolution of the cuff's four contact columns --- is then slid around
-the perimeter in $5^\circ$ steps, and every sector containing at least
-$50$ fibers drawn
-from the peripheral pool is a valid target window.  For each nerve we
-select \emph{four} such windows, chosen by farthest-point sampling on
-the circle from a random anchor so that they are spread maximally
-around the cross-section; these four windows are the four ``seeds''
-optimized per nerve.  The peripheral fascicles inside the selected
-sector are labeled target ($y_f = 1$) and all remaining fibers
-off-target ($y_f = 0$).  This produces a single anatomically
-contiguous, cuff-reachable target region per seed --- rather than a
-topologically arbitrary split --- and the four seeds probe four
-distinct target orientations of the same anatomy.  Samples with fewer
-than three fascicles are excluded because the selector cannot form a
-meaningful peripheral cluster.
-
-\paragraph{Cohort composition and FEM-quality gating.}
-Of the $N_{\mathrm{raw}} = 36$ SPARC bundles processed by the pipeline,
-$N_{\mathrm{cohort}} = 29$ nerves (18 swine, 11 human; 116
-target-cluster seeds in total) entered the selectivity study after two
-pre-flight filters: \textbf{(i)} samples with fewer than three
-fascicles were rejected (degenerate target-cluster selector, above);
-\textbf{(ii)} samples
-whose per-channel mean of the per-fiber standard deviation of
-${V_e^{(k)}}_{f,n}$ along $n$ fell below $100\,\mathrm{mV/mA}$ (at the
-$5.7\,\mu\mathrm{m}$ MRG fiber diameter we use throughout) were
-rejected as having insufficient FE-mesh $z$-resolution between
-adjacent contact rows: in such samples the cathode-middle minus
-guard-outer subtraction that defines tripolar field steering
-collapses to zero and the optimizer is unable to obtain selective
-activation regardless of which spatial pattern it explores.  The
-quality metric and threshold are defined in the released code.
+\paragraph{Fiber sampling, target selection and cohort gating.}
+$1\,000$ straight axial fibers per nerve are seeded by area-weighted
+rejection sampling inside the fascicles and the lead fields
+$V_e^{(k)}$ sampled at every MRG compartment, giving a per-fiber tensor
+${V_e^{(k)}}_{f,n}$ that the optimizer superposes linearly with the
+amplitudes.  The target/off-target labels $y_f$ in
+Eq.~(\ref{eq:wq-loss}) are set per nerve by a peripheral-cluster
+selector that matches what the cuff can steer: a $90^\circ$ sector (the
+cuff's angular resolution) is slid around the perimeter, and four
+maximally-separated sectors carrying $\ge\!50$ peripheral fibers each
+become the four target ``seeds'' optimized per nerve, with the
+enclosed fascicles labeled target.  Of $36$ SPARC bundles processed,
+$29$ nerves (18 swine, 11 human; 116 seeds) entered the study; the rest
+were rejected for having $<\!3$ fascicles or insufficient FE-mesh
+$z$-resolution between contact rows (full criteria in the Supplementary
+Material).
 
 \subsection{Validation protocol}
 \label{sec:methods-validation}

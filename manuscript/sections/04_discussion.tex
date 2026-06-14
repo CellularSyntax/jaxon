@@ -30,58 +30,30 @@ on the full population to expose the penalty
 
 \subsection{Comparison with prior work}
 
-The closest direct comparator is pyfibers~\cite{hussain2024}, which
-established the convention of wrapping NEURON axon models from Python
-and using random-search / FD-gradient optimization for selectivity
-design.  jaxon's contribution relative to pyfibers is twofold:
-(i) the JAX implementation removes the Python-NEURON IPC overhead
-that limits pyfibers throughput and makes vmap-batched parallel-fiber
-forward passes possible on a single GPU; and (ii) the JAX implementation
-admits end-to-end gradient computation, which pyfibers does not.
-The validation results in
-Section~\ref{sec:results-validation} confirm that this re-derivation
-matches NEURON's accuracy on the canonical benchmark suite, so the
-throughput and gradient gains do not come at the cost of model
-fidelity.
+The closest comparator is pyfibers~\cite{hussain2024}, which wraps
+NEURON axon models in Python with random-search / FD-gradient
+optimization.  jaxon's contribution is twofold: it removes the
+Python--NEURON overhead, making vmap-batched GPU forward passes
+possible, and it admits end-to-end gradients that pyfibers lacks ---
+without loss of fidelity (Section~\ref{sec:results-validation}).
+Within the JAX ecosystem, \texttt{jaxley}~\cite{deistler2024} supplies
+the multi-compartment Hodgkin--Huxley machinery but ships only
+canonical CNS channels; jaxon adds the peripheral specialization --- the
+coupled $(V_i, V_{\mathrm{px}})$ MRG solver, the calibrated Sweeney,
+Sundt and Rattay models, the NEURON-validation harness and the
+selectivity pipeline.
 
-The wider differentiable-simulation context for jaxon spans both
-the JAX-ecosystem frameworks
-\texttt{jaxley}~\cite{deistler2024} and
-\texttt{JAX MD}~\cite{schoenholz2020jaxmd}, and the broader
-autodiff-through-ODE literature initiated by the Neural ODE
-work~\cite{chen2018neuralode}.  \texttt{jaxley} provides the
-underlying multi-compartment HH machinery used by jaxon's solver.  \texttt{jaxley}
-ships canonical CNS Hodgkin--Huxley channels and a generic cable
-solver but does not include the calibrated peripheral nerve fiber
-models that the PNS modeling literature relies on; jaxon's contribution
-within this ecosystem is the peripheral specialization: the coupled
-$(V_i, V_{\mathrm{px}})$ MRG double-cable solver, the calibrated
-Sweeney, Sundt and Rattay fiber models, the validation-against-NEURON
-harness, and the selectivity-optimization pipeline are domain-specific
-and not provided out-of-the-box by \texttt{jaxley}.
-
-GPU-accelerated multi-compartment neuron simulation has a separate
-prior literature outside the autodiff context.
-\texttt{NeuroGPU}~\cite{benshalom2022neurogpu} ports NEURON
-biophysical models to CUDA and reports up to $200\times$ speedup over
-NEURON-MPI on a single GPU, and
-\texttt{Brian2GeNN}~\cite{stimberg2020brian2genn} accelerates Brian
-spiking-network simulations via the GeNN code generator with
-comparable throughput gains.  Crucially, however, none of these
-GPU simulators models \emph{extracellular} field stimulation, which is
-the regime relevant to cuff-electrode neuromodulation: \texttt{NeuroGPU}
-supports intracellular current injection only,
-\texttt{CoreNEURON}~\cite{kumbhar2019coreneuron} does not implement
-NEURON's \texttt{extracellular} mechanism, and \texttt{Arbor} models
-no extracellular fields --- so CPU-based NEURON has remained the only
-established simulator of extracellular peripheral-fiber stimulation.
-This is why our throughput comparison is against CPU NEURON, and why
-jaxon's GPU-native extracellular forward pass is itself a capability
-gap that the existing GPU simulators do not fill.  These pipelines
-also accelerate only the forward pass and, like pyfibers, expose no
-end-to-end gradients; gradient-based optimization over design
-variables still requires the finite-difference detour the present work
-is designed to obviate.
+Other GPU neuron simulators ---
+\texttt{NeuroGPU}~\cite{benshalom2022neurogpu},
+\texttt{Brian2GeNN}~\cite{stimberg2020brian2genn},
+\texttt{CoreNEURON}~\cite{kumbhar2019coreneuron} and \texttt{Arbor} ---
+accelerate the forward pass but none models \emph{extracellular} field
+stimulation, the regime relevant to cuff electrodes, and none exposes
+end-to-end gradients.  CPU NEURON has thus remained the only
+established simulator of extracellular peripheral-fiber stimulation,
+which is why we benchmark against it and why jaxon's GPU-native,
+differentiable extracellular forward pass is itself a capability gap
+that the existing tools do not fill.
 
 \subsection{Limitations}
 
@@ -141,18 +113,11 @@ block~\cite{kilgore2014block}.
 
 \subsection{Outlook}
 
-The combination of GPU throughput and end-to-end gradients positions
-jaxon for several natural next-step applications:
-(i) fiber-type (diameter-based) selectivity, exploiting the
-differentiable forward model and waveform-shape gradients to recruit
-one diameter population over another;
-(ii) population-averaged designs that marginalise over realistic
-nerve-to-nerve variability via a single batched forward pass;
-(iii) inverse modeling of recorded extracellular field data to
-infer fiber recruitment from cuff-recorded compound action
-potentials~\cite{vissamsetti2025cap}; and
-(iv) closed-loop adaptive stimulation policies trained by
-backpropagation through the forward model.  Each of these would
-require a gradient-free pipeline to perform thousands or millions
-of redundant forward simulations; with jaxon, they reduce to standard
-gradient-based optimization.
+GPU throughput and end-to-end gradients position jaxon for several
+next steps that are intractable for gradient-free pipelines:
+fiber-type (diameter-based) selectivity via waveform-shape gradients;
+population-averaged designs that marginalize over nerve-to-nerve
+variability in a single batched pass; inverse modeling of cuff-recorded
+compound action potentials to infer recruitment~\cite{vissamsetti2025cap};
+and closed-loop stimulation policies trained by backpropagation through
+the forward model.

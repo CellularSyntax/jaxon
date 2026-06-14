@@ -137,33 +137,18 @@ Figure~\ref{fig:validation}\textbf{e} reports the per-model wall time
 and the resulting jaxon-vs-pyfibers speedup;
 Table~\ref{tab:scaling} summarizes the headline numbers.
 
-At small $N$, GPU launch overhead dominates and \texttt{pyfibers}
-on CPU is faster (jaxon takes $0.15$\,s vs.\ \texttt{pyfibers}'s
-$0.05$\,s on $N=1$ MRG).  Throughput then scales sub-linearly with
-$N$ on the GPU because the vmap-batched forward pass amortizes the
-per-step launch cost across all fibers in the batch; the crossover
-at which jaxon overtakes \texttt{pyfibers} is $N \approx 10$ for every
-model tested.  By $N=1\,000$ MRG, jaxon completes in $0.24\,\mathrm{s}$
-vs.\ \texttt{pyfibers}'s $49.3\,\mathrm{s}$ (a $209\times$ wall-time
-reduction); by $N=10\,000$ MRG, $0.78\,\mathrm{s}$ vs.\
-$525\,\mathrm{s}$ ($671\times$); by $N=100\,000$ MRG,
-$9.5\,\mathrm{s}$ vs.\ $5\,172\,\mathrm{s}$ ($544\times$).  Sweeney,
-whose smaller per-fiber state vector fits more efficiently in GPU
-registers, achieves the largest single-model speedup at
-$N=100\,000$: $4.3\,\mathrm{s}$ vs.\ $5\,972\,\mathrm{s}$,
-a factor of $1\,377\times$.  The unmyelinated Sundt and Rattay
-C-fibers, whose longer time courses make \texttt{pyfibers}
-substantially slower per fiber, reach $1\,006\times$ and $929\times$
-speedups respectively at $N=100\,000$ ($16.5$ vs.\
-$16\,593\,\mathrm{s}$ and $15.1$ vs.\ $14\,068\,\mathrm{s}$).
-The geometric mean across all five models at $N=100\,000$ is
-$\sim 820\times$, taking what would have been multiple CPU-hours of
-\texttt{pyfibers} time per forward pass down to under twenty
-seconds of GPU wall time.
-This throughput is what brings the population-scale
-optimize-and-re-score analysis below ---
-$\sim\!1\,000$ fibers per nerve, simulated thousands of times during
-optimization, across 29 anatomies and five sampling levels --- within
+At small $N$, GPU launch overhead dominates and \texttt{pyfibers} on
+CPU is faster, but the vmap-batched forward pass amortizes the per-step
+launch cost across the batch, so jaxon overtakes \texttt{pyfibers} at
+$N \approx 10$ for every model and the advantage grows with $N$
+(Table~\ref{tab:scaling}).  At $N=100\,000$ the speedup reaches
+$544\times$ for MRG, $1\,377\times$ for Sweeney (smaller per-fiber
+state) and ${\sim}1\,000\times$ for the C-fibers, a geometric mean of
+$\sim\!820\times$ --- taking what would be multiple CPU-hours per
+forward pass down to under twenty seconds.  This is what brings the
+population-scale optimize-and-re-score analysis below
+($\sim\!1\,000$ fibers per nerve, simulated thousands of times per
+optimization, across 29 anatomies and five sampling levels) within
 reach on a single GPU-day.
 
 \begin{table}[h]
@@ -206,20 +191,15 @@ from the SPARC quantified morphology releases of
 swine~\cite{pelot2020swineSPARC} and human~\cite{pelot2021humanSPARC},
 with per-contact extracellular lead-fields computed in-house with the
 Golgi pipeline~\cite{haberbusch2026golgi}
-(Section~\ref{sec:methods-duke}).  The cuff is the 12-contact
-MultiContact array (three axial rows $\times$ four angular
-columns), so the rectangular optimizer searches over $K=12$
-amplitudes per nerve.  Target fascicles were selected by a
-peripheral-cluster selector that picks one contiguous angular
-sector of the nerve perimeter containing the largest
-peripheral-fascicle cluster (by total fiber count), giving every
-nerve a single anatomically contiguous target region.
-Figure~\ref{fig:duke}\textbf{a} shows, for a representative swine and
-human nerve, the fiber activation maps and unrolled 12-contact cuff
-patterns under dense- and sparse-optimized stimulation (the sparse
-condition is defined in Section~\ref{sec:results-sparse}); fibers are
-colored by post-optimization activation status
-(target/off-target $\times$ fired/silent).
+(Section~\ref{sec:methods-duke}).  The 12-contact MultiContact cuff
+(three axial rows $\times$ four angular columns) gives the rectangular
+optimizer $K=12$ amplitudes per nerve; the target is the peripheral
+fascicle cluster within one contiguous angular sector
+(Section~\ref{sec:methods-duke}).  Figure~\ref{fig:duke}\textbf{a}
+shows dense- and sparse-optimized activation maps and cuff patterns for
+a representative swine and human nerve (the sparse condition is defined
+in Section~\ref{sec:results-sparse}), fibers colored by activation
+status (target/off-target $\times$ fired/silent).
 
 \paragraph{Dense optimization recovers focal, selective drive.}
 The rectangular optimizer uses a probe-based smart initialization
@@ -293,15 +273,13 @@ tripolar configurations that the selectivity literature arrives at by
 design.
 
 \paragraph{Geometric-ceiling cases.}
-The cohort separates into anatomies the cuff can steer and a minority
-it cannot.  Geometric-ceiling cases have a target-to-off-target
-minimum-distance ratio close to unity --- the off-target fascicles sit
-as close to the contacts as the target --- so no per-contact
-configuration has a spatial gradient to exploit, and the optimizer
-either co-activates off-target fascicles or fails to reach threshold.
-Four of the $116$ seeds (all human) fall below $\mathrm{SI} = 0.5$ and
-are excluded from the dense-versus-sparse comparison below as they
-provide no valid selectivity ceiling.
+A minority of anatomies cannot be steered at all: when off-target
+fascicles sit as close to the contacts as the target
+(minimum-distance ratio near unity), no per-contact configuration has a
+gradient to exploit and the optimizer either co-activates off-target
+fascicles or fails to reach threshold.  Four of the $116$ seeds (all
+human) fall below $\mathrm{SI} = 0.5$ and are excluded from the
+dense-versus-sparse comparison as invalid ceilings.
 
 \begin{figure}[h]
   \centering

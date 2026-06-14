@@ -49,31 +49,22 @@ simulating the full fiber population under the very fields the reduced
 model selects.
 
 Recent work in differentiable simulation suggests an alternative.
-Frameworks such as \texttt{jaxley}~\cite{deistler2024} have shown that
-the Hodgkin--Huxley membrane equations and multi-compartment cable
-dynamics can be expressed in JAX~\cite{jax2018} so that gradients
-of arbitrary scalar functions of the membrane trajectory are
-available via reverse-mode automatic differentiation, all within a
-single GPU-vectorized forward pass.  In the central nervous system
-context, this has enabled gradient-based inference of channel
-densities and morphological parameters at unprecedented scale.
-For peripheral nerve fiber models, however, the differentiable
-implementation does not yet exist: the MRG double-cable model
-requires a coupled $(V_i, V_{\mathrm{px}})$ backward-Euler integration
-that is not provided out-of-the-box, the other models (the myelinated
-Sweeney and the unmyelinated Sundt and Rattay) each carry
-calibration-sensitive constants that must match NEURON's analytic
-solver to benchmarking accuracy~\cite{musselman2023}, and selectivity
-optimization requires a batched-fiber forward solver that vectorizes
-across large fiber populations on a single device.  Building the differentiable peripheral nerve
-forward solver therefore reduces to three engineering questions:
-(i) can the coupled MRG cable equations be expressed in JAX with
-sufficient numerical accuracy that the resulting simulator passes the
-same NEURON-comparison validation suite that ASCENT and pyfibers use;
-(ii) is the resulting solver competitive with NEURON on throughput
-when batched across large fiber populations; and (iii) does the
-differentiability enable selectivity optimization strategies that
-the gradient-free pipelines cannot perform?
+Frameworks such as \texttt{jaxley}~\cite{deistler2024} express the
+Hodgkin--Huxley membrane equations and multi-compartment cable
+dynamics in JAX~\cite{jax2018}, so that gradients of arbitrary
+functions of the membrane trajectory are available by reverse-mode
+automatic differentiation within a single GPU-vectorized forward pass
+--- enabling, in the central nervous system, gradient-based inference
+at unprecedented scale.  No such differentiable implementation yet
+exists for peripheral nerve fiber models: the MRG double cable needs a
+coupled $(V_i, V_{\mathrm{px}})$ backward-Euler integration not
+provided out-of-the-box, the Sweeney, Sundt and Rattay models carry
+calibration-sensitive constants that must match NEURON to benchmarking
+accuracy~\cite{musselman2023}, and selectivity optimization needs a
+batched forward solver that vectorizes across large fiber populations
+on one device.  We build that solver and use it to interrogate a
+modeling assumption that population-scale simulation finally makes
+testable.
 
 In this paper we use population-scale differentiable simulation to ask
 whether the reduced-order fiber sampling that keeps selectivity models
@@ -113,7 +104,3 @@ contributions are:
         (Section~\ref{sec:results-duke}).
 \end{enumerate}
 
-We discuss the limits of the current implementation, including the
-anatomical-ceiling cases encountered on the Duke microCT cohort where
-the cuff cannot reach the assigned target fascicle at any amplitude
-(Section~\ref{sec:discussion}).

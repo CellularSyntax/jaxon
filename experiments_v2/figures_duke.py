@@ -23,35 +23,49 @@ import matplotlib.pyplot as plt
 # ── Style (matches figures_validation.py) ───────────────────────────────────
 
 PALETTE = {
-    "rect":     "#0072B2",   # blue   — probe-based smart-init Adam-FD
-    "l1":       "#D55E00",   # orange — random-init L1-discovery
-    "wave":     "#009E73",   # green  — waveform autodiff
-    "swine":    "#CC79A7",   # pink   — used for species marker styling
-    "human":    "#56B4E9",   # sky-blue
-    "grey":     "#3B3B3B",
+    "rect":     "#2166AC",   # muted dark blue — probe Adam-FD
+    "swine":    "#D6604D",   # muted terracotta — swine species
+    "human":    "#4393C3",   # steel blue — human species
+    "grey":     "#555555",   # soft dark grey
+    "lgrey":    "#AAAAAA",   # light grey for guides / decorations
 }
 
+# NM font sizes (points)
+FS     = 7    # body / tick labels
+FS_SM  = 6    # minor annotations
+FS_AX  = 7    # axis labels
+FS_TTL = 7    # panel titles / headings
+
 mpl.rcParams.update({
-    "font.family":        "sans-serif",
-    "font.sans-serif":    ["Arial", "Helvetica", "Liberation Sans",
-                            "DejaVu Sans"],
-    "font.size":          14,
-    "axes.labelsize":     16,
-    "axes.titlesize":     16,
-    "xtick.labelsize":    13,
-    "ytick.labelsize":    13,
-    "legend.fontsize":    12,
-    "axes.linewidth":     1.4,
-    "xtick.major.width":  1.4,
-    "ytick.major.width":  1.4,
-    "xtick.major.size":   5.0,
-    "ytick.major.size":   5.0,
-    "axes.spines.top":    False,
-    "axes.spines.right":  False,
-    "axes.grid":          False,
-    "savefig.dpi":        300,
-    "savefig.bbox":       "tight",
-    "figure.facecolor":   "white",
+    "font.family":           "sans-serif",
+    "font.sans-serif":       ["Arial", "Helvetica", "Liberation Sans",
+                               "DejaVu Sans"],
+    "font.size":             FS,
+    "axes.labelsize":        FS_AX,
+    "axes.titlesize":        FS_TTL,
+    "xtick.labelsize":       FS,
+    "ytick.labelsize":       FS,
+    "legend.fontsize":       FS,
+    "axes.linewidth":        0.5,
+    "xtick.major.width":     0.5,
+    "ytick.major.width":     0.5,
+    "xtick.minor.width":     0.35,
+    "ytick.minor.width":     0.35,
+    "xtick.major.size":      2.5,
+    "ytick.major.size":      2.5,
+    "xtick.minor.size":      1.2,
+    "ytick.minor.size":      1.2,
+    "lines.linewidth":       0.8,
+    "patch.linewidth":       0.5,
+    "axes.spines.top":       False,
+    "axes.spines.right":     False,
+    "axes.grid":             False,
+    "savefig.dpi":           600,
+    "savefig.bbox":          "tight",
+    "figure.facecolor":      "white",
+    "axes.facecolor":        "white",
+    "pdf.fonttype":          42,
+    "svg.fonttype":          "none",
 })
 
 
@@ -60,9 +74,36 @@ mpl.rcParams.update({
 ROOT     = Path(__file__).resolve().parent.parent
 SWEEP    = ROOT / "outputs" / "duke_sweeps"
 OUT_DIR  = ROOT / "manuscript" / "figures" / "duke"
-OUT_DIR.mkdir(parents=True, exist_ok=True)
+PNG_DIR  = OUT_DIR / "png"
+SVG_DIR  = OUT_DIR / "svg"
+for _d in (OUT_DIR, PNG_DIR, SVG_DIR):
+    _d.mkdir(parents=True, exist_ok=True)
 
 AGREE_TOL = 0.05
+
+
+def _savefig(fig, name: str) -> list[Path]:
+    """Save fig to both PNG_DIR/<name>.png and SVG_DIR/<name>.svg."""
+    paths = []
+    for d, ext in [(PNG_DIR, ".png"), (SVG_DIR, ".svg")]:
+        p = d / (name + ext)
+        fig.savefig(p)
+        paths.append(p)
+    plt.close(fig)
+    return paths
+
+
+def _savefig_sample(fig, sample_dir: Path, name: str) -> list[Path]:
+    """Save per-sample fig to <sample_dir>/png/ and <sample_dir>/svg/."""
+    paths = []
+    for sub, ext in [("png", ".png"), ("svg", ".svg")]:
+        d = sample_dir / sub
+        d.mkdir(parents=True, exist_ok=True)
+        p = d / (name + ext)
+        fig.savefig(p)
+        paths.append(p)
+    plt.close(fig)
+    return paths
 
 
 # ── Loader ──────────────────────────────────────────────────────────────────
@@ -131,59 +172,46 @@ def _load_rows() -> list[dict]:
 # ── Figure: per-sample triple bar ───────────────────────────────────────────
 
 def _per_sample_bars(ax, rows: list[dict]) -> None:
-    # Sort: swine first, then human; within species by descending rect_si.
     sp_order = {"swine": 0, "human": 1}
     rows = sorted(rows,
                     key=lambda r: (sp_order.get(r["species"], 2),
                                     -r["rect_si"]))
     n = len(rows)
     x = np.arange(n)
-    w = 0.27
-    rect = np.array([r["rect_si"] for r in rows])
-    l1   = np.array([r["l1_si"]   for r in rows])
-    wave = np.array([r["wave_si"] for r in rows])
+    w = 0.6
+    colors = [PALETTE["swine"] if r["species"] == "swine"
+               else PALETTE["human"] for r in rows]
 
-    ax.bar(x - w, rect, width=w, color=PALETTE["rect"], alpha=0.9,
-              edgecolor=PALETTE["grey"], linewidth=0.7,
-              label="probe Adam-FD")
-    ax.bar(x,     l1,   width=w, color=PALETTE["l1"],   alpha=0.9,
-              edgecolor=PALETTE["grey"], linewidth=0.7,
-              label="L1 random init")
-    ax.bar(x + w, wave, width=w, color=PALETTE["wave"], alpha=0.9,
-              edgecolor=PALETTE["grey"], linewidth=0.7,
-              label="waveform Adam")
+    ax.bar(x, [r["rect_si"] for r in rows], width=w,
+              color=colors, alpha=0.85,
+              edgecolor="white", linewidth=0.4)
 
-    # Noise-floor line at SI=0.95
-    ax.axhline(0.95, color=PALETTE["grey"], ls=":", lw=1.2, zorder=0)
+    # Threshold line
+    ax.axhline(0.90, color=PALETTE["lgrey"], ls="--", lw=0.7, zorder=0)
 
-    # Find species boundary (first index where species changes from swine).
-    swine_indices = [i for i, r in enumerate(rows) if r["species"] == "swine"]
-    human_indices = [i for i, r in enumerate(rows) if r["species"] == "human"]
-    if swine_indices:
-        s_lo, s_hi = min(swine_indices) - 0.5, max(swine_indices) + 0.5
-        ax.axvspan(s_lo, s_hi, color=PALETTE["swine"], alpha=0.10,
-                      zorder=0)
-        ax.text((s_lo + s_hi) / 2, 1.04, "swine",
-                  ha="center", va="bottom", fontsize=14,
-                  color=PALETTE["grey"], weight="bold",
-                  transform=ax.get_xaxis_transform())
-    if human_indices:
-        h_lo, h_hi = min(human_indices) - 0.5, max(human_indices) + 0.5
-        ax.axvspan(h_lo, h_hi, color=PALETTE["human"], alpha=0.10,
-                      zorder=0)
-        ax.text((h_lo + h_hi) / 2, 1.04, "human",
-                  ha="center", va="bottom", fontsize=14,
-                  color=PALETTE["grey"], weight="bold",
+    # Subtle species spans + small labels at top of span
+    swine_i = [i for i, r in enumerate(rows) if r["species"] == "swine"]
+    human_i = [i for i, r in enumerate(rows) if r["species"] == "human"]
+    for idx_list, col, label in [
+        (swine_i, PALETTE["swine"], "swine"),
+        (human_i, PALETTE["human"], "human"),
+    ]:
+        if not idx_list:
+            continue
+        lo, hi = min(idx_list) - 0.5, max(idx_list) + 0.5
+        ax.axvspan(lo, hi, color=col, alpha=0.06, zorder=0, linewidth=0)
+        ax.text((lo + hi) / 2, 1.02, label,
+                  ha="center", va="bottom", fontsize=FS_SM,
+                  color=col, weight="semibold",
                   transform=ax.get_xaxis_transform())
 
     ax.set_xticks(x)
     ax.set_xticklabels([_short(r["sample"]) for r in rows],
-                          rotation=30, ha="right")
-    ax.set_ylabel("achievable SI")
-    ax.set_ylim(0, 1.05)
+                          rotation=35, ha="right", fontsize=FS_SM)
+    ax.set_ylabel("selectivity index (SI)")
+    ax.set_ylim(0, 1.08)
     ax.set_xlim(-0.5, n - 0.5)
-    ax.legend(loc="lower center", ncol=3, frameon=False,
-                bbox_to_anchor=(0.5, -0.45))
+    ax.tick_params(axis="x", length=0)
 
 
 # ── Figure: probe-vs-L1 agreement scatter ──────────────────────────────────
@@ -246,8 +274,8 @@ def _box_by_species_method(ax, rows: list[dict]) -> None:
     Box face colour encodes method; scatter markers encode species
     (square = swine, circle = human) to match the agreement scatter in
     the companion panel."""
-    METHODS  = ["rect", "l1", "wave"]
-    METHOD_LABELS = ["probe Adam-FD", "L1 random init", "waveform Adam"]
+    METHODS  = ["rect"]
+    METHOD_LABELS = ["probe Adam-FD"]
     SPECIES  = ["swine", "human"]
     SPECIES_MARKERS = {"swine": "s", "human": "o"}
 
@@ -274,78 +302,66 @@ def _box_by_species_method(ax, rows: list[dict]) -> None:
             method_for_box.append(method)
         centres.append(float(np.mean(cluster_xs)))
 
-    # Boxes (face-coloured by method, edge dark grey)
+    # Boxes — face-coloured by species
     bp = ax.boxplot(
-        groups, positions=positions, widths=box_w * 0.85,
+        groups, positions=positions, widths=box_w * 0.82,
         patch_artist=True, showfliers=False,
-        medianprops=dict(color="black", linewidth=2.0),
-        boxprops=dict(linewidth=1.2),
-        whiskerprops=dict(linewidth=1.2, color=PALETTE["grey"]),
-        capprops=dict(linewidth=1.2, color=PALETTE["grey"]),
+        medianprops=dict(color=PALETTE["grey"], linewidth=1.0),
+        boxprops=dict(linewidth=0.5),
+        whiskerprops=dict(linewidth=0.5, color=PALETTE["lgrey"]),
+        capprops=dict(linewidth=0.5, color=PALETTE["lgrey"]),
     )
-    for patch, method in zip(bp["boxes"], method_for_box):
-        patch.set_facecolor(PALETTE[method])
-        patch.set_alpha(0.35)
-        patch.set_edgecolor(PALETTE["grey"])
+    for patch, sp in zip(bp["boxes"], species_for_box):
+        patch.set_facecolor(PALETTE[sp])
+        patch.set_alpha(0.30)
+        patch.set_edgecolor(PALETTE["lgrey"])
 
-    # Jittered scatter: marker by species, colour by method
+    # Jittered scatter coloured by species
     rng = np.random.default_rng(0)
-    for x, vals, sp, method in zip(positions, groups, species_for_box,
-                                       method_for_box):
+    for x, vals, sp in zip(positions, groups, species_for_box):
         if vals.size == 0:
             continue
-        jitter = rng.uniform(-0.15, 0.15, size=vals.size)
+        jitter = rng.uniform(-0.12, 0.12, size=vals.size)
         ax.scatter(np.full(vals.size, x) + jitter, vals,
-                      s=55, marker=SPECIES_MARKERS[sp],
-                      facecolor=PALETTE[method], edgecolor=PALETTE["grey"],
-                      linewidth=0.8, alpha=0.95, zorder=3)
+                      s=12, marker=SPECIES_MARKERS[sp],
+                      facecolor=PALETTE[sp], edgecolor="white",
+                      linewidth=0.3, alpha=0.90, zorder=3)
 
-    # Noise-floor line at SI=0.95
-    ax.axhline(0.95, color=PALETTE["grey"], ls=":", lw=1.2, zorder=0)
+    ax.axhline(0.90, color=PALETTE["lgrey"], ls="--", lw=0.7, zorder=0)
 
-    # X ticks at cluster centres
     ax.set_xticks(centres)
-    ax.set_xticklabels([f"swine\n($n$=" +
-                            str(sum(1 for r in rows if r["species"] == "swine"))
-                            + ")",
-                          f"human\n($n$=" +
-                            str(sum(1 for r in rows if r["species"] == "human"))
-                            + ")"])
+    n_sw = sum(1 for r in rows if r["species"] == "swine")
+    n_hu = sum(1 for r in rows if r["species"] == "human")
+    ax.set_xticklabels([f"swine\n(n={n_sw})", f"human\n(n={n_hu})"],
+                         fontsize=FS)
 
-    # Method legend (face colours)
-    from matplotlib.patches import Patch
-    method_handles = [Patch(facecolor=PALETTE[m], edgecolor=PALETTE["grey"],
-                                alpha=0.55, label=lab)
-                          for m, lab in zip(METHODS, METHOD_LABELS)]
-    ax.legend(handles=method_handles, loc="lower center", ncol=3,
-                frameon=False, bbox_to_anchor=(0.5, -0.28))
-
-    ax.set_ylabel("achievable SI")
-    ax.set_ylim(0, 1.05)
+    ax.set_ylabel("selectivity index (SI)")
+    ax.set_ylim(0, 1.08)
     ax.set_xlim(positions[0] - box_w, positions[-1] + box_w)
 
 
-def make_species_method_fig(rows: list[dict]) -> Path:
-    fig, ax = plt.subplots(figsize=(7.0, 5.0))
+def make_species_method_fig(rows: list[dict]) -> list[Path]:
+    fig, ax = plt.subplots(figsize=(4.5, 3.8))
     _box_by_species_method(ax, rows)
-    out = OUT_DIR / "fig_duke_si_by_species_method.png"
-    fig.savefig(out); plt.close(fig)
-    return out
+    fig.tight_layout()
+    return _savefig(fig, "fig_duke_si_by_species_method")
 
 
 # ── Figure: bar + strip + error-bar metrics panel ──────────────────────────
 
 def _bar_strip_panel(ax, rows: list[dict], field_template: str,
                        ylabel: str, ylim: tuple[float, float] | None = None,
-                       scaling: float = 1.0, log: bool = False) -> None:
-    """One panel: clusters of three bars per species, with median +
+                       scaling: float = 1.0, log: bool = False,
+                       methods: list[str] | None = None) -> None:
+    """One panel: clusters of bars per species, with median +
     IQR error bars and a jittered strip plot of individual samples.
 
     ``field_template`` is the row key with a method placeholder, e.g.
     ``"{method}_frac_tgt"``.  ``scaling`` multiplies the values (use
     100.0 to convert a [0,1] fraction to a percent).
+    ``methods`` controls which methods are shown (default: all three).
     """
-    METHODS  = ["rect", "l1", "wave"]
+    METHODS  = methods if methods is not None else ["rect"]
     SPECIES  = ["swine", "human"]
     SP_MARK  = {"swine": "s", "human": "o"}
     n_meth   = len(METHODS)
@@ -370,30 +386,28 @@ def _bar_strip_panel(ax, rows: list[dict], field_template: str,
             else:
                 med = q25 = q75 = float("nan")
             ax.bar(x, med, width=bar_w * 0.9,
-                      color=PALETTE[method], alpha=0.45,
-                      edgecolor=PALETTE["grey"], linewidth=1.2,
+                      color=PALETTE[sp], alpha=0.40,
+                      edgecolor="none", linewidth=0,
                       zorder=2)
-            # Error bars (IQR).
             if np.isfinite(med):
                 ax.errorbar(x, med, yerr=[[med - q25], [q75 - med]],
-                              fmt="none", ecolor=PALETTE["grey"],
-                              elinewidth=1.4, capsize=4, capthick=1.4,
+                              fmt="none", ecolor=PALETTE["lgrey"],
+                              elinewidth=0.6, capsize=2, capthick=0.6,
                               zorder=3)
-            # Strip plot.
             if finite.size:
-                jitter = rng.uniform(-0.18, 0.18, size=finite.size)
+                jitter = rng.uniform(-0.14, 0.14, size=finite.size)
                 ax.scatter(np.full(finite.size, x) + jitter, finite,
-                              s=45, marker=SP_MARK[sp],
-                              facecolor=PALETTE[method],
-                              edgecolor=PALETTE["grey"], linewidth=0.8,
-                              alpha=0.95, zorder=4)
+                              s=12, marker=SP_MARK[sp],
+                              facecolor=PALETTE[sp],
+                              edgecolor="white", linewidth=0.3,
+                              alpha=0.90, zorder=4)
         centres.append(float(np.mean(cluster_xs)))
 
+    n_sw = sum(1 for r in rows if r["species"] == "swine")
+    n_hu = sum(1 for r in rows if r["species"] == "human")
     ax.set_xticks(centres)
-    ax.set_xticklabels([
-        f"swine\n($n$=" + str(sum(1 for r in rows if r["species"] == "swine")) + ")",
-        f"human\n($n$=" + str(sum(1 for r in rows if r["species"] == "human")) + ")",
-    ])
+    ax.set_xticklabels([f"swine\n(n={n_sw})", f"human\n(n={n_hu})"],
+                         fontsize=FS)
     ax.set_ylabel(ylabel)
     if ylim is not None:
         ax.set_ylim(*ylim)
@@ -410,8 +424,8 @@ def _bar_strip_panel(ax, rows: list[dict], field_template: str,
     ax.set_xlim(left_edge - pad, right_edge + pad)
 
 
-def make_metrics_fig(rows: list[dict]) -> Path:
-    fig, axes = plt.subplots(2, 2, figsize=(13.0, 9.0))
+def make_metrics_fig(rows: list[dict]) -> list[Path]:
+    fig, axes = plt.subplots(2, 2, figsize=(7.0, 5.5))
     (ax_tgt, ax_off), (ax_loss, ax_time) = axes
 
     _bar_strip_panel(ax_tgt,  rows, "{method}_frac_tgt",
@@ -427,46 +441,115 @@ def make_metrics_fig(rows: list[dict]) -> Path:
                         "wall-clock time (s)",
                         log=True)
 
-    # One shared legend at the bottom (method colours).
-    from matplotlib.patches import Patch
-    handles = [
-        Patch(facecolor=PALETTE["rect"], edgecolor=PALETTE["grey"],
-                alpha=0.55, label="probe Adam-FD"),
-        Patch(facecolor=PALETTE["l1"],   edgecolor=PALETTE["grey"],
-                alpha=0.55, label="L1 random init"),
-        Patch(facecolor=PALETTE["wave"], edgecolor=PALETTE["grey"],
-                alpha=0.55, label="waveform Adam"),
-    ]
-    fig.legend(handles=handles, loc="lower center", ncol=3,
-                  frameon=False, bbox_to_anchor=(0.5, -0.02))
+    fig.tight_layout()
+    return _savefig(fig, "fig_duke_metrics")
 
-    fig.tight_layout(rect=(0, 0.04, 1, 1))
-    out = OUT_DIR / "fig_duke_metrics.png"
-    fig.savefig(out); plt.close(fig)
-    return out
+
+def _violin_panel(ax, rows: list[dict], field_template: str,
+                   ylabel: str, ylim: tuple[float, float] | None = None,
+                   scaling: float = 1.0, log: bool = False) -> None:
+    """Violin + jittered-scatter panel: same layout as _bar_strip_panel
+    but shows full distribution shape.  Falls back to scatter-only when
+    n < 2 (kernel density undefined)."""
+    METHODS  = ["rect"]
+    SPECIES  = ["swine", "human"]
+    SP_MARK  = {"swine": "s", "human": "o"}
+    n_meth   = len(METHODS)
+    viol_w   = 0.5
+    group_w  = n_meth * viol_w + 0.7
+    rng      = np.random.default_rng(0)
+    centres  = []
+
+    for s_idx, sp in enumerate(SPECIES):
+        base = s_idx * group_w
+        cluster_xs = []
+        for m_idx, method in enumerate(METHODS):
+            x = base + (m_idx - (n_meth - 1) / 2.0) * viol_w
+            cluster_xs.append(x)
+            vals = np.array([r[field_template.format(method=method)] * scaling
+                              for r in rows if r["species"] == sp])
+            finite = vals[np.isfinite(vals)]
+            if finite.size >= 2:
+                vp = ax.violinplot([finite], positions=[x],
+                                    widths=viol_w * 0.85,
+                                    showmeans=False, showmedians=True,
+                                    showextrema=True)
+                for body in vp["bodies"]:
+                    body.set_facecolor(PALETTE[sp])
+                    body.set_edgecolor("none")
+                    body.set_alpha(0.30)
+                    body.set_linewidth(0)
+                for part in ("cmedians", "cmaxes", "cmins", "cbars"):
+                    if part in vp:
+                        vp[part].set_color(PALETTE["lgrey"])
+                        vp[part].set_linewidth(0.6)
+            if finite.size >= 1:
+                jitter = rng.uniform(-0.08, 0.08, size=finite.size)
+                ax.scatter(np.full(finite.size, x) + jitter, finite,
+                              s=12, marker=SP_MARK[sp],
+                              facecolor=PALETTE[sp],
+                              edgecolor="white", linewidth=0.3,
+                              alpha=0.90, zorder=5)
+        centres.append(float(np.mean(cluster_xs)))
+
+    n_sw = sum(1 for r in rows if r["species"] == "swine")
+    n_hu = sum(1 for r in rows if r["species"] == "human")
+    ax.set_xticks(centres)
+    ax.set_xticklabels([f"swine\n(n={n_sw})", f"human\n(n={n_hu})"],
+                         fontsize=FS)
+    ax.set_ylabel(ylabel)
+    if ylim is not None:
+        ax.set_ylim(*ylim)
+    if log:
+        ax.set_yscale("log")
+    half_v = 0.5 * viol_w * 0.85
+    left_edge  = 0 - viol_w - half_v
+    right_edge = (len(SPECIES) - 1) * group_w + viol_w + half_v
+    pad = viol_w
+    ax.set_xlim(left_edge - pad, right_edge + pad)
+
+
+def make_metrics_violin_fig(rows: list[dict]) -> list[Path]:
+    fig, axes = plt.subplots(2, 2, figsize=(7.0, 5.5))
+    (ax_tgt, ax_off), (ax_loss, ax_time) = axes
+
+    _violin_panel(ax_tgt,  rows, "{method}_frac_tgt",
+                   "target fibres activated (%)",
+                   ylim=(0, 105), scaling=100.0)
+    _violin_panel(ax_off,  rows, "{method}_frac_off",
+                   "off-target fibres activated (%)",
+                   ylim=(0, 105), scaling=100.0)
+    _violin_panel(ax_loss, rows, "{method}_loss", "final loss")
+    ax_loss.set_ylim(bottom=0)
+    _violin_panel(ax_time, rows, "{method}_time",
+                   "wall-clock time (s)", log=True)
+
+    fig.tight_layout()
+    return _savefig(fig, "fig_duke_metrics_violin")
 
 
 # ── Cross-section gallery ───────────────────────────────────────────────────
 
 DUKE_VES = ROOT / "duke_Ves"
 
-# Fiber-state colours (target / off-target × fired / silent).
-FIB_TGT_FIRED   = "#2E7D32"   # green
-FIB_TGT_SILENT  = "#B7D8B6"   # very light green
-FIB_OFF_FIRED   = "#D55E00"   # vermillion / orange
-FIB_OFF_SILENT  = "#E0E0E0"   # light grey
+# Fiber-state colours (target / off-target × fired / silent) — muted NM palette.
+FIB_TGT_FIRED   = "#1A7340"   # forest green
+FIB_TGT_SILENT  = "#C8E6C9"   # pale green
+FIB_OFF_FIRED   = "#C0392B"   # muted red
+FIB_OFF_SILENT  = "#E8E8E8"   # near-white grey
 
-# Electrode encoding.
-ELEC_CATHODE = "#0072B2"   # blue
-ELEC_ANODE   = "#D55E00"   # orange
+# Electrode encoding — matches _draw_cuff_grid colours.
+ELEC_CATHODE = "#0E7C7B"   # deep teal (distinct from human blue)
+ELEC_ANODE   = "#D97706"   # warm amber (distinct from swine red)
 
 
 def _load_geometry(sample_dir_name: str):
-    """Return (outline_xy, fascicles, contact_xyz_um).
+    """Return (outline_xy, fascicles, contact_xyz_um, patches).
 
     Outline is an (N, 2) array in um.  Fascicles is a list of dicts
     {polygon, id}.  contact_xyz_um is a (K, 3) array of contact
-    positions in um (x, y, z).
+    positions in um (x, y, z).  patches is the raw list of dicts from
+    electrode_config.json (each with R, phi, dphi, z, dz in SI units).
     """
     d = DUKE_VES / sample_dir_name
     nx = json.loads((d / "nerve_xsec.json").read_text())
@@ -475,20 +558,80 @@ def _load_geometry(sample_dir_name: str):
                     polygon=np.asarray(f["polygon_xy_um"], dtype=float))
                 for f in nx["fascicles"]]
     ec = json.loads((d / "electrode_config.json").read_text())
+    patches = ec.get("patches", [])
     # Cylindrical (R [m], phi [rad], z [m]) → Cartesian xyz [um].
     contact_xyz = np.array([
         [p["R"] * np.cos(p["phi"]) * 1e6,
          p["R"] * np.sin(p["phi"]) * 1e6,
          p["z"] * 1e6]
-        for p in ec.get("patches", [])
+        for p in patches
     ], dtype=float)
-    return outline, fascs, contact_xyz
+    return outline, fascs, contact_xyz, patches
+
+
+def _draw_cuff_arcs(ax, patches: list[dict], amps_mA: np.ndarray) -> None:
+    """Draw the cuff electrode in the x-y plane as arc-shaped Wedge patches.
+
+    The cuff centre is at (0, 0) µm (the electrode_config.json coordinate
+    origin).  We draw:
+      - a thin silicone ring (full 360°) at R
+      - one arc contact per unique angular position, coloured by signed
+        amplitude.  When multiple z-levels exist we use the middle row.
+    """
+    from matplotlib.patches import Wedge
+
+    if not patches or amps_mA.size == 0:
+        return
+
+    CONTACT_THICK_UM = 160.0   # radial thickness of each contact patch
+    SILICONE_THICK_UM = 70.0   # thin silicone backing ring
+
+    R_um = float(patches[0]["R"]) * 1e6
+
+    # ── silicone ring ────────────────────────────────────────────────────────
+    ax.add_patch(Wedge(
+        (0.0, 0.0), R_um + SILICONE_THICK_UM, 0.0, 360.0,
+        width=SILICONE_THICK_UM,
+        facecolor="#E8E8E8", edgecolor="#BBBBBB", linewidth=0.35,
+        alpha=0.7, zorder=3,
+    ))
+
+    # ── pick middle z-row ────────────────────────────────────────────────────
+    z_vals = np.array([p["z"] for p in patches])
+    unique_z = np.unique(z_vals)
+    z_mid = unique_z[len(unique_z) // 2]
+    mid_idx = [i for i, p in enumerate(patches) if abs(p["z"] - z_mid) < 1e-9]
+
+    # ── contact arcs ─────────────────────────────────────────────────────────
+    for i in mid_idx:
+        if i >= len(amps_mA):
+            continue
+        p = patches[i]
+        amp = float(amps_mA[i])
+        phi_deg  = float(np.degrees(p["phi"]))
+        dphi_deg = float(np.degrees(p["dphi"]))
+        theta1 = phi_deg - dphi_deg / 2.0
+        theta2 = phi_deg + dphi_deg / 2.0
+        if amp < -1e-9:
+            fc = ELEC_CATHODE
+        elif amp > 1e-9:
+            fc = ELEC_ANODE
+        else:
+            fc = "white"
+        ec = "#1A5276" if amp < -1e-9 else ("#873600" if amp > 1e-9 else "#BBBBBB")
+        ax.add_patch(Wedge(
+            (0.0, 0.0), R_um + CONTACT_THICK_UM,
+            theta1, theta2,
+            width=CONTACT_THICK_UM,
+            facecolor=fc, edgecolor=ec, linewidth=0.35,
+            alpha=0.88, zorder=4,
+        ))
 
 
 def _draw_xsection(ax, sample_dir_name: str, raw: dict,
                      draw_electrodes: bool = True,
                      draw_label: bool = True) -> None:
-    outline, fascs, contact_xyz = _load_geometry(sample_dir_name)
+    outline, fascs, contact_xyz, patches = _load_geometry(sample_dir_name)
     contact_xy = contact_xyz[:, :2]
     fiber_x = np.asarray(raw["nerve"]["fiber_x_um"], dtype=float)
     fiber_y = np.asarray(raw["nerve"]["fiber_y_um"], dtype=float)
@@ -498,16 +641,25 @@ def _draw_xsection(ax, sample_dir_name: str, raw: dict,
     amps = np.asarray(raw["rect"]["amps_mA"], dtype=float)
     target_fasc_ids = set(raw["cluster"]["target_ids"])
 
+    # Saline bath: light-blue fill of the cuff lumen (radius = cuff inner edge),
+    # drawn beneath the nerve so only the nerve-to-cuff annulus reads blue —
+    # indicating the modelled conductive saline between nerve and electrode.
+    if draw_electrodes and patches:
+        from matplotlib.patches import Circle
+        _R_in = float(patches[0]["R"]) * 1e6
+        ax.add_patch(Circle((0.0, 0.0), _R_in, facecolor="#e3f0fb",
+                            edgecolor="none", zorder=0.5))
+
     # Nerve outline.
     ax.fill(outline[:, 0], outline[:, 1],
-              facecolor="#fafafa", edgecolor=PALETTE["grey"], linewidth=1.2,
+              facecolor="#fafafa", edgecolor="#555555", linewidth=0.5,
               zorder=1)
-    # Fascicles -- target faintly tinted green, off-target plain.
+    # Fascicle fills (no edge here — outlines drawn on top of fibers below).
     for f in fascs:
         is_target = f["id"] in target_fasc_ids
         ax.fill(f["polygon"][:, 0], f["polygon"][:, 1],
-                  facecolor=("#dff0e0" if is_target else "#f0f0f0"),
-                  edgecolor=PALETTE["grey"], linewidth=0.6, zorder=2)
+                  facecolor=("#dff0e0" if is_target else "#eeeeee"),
+                  edgecolor="none", zorder=2)
 
     # Fibres -- four-colour scheme.
     masks = [
@@ -518,25 +670,30 @@ def _draw_xsection(ax, sample_dir_name: str, raw: dict,
     ]
     for m, col, _lab in masks:
         if np.any(m):
-            ax.scatter(fiber_x[m], fiber_y[m], s=3.5, color=col,
-                          edgecolors="none", zorder=4, alpha=0.95)
+            ax.scatter(fiber_x[m], fiber_y[m], s=1.2, color=col,
+                          edgecolors="#555555", linewidths=0.15, zorder=4, alpha=0.95)
 
-    # Electrodes -- signed amp gives colour; |amp| gives size.
-    if draw_electrodes and contact_xy.size and amps.size:
-        K = min(len(contact_xy), len(amps))
-        radii = 0.5 * (np.abs(amps[:K]) ** 0.5) * 90.0 + 22.0
-        for k in range(K):
-            ax.add_patch(plt.Circle(
-                (contact_xy[k, 0], contact_xy[k, 1]), radii[k],
-                facecolor=(ELEC_CATHODE if amps[k] < -1e-9 else
-                            ELEC_ANODE if amps[k] > 1e-9 else "white"),
-                edgecolor=PALETTE["grey"], linewidth=0.9, alpha=0.85,
-                zorder=5,
-            ))
+    # Fascicle outlines on top of fiber dots — target in bold green.
+    for f in fascs:
+        is_target = f["id"] in target_fasc_ids
+        poly = np.vstack([f["polygon"], f["polygon"][:1]])   # close ring
+        ax.plot(poly[:, 0], poly[:, 1],
+                color=("#1C1C1C" if is_target else "#aaaaaa"),
+                linewidth=(0.9 if is_target else 0.4),
+                zorder=6)
 
-    # Aesthetics.
-    pad = 100.0
-    xy = np.concatenate([outline, contact_xy]) if contact_xy.size else outline
+    # Electrodes -- cuff silicone ring + arc-shaped contacts.
+    if draw_electrodes and patches and amps.size:
+        _draw_cuff_arcs(ax, patches, amps)
+
+    # Aesthetics — axis limits include cuff extent when electrodes are drawn.
+    pad = 150.0
+    if draw_electrodes and patches:
+        R_um = float(patches[0]["R"]) * 1e6 + 200.0  # contact outer edge
+        cuff_box = np.array([[-R_um, -R_um], [R_um, R_um]])
+        xy = np.concatenate([outline, cuff_box])
+    else:
+        xy = outline
     ax.set_xlim(xy[:, 0].min() - pad, xy[:, 0].max() + pad)
     ax.set_ylim(xy[:, 1].min() - pad, xy[:, 1].max() + pad)
     ax.set_aspect("equal")
@@ -550,15 +707,15 @@ def _draw_xsection(ax, sample_dir_name: str, raw: dict,
     si = float(raw["rect"]["achievable_si"])
     if draw_label:
         ax.text(0.03, 0.97, name, transform=ax.transAxes,
-                  ha="left", va="top", fontsize=11, weight="bold",
-                  color=PALETTE["grey"])
+                  ha="left", va="top", fontsize=7, weight="bold",
+                  color="#444444")
         ax.text(0.97, 0.97, f"SI = {si:.2f}", transform=ax.transAxes,
-                  ha="right", va="top", fontsize=11,
-                  color=("black" if si >= 0.95 else PALETTE["grey"]),
-                  weight="bold" if si >= 0.95 else "normal",
-                  bbox=dict(boxstyle="round,pad=0.25",
-                              facecolor=("#dff0e0" if si >= 0.95 else "white"),
-                              edgecolor=PALETTE["grey"], linewidth=0.8))
+                  ha="right", va="top", fontsize=7,
+                  color=("black" if si >= 0.90 else "#888888"),
+                  weight="bold" if si >= 0.90 else "normal",
+                  bbox=dict(boxstyle="round,pad=0.2",
+                              facecolor=("#dff0e0" if si >= 0.90 else "white"),
+                              edgecolor="#aaaaaa", linewidth=0.5))
 
 
 def _contact_to_grid(contact_xyz: np.ndarray) -> tuple[np.ndarray, list[str], list[float]]:
@@ -605,65 +762,61 @@ def _contact_to_grid(contact_xyz: np.ndarray) -> tuple[np.ndarray, list[str], li
 
 
 def _draw_cuff_grid(ax, contact_xyz: np.ndarray, amps_mA: np.ndarray) -> None:
-    """Draw the unrolled 4×3 cuff schematic with each cell coloured by
-    the signed amplitude in mA (blue cathode, orange anode, white
-    inactive).  Cell size encodes |amp|; centre prints the signed amp."""
+    """Unrolled 4×3 cuff schematic — contacts coloured by polarity."""
     cell, col_labels, row_z_values = _contact_to_grid(contact_xyz)
     K = contact_xyz.shape[0]
     amps = amps_mA[:K]
     max_abs = max(0.5, float(np.max(np.abs(amps))))
 
-    # Grid geometry
     ncols, nrows = 4, 3
-    spacing_x, spacing_y = 1.0, 1.0
+    sx, sy = 1.8, 1.5       # cell spacing: large enough circles never overlap
+    dot_r  = 0.52           # circle radius in data units → sets physical size
+    # Convert: at figsize=(3.0, 2.8) with ~5 data-unit range, ≈ 0.5in/unit
+    # → dot_r=0.52 ≈ 0.26in → ~22pt radius → s≈(22*72/72)^2*π not needed,
+    # we'll use ax.add_patch for exact sizing.
+    from matplotlib.patches import Circle
     for c_idx in range(ncols):
         for r_idx in range(nrows):
-            ax.plot(c_idx * spacing_x, -(r_idx * spacing_y),
-                      "o", markersize=8, markerfacecolor="white",
-                      markeredgecolor="#cfcfcf", markeredgewidth=1.0,
-                      zorder=1)
-    # Plot each contact's circle.
+            # Background placeholder circle (empty)
+            ax.add_patch(Circle(
+                (c_idx * sx, -(r_idx * sy)), dot_r,
+                facecolor="white", edgecolor="#CCCCCC",
+                linewidth=0.5, zorder=1,
+            ))
+
     for k in range(K):
         c_idx, r_idx = int(cell[k, 0]), int(cell[k, 1])
-        x_pos = c_idx * spacing_x
-        y_pos = -(r_idx * spacing_y)
+        xp, yp = c_idx * sx, -(r_idx * sy)
         amp = float(amps[k])
-        rel = abs(amp) / max_abs if max_abs > 0 else 0.0
-        size = 22.0 + 60.0 * rel
         if amp < -1e-9:
-            facecolor = ELEC_CATHODE
+            fc, ec = ELEC_CATHODE, "#1A5276"
         elif amp > 1e-9:
-            facecolor = ELEC_ANODE
+            fc, ec = ELEC_ANODE, "#873600"
         else:
-            facecolor = "white"
-        ax.scatter(x_pos, y_pos, s=size**2 * 0.4,
-                      facecolor=facecolor, edgecolor=PALETTE["grey"],
-                      linewidth=1.2, alpha=0.9, zorder=3)
+            fc, ec = "#F5F5F5", "#CCCCCC"
+        ax.add_patch(Circle(
+            (xp, yp), dot_r,
+            facecolor=fc, edgecolor=ec,
+            linewidth=0.5, alpha=0.92, zorder=2,
+        ))
         if abs(amp) > 1e-9:
-            ax.text(x_pos, y_pos,
-                      f"{amp:+.2f}", ha="center", va="center",
-                      fontsize=9,
-                      color=("white" if abs(amp) / max_abs > 0.45
-                              else "black"),
-                      weight="bold", zorder=4)
+            ax.text(xp, yp, f"{amp:+.2f}",
+                      ha="center", va="center", fontsize=FS_SM,
+                      color="white", weight="bold", zorder=3)
 
-    # Column labels (angular position) at the top, just above the
-    # first row of circles.
     for c_idx, label in enumerate(col_labels):
-        ax.text(c_idx * spacing_x, 0.55, label,
-                  ha="center", va="center", fontsize=13,
-                  color=PALETTE["grey"], weight="bold")
-    # Row labels (z direction) on the left.
-    row_pretty = ["+z (top)", "z = 0 (middle)", "-z (bottom)"]
-    for r_idx, label in enumerate(row_pretty):
-        ax.text(-0.75, -(r_idx * spacing_y), label,
-                  ha="right", va="center", fontsize=11,
-                  color=PALETTE["grey"])
+        ax.text(c_idx * sx, 0.9, label,
+                  ha="center", va="center", fontsize=FS,
+                  color=PALETTE["grey"], weight="semibold")
 
-    # Tight axis -- leave a bit more headroom at the top so the
-    # column labels and the panel title don't overlap.
-    ax.set_xlim(-1.7, ncols * spacing_x - 0.4)
-    ax.set_ylim(-(nrows - 1) * spacing_y - 0.6, 1.3)
+    row_pretty = ["+z", "0", "−z"]
+    for r_idx, label in enumerate(row_pretty):
+        ax.text(-0.7, -(r_idx * sy), label,
+                  ha="right", va="center", fontsize=FS_SM,
+                  color=PALETTE["lgrey"])
+
+    ax.set_xlim(-1.4, (ncols - 1) * sx + 1.2)
+    ax.set_ylim(-(nrows - 1) * sy - 0.9, 1.5)
     ax.set_aspect("equal")
     ax.set_xticks([]); ax.set_yticks([])
     for spine in ax.spines.values():
@@ -701,24 +854,21 @@ def _draw_pulse_trace(ax, pulse_shape: str, pw_ms: float,
     # with the cathode/anode colours used elsewhere in the figure
     # (the SIGN of the pulse mask is not the polarity of the
     # delivered current; that depends on each electrode's amp_k).
-    ax.plot(t, a, color="black", lw=1.8, zorder=3)
-    ax.fill_between(t, a, 0, alpha=0.20, color=PALETTE["grey"],
+    ax.plot(t, a, color=PALETTE["grey"], lw=0.9, zorder=3)
+    ax.fill_between(t, a, 0, alpha=0.15, color=PALETTE["grey"],
                        linewidth=0, zorder=2)
-    ax.axhline(0, color=PALETTE["grey"], lw=0.8, zorder=1)
-    ax.set_xlabel("time (ms)", fontsize=11)
-    ax.set_ylabel("amplitude\n(× amp$_k$)", fontsize=10)
+    ax.axhline(0, color=PALETTE["lgrey"], lw=0.5, zorder=1)
+    ax.set_xlabel("time (ms)")
+    ax.set_ylabel("amplitude\n(× amp$_k$)")
     ax.set_xlim(0, t[-1])
-    ax.set_ylim(p2_amp - 0.2, p1_amp + 0.2)
-    ax.tick_params(labelsize=10)
+    ax.set_ylim(p2_amp - 0.15, p1_amp + 0.15)
 
 
-def _make_xsection_legend(out_path: Path) -> Path:
-    """Standalone reference card explaining the per-sample
-    cross-section + cuff-grid colour conventions."""
+def _make_xsection_legend_ax(ax) -> None:
+    """Draw the legend reference card onto ax."""
     from matplotlib.lines import Line2D
     from matplotlib.patches import Patch
 
-    fig, ax = plt.subplots(figsize=(7.0, 4.6))
     ax.axis("off")
 
     rows = [
@@ -741,41 +891,37 @@ def _make_xsection_legend(out_path: Path) -> Path:
     # Render headers + entries in two columns to keep the figure
     # compact.
     y = 0.96
-    line_dy = 0.075
-    section_dy = 0.05
+    line_dy = 0.085
+    section_dy = 0.04
     for header, entries in rows:
         ax.text(0.02, y, header, transform=ax.transAxes,
-                  ha="left", va="top", fontsize=14, weight="bold",
+                  ha="left", va="top", fontsize=FS, weight="semibold",
                   color=PALETTE["grey"])
         y -= line_dy
         for label, col, marker, edge in entries:
-            ax.scatter(0.06, y, transform=ax.transAxes,
-                          s=180, marker=marker, facecolor=col,
+            ax.scatter(0.05, y, transform=ax.transAxes,
+                          s=40, marker=marker, facecolor=col,
                           edgecolor=(edge if edge is not None else "none"),
-                          linewidth=1.0, zorder=3)
-            ax.text(0.11, y - 0.005, label, transform=ax.transAxes,
-                      ha="left", va="center", fontsize=12,
-                      color="black")
+                          linewidth=0.5, zorder=3)
+            ax.text(0.10, y, label, transform=ax.transAxes,
+                      ha="left", va="center", fontsize=FS_SM,
+                      color="#333333")
             y -= line_dy
         y -= section_dy
 
-    # SI badge demo at bottom
     ax.text(0.02, y, "SI badge", transform=ax.transAxes,
-              ha="left", va="top", fontsize=14, weight="bold",
+              ha="left", va="top", fontsize=FS, weight="semibold",
               color=PALETTE["grey"])
     y -= line_dy
-    for label, fc in [("SI ≥ 0.95 (near-noise-floor)", "#dff0e0"),
-                        ("SI < 0.95", "white")]:
-        ax.text(0.06, y, f"SI = X.XX", transform=ax.transAxes,
-                  ha="left", va="center", fontsize=12,
-                  color="black",
-                  bbox=dict(boxstyle="round,pad=0.25", facecolor=fc,
-                              edgecolor=PALETTE["grey"], linewidth=0.8))
-        ax.text(0.30, y, label, transform=ax.transAxes,
-                  ha="left", va="center", fontsize=12, color="black")
+    for label, fc in [("SI ≥ 0.90", "#dff0e0"), ("SI < 0.90", "white")]:
+        ax.text(0.05, y, "SI = X.XX", transform=ax.transAxes,
+                  ha="left", va="center", fontsize=FS_SM,
+                  color="#333333",
+                  bbox=dict(boxstyle="round,pad=0.2", facecolor=fc,
+                              edgecolor=PALETTE["lgrey"], linewidth=0.5))
+        ax.text(0.28, y, label, transform=ax.transAxes,
+                  ha="left", va="center", fontsize=FS_SM, color="#333333")
         y -= line_dy
-    fig.savefig(out_path); plt.close(fig)
-    return out_path
 
 
 def make_per_sample_xsection(rows: list[dict]) -> list[Path]:
@@ -798,61 +944,60 @@ def make_per_sample_xsection(rows: list[dict]) -> list[Path]:
         if not j.exists():
             continue
         raw = json.loads(j.read_text())
-        outline, fascs, contact_xyz = _load_geometry(r["sample"])
+        outline, fascs, contact_xyz, patches = _load_geometry(r["sample"])
         amps = np.asarray(raw["rect"]["amps_mA"], dtype=float)
         sample_dir = base_dir / r["sample"]
         sample_dir.mkdir(parents=True, exist_ok=True)
 
         # 1. Pulse trace.
-        fig, ax = plt.subplots(figsize=(7.5, 3.6))
+        fig, ax = plt.subplots(figsize=(3.5, 2.2))
         _draw_pulse_trace(ax, raw["pulse_shape"],
                               float(raw["pulse_pw_ms"]),
                               float(raw["pulse_asym_ratio"]))
         fig.tight_layout()
-        p_pulse = sample_dir / "pulse.png"
-        fig.savefig(p_pulse); plt.close(fig); written.append(p_pulse)
+        written.extend(_savefig_sample(fig, sample_dir, "pulse"))
 
         # 2. Cross-section.
-        fig, ax = plt.subplots(figsize=(7.5, 7.0))
-        _draw_xsection(ax, r["sample"], raw, draw_electrodes=False,
+        fig, ax = plt.subplots(figsize=(3.5, 3.5))
+        _draw_xsection(ax, r["sample"], raw, draw_electrodes=True,
                           draw_label=False)
         si = float(raw["rect"]["achievable_si"])
-        ax.set_title(r["sample"], fontsize=15, weight="bold",
-                        color=PALETTE["grey"], loc="left", pad=10)
+        ax.set_title(_short(r["sample"]), fontsize=8, weight="bold",
+                        color=PALETTE["grey"], loc="left", pad=6)
         ax.text(0.98, 1.02, f"SI = {si:.2f}",
                   transform=ax.transAxes, ha="right", va="bottom",
-                  fontsize=13,
-                  color=("black" if si >= 0.95 else PALETTE["grey"]),
-                  weight="bold" if si >= 0.95 else "normal",
-                  bbox=dict(boxstyle="round,pad=0.25",
-                              facecolor=("#dff0e0" if si >= 0.95
+                  fontsize=7,
+                  color=("black" if si >= 0.90 else PALETTE["grey"]),
+                  weight="bold" if si >= 0.90 else "normal",
+                  bbox=dict(boxstyle="round,pad=0.2",
+                              facecolor=("#dff0e0" if si >= 0.90
                                           else "white"),
-                              edgecolor=PALETTE["grey"], linewidth=0.8))
+                              edgecolor=PALETTE["grey"], linewidth=0.5))
         fig.tight_layout()
-        p_xs = sample_dir / "cross_section.png"
-        fig.savefig(p_xs); plt.close(fig); written.append(p_xs)
+        written.extend(_savefig_sample(fig, sample_dir, "cross_section"))
 
         # 3. Cuff grid.
-        fig, ax = plt.subplots(figsize=(6.0, 5.5))
+        fig, ax = plt.subplots(figsize=(3.0, 2.8))
         _draw_cuff_grid(ax, contact_xyz, amps)
-        ax.set_title("Cuff electrode pattern (mA)", fontsize=14,
+        ax.set_title("Cuff electrode pattern (mA)", fontsize=8,
                         weight="bold", color=PALETTE["grey"],
-                        loc="center", pad=8)
+                        loc="center", pad=6)
         fig.tight_layout()
-        p_cuff = sample_dir / "cuff_pattern.png"
-        fig.savefig(p_cuff); plt.close(fig); written.append(p_cuff)
+        written.extend(_savefig_sample(fig, sample_dir, "cuff_pattern"))
 
         # 4. Legend.
-        p_leg = sample_dir / "legend.png"
-        _make_xsection_legend(p_leg); written.append(p_leg)
+        fig_leg, ax_leg = plt.subplots(figsize=(5.0, 3.5))
+        _make_xsection_legend_ax(ax_leg)
+        fig_leg.tight_layout()
+        written.extend(_savefig_sample(fig_leg, sample_dir, "legend"))
     return written
 
 
 def _xsection_gallery(samples: list[tuple[str, dict]],
                         nrows: int, ncols: int,
-                        out_path: Path, title: str) -> Path:
+                        name: str) -> list[Path]:
     fig, axes = plt.subplots(nrows, ncols,
-                                figsize=(3.6 * ncols, 3.6 * nrows),
+                                figsize=(3.2 * ncols, 3.2 * nrows),
                                 squeeze=False)
     for ax_idx, (dir_name, raw) in enumerate(samples):
         ax = axes[ax_idx // ncols][ax_idx % ncols]
@@ -865,35 +1010,32 @@ def _xsection_gallery(samples: list[tuple[str, dict]],
     from matplotlib.lines import Line2D
     handles = [
         Line2D([0], [0], marker="o", color="w", markerfacecolor=FIB_TGT_FIRED,
-                 markersize=8, label="target fired"),
+                 markersize=6, label="target fired"),
         Line2D([0], [0], marker="o", color="w", markerfacecolor=FIB_TGT_SILENT,
-                 markersize=8, markeredgecolor=PALETTE["grey"],
+                 markersize=6, markeredgecolor=PALETTE["grey"],
                  label="target silent"),
         Line2D([0], [0], marker="o", color="w", markerfacecolor=FIB_OFF_FIRED,
-                 markersize=8, label="off-target fired"),
+                 markersize=6, label="off-target fired"),
         Line2D([0], [0], marker="o", color="w", markerfacecolor=FIB_OFF_SILENT,
-                 markersize=8, markeredgecolor=PALETTE["grey"],
+                 markersize=6, markeredgecolor=PALETTE["grey"],
                  label="off-target silent"),
         Line2D([0], [0], marker="o", color="w", markerfacecolor=ELEC_CATHODE,
-                 markersize=11, markeredgecolor=PALETTE["grey"],
+                 markersize=8, markeredgecolor=PALETTE["grey"],
                  label="cathode (-)"),
         Line2D([0], [0], marker="o", color="w", markerfacecolor=ELEC_ANODE,
-                 markersize=11, markeredgecolor=PALETTE["grey"],
+                 markersize=8, markeredgecolor=PALETTE["grey"],
                  label="anode (+)"),
     ]
     fig.legend(handles=handles, loc="lower center", ncol=6,
-                  frameon=False, fontsize=12,
-                  bbox_to_anchor=(0.5, -0.02))
+                  frameon=False, fontsize=7,
+                  bbox_to_anchor=(0.5, -0.01))
 
-    fig.suptitle("")   # Nature-style: no title (species implied by filename)
-    fig.tight_layout(rect=(0, 0.04, 1, 1))
-    fig.savefig(out_path); plt.close(fig)
-    return out_path
+    fig.tight_layout(rect=(0, 0.05, 1, 1))
+    return _savefig(fig, name)
 
 
 def make_xsection_galleries(rows: list[dict]) -> list[Path]:
-    """Two PNGs: one for swine samples, one for human samples."""
-    # Load each sample's raw JSON.
+    """Two gallery figures: one for swine samples, one for human samples."""
     samples_by_species: dict[str, list[tuple[str, dict]]] = {
         "swine": [], "human": []
     }
@@ -905,50 +1047,34 @@ def make_xsection_galleries(rows: list[dict]) -> list[Path]:
         raw = json.loads(j.read_text())
         samples_by_species[r["species"]].append((r["sample"], raw))
 
-    paths = []
+    paths: list[Path] = []
     for sp in ("swine", "human"):
         s = samples_by_species[sp]
         if not s:
             continue
         s.sort(key=lambda t: -float(t[1]["rect"]["achievable_si"]))
         n = len(s)
-        # Layout: aim for ~3 columns
         ncols = min(3, n)
         nrows = (n + ncols - 1) // ncols
-        out = OUT_DIR / f"fig_duke_xsections_{sp}.png"
-        _xsection_gallery(s, nrows, ncols, out,
-                            title=f"{sp} cohort cross-sections")
-        paths.append(out)
+        paths.extend(_xsection_gallery(s, nrows, ncols,
+                                        f"fig_duke_xsections_{sp}"))
     return paths
 
 
 # ── Public callables ────────────────────────────────────────────────────────
 
-def make_per_sample_fig(rows: list[dict]) -> Path:
-    fig, ax = plt.subplots(figsize=(10.5, 4.6))
+def make_per_sample_fig(rows: list[dict]) -> list[Path]:
+    fig, ax = plt.subplots(figsize=(8.5, 3.5))
     _per_sample_bars(ax, rows)
-    out = OUT_DIR / "fig_duke_per_sample.png"
-    fig.savefig(out); plt.close(fig)
-    return out
+    fig.tight_layout()
+    return _savefig(fig, "fig_duke_per_sample")
 
 
-def make_agreement_fig(rows: list[dict]) -> Path:
-    fig, ax = plt.subplots(figsize=(5.8, 5.8))
-    _probe_vs_l1_scatter(ax, rows)
-    out = OUT_DIR / "fig_duke_probe_vs_l1.png"
-    fig.savefig(out); plt.close(fig)
-    return out
-
-
-def make_summary_fig(rows: list[dict]) -> Path:
-    fig = plt.figure(figsize=(15.5, 5.6))
-    ax1 = fig.add_axes([0.05, 0.18, 0.55, 0.74])
-    ax2 = fig.add_axes([0.66, 0.10, 0.32, 0.84])
-    _per_sample_bars(ax1, rows)
-    _probe_vs_l1_scatter(ax2, rows)
-    out = OUT_DIR / "fig_duke_selectivity_summary.png"
-    fig.savefig(out); plt.close(fig)
-    return out
+def make_summary_fig(rows: list[dict]) -> list[Path]:
+    fig, ax = plt.subplots(figsize=(8.5, 3.5))
+    _per_sample_bars(ax, rows)
+    fig.tight_layout()
+    return _savefig(fig, "fig_duke_selectivity_summary")
 
 
 # ── Main ────────────────────────────────────────────────────────────────────
@@ -956,16 +1082,14 @@ def make_summary_fig(rows: list[dict]) -> Path:
 def main() -> None:
     rows = _load_rows()
     print(f"[load] {len(rows)} samples")
-    paths = [
-        make_per_sample_fig(rows),
-        make_agreement_fig(rows),
-        make_species_method_fig(rows),
-        make_metrics_fig(rows),
-        make_summary_fig(rows),
-    ]
-    paths.extend(make_xsection_galleries(rows))
-    paths.extend(make_per_sample_xsection(rows))
-    for p in paths:
+    all_paths: list[Path] = []
+    for fn in (make_per_sample_fig, make_summary_fig,
+               make_species_method_fig, make_metrics_fig,
+               make_metrics_violin_fig):
+        all_paths.extend(fn(rows))
+    all_paths.extend(make_xsection_galleries(rows))
+    all_paths.extend(make_per_sample_xsection(rows))
+    for p in all_paths:
         print(f"  -> {p}")
 
 

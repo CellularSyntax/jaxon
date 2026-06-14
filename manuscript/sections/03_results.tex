@@ -4,13 +4,257 @@
 Our central result is that the reduced-order fiber sampling used to
 keep selectivity models tractable systematically overestimates the
 selectivity actually delivered to the nerve, by an amount set by
-fascicular architecture.  We establish this on real cross-species
-anatomy (Sections~\ref{sec:results-duke}--\ref{sec:results-sparse}),
-then document the simulator that makes population-scale optimization
-feasible --- its agreement with NEURON, its reproduction of canonical
-propagation phenomena and its throughput
-(Sections~\ref{sec:results-validation}--\ref{sec:results-scaling}).
-All raw data and analysis code are available in the project repository.
+fascicular architecture.  We first validate the simulator against
+NEURON and benchmark its throughput
+(Sections~\ref{sec:results-validation}--\ref{sec:results-scaling}),
+then optimize selectivity on real cross-species anatomy
+(Section~\ref{sec:results-duke}), where this central result emerges
+(Section~\ref{sec:results-sparse}).  All raw data and analysis code are
+available in the project repository.
+
+\subsection{Validation against NEURON}
+\label{sec:results-validation}
+
+We first establish that jaxon reproduces NEURON across models and
+scales to whole-nerve populations --- the accuracy and throughput the
+optimization analysis below relies on.  For each axon model we drove
+jaxon and \texttt{pyfibers}-wrapped NEURON with identical stimuli and
+compared activation thresholds across diameters, eight waveforms
+(monophasic and biphasic cathodic- and anodic-first, sinusoidal,
+sawtooth, exponential, Gaussian) and pulse widths
+$0.02$--$1\,\mathrm{ms}$ --- 943 configurations in total.
+\textbf{$99.6\,\%$ agree to within $1\,\%$ relative threshold error}
+(Table~\ref{tab:validation-sd}; jaxon--NEURON $r = 0.999998$, mean
+signed bias $+0.11\,\%$).  Only the Rattay model exceeds the criterion,
+in a single edge regime --- biphasic cathodic-first pulses at the four
+smallest diameters (peak $2.24\,\%$ at $D=0.3\,\mu\mathrm{m}$) --- which
+we attribute to reduced bisection resolution near the
+strength--duration inflection; the intracellular traces agree to
+NEURON-level precision (Figure~\ref{fig:validation}\textbf{a}).
+
+\begin{table}[h]
+  \centering
+  \caption{Strength--duration threshold agreement of jaxon vs.\
+    \texttt{pyfibers}-wrapped NEURON, aggregated across all tested
+    diameters, waveforms and pulse widths per model.
+    Diameters tested ($\mu$m):
+    MRG = \{5.7, 7.3, 8.7, 10.0, 11.5, 12.8, 14.0, 15.0, 16.0\};
+    Sundt = \{0.3, 0.5, 0.8, 1.0, 1.2\};
+    Sweeney = \{10\};
+    Rattay = \{0.3, 0.5, 0.8, 1.0, 1.5\}.
+    Sweeney is evaluated at $D=10\,\mu\mathrm{m}$ only because Sweeney's
+    original parameterization~\cite{sweeney1987} was derived and
+    validated at $D=10\,\mu\mathrm{m}$ and the pyfibers reference
+    implementation~\cite{hussain2024} follows the same convention;
+    the 17 cells dropped from Sweeney's 48-cell sweep at $D=10$ are
+    NEURON \texttt{extracellular}-mechanism singular-solve failures
+    under anodic-leading pulses, not jaxon errors.
+    Pulse widths tested: \{0.02, 0.05, 0.1, 0.2, 0.5, 1.0\}\,ms.}
+  \label{tab:validation-sd}
+  \small
+  \begin{tabular}{lrcrr}
+    \toprule
+    Model    & configs & median err.\ [IQR] & 95\textsuperscript{th}\,\%ile & peak err. \\
+    \midrule
+    MRG      &  432 & 0.04\,\% [0.02--0.09] & 0.20\,\% & 0.39\,\% \\
+    Sundt    &  240 & 0.34\,\% [0.28--0.39] & 0.42\,\% & 0.46\,\% \\
+    Sweeney  &   31 & 0.02\,\% [0.02--0.05] & 0.06\,\% & 0.06\,\% \\
+    Rattay   &  240 & 0.07\,\% [0.04--0.10] & 0.15\,\% & 2.24\,\% \\
+    \midrule
+    \textbf{total} & \textbf{943} & \textbf{0.08\,\% [0.03--0.20]} & \textbf{0.40\,\%} & \textbf{2.24\,\%} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Seven of the eight waveforms agree within $1\,\%$ on \emph{every}
+configuration; the lone exceptions are the four biphasic cathodic-first
+Rattay cases above (and even there $96.5\,\%$ pass).  Conduction
+velocity, which probes the internodal and nodal time constants, agrees
+to a median $<0.1\,\%$ across all models and diameters (peak $0.24\,\%$
+for Sundt at $D=0.3\,\mu\mathrm{m}$).  Per-waveform and per-diameter
+breakdowns are in Supplementary
+Tables~\ref{tab:validation-sd-per-wf}--\ref{tab:validation-cv}; the
+per-waveform error distribution is Figure~\ref{fig:validation}\textbf{c}.
+
+Figure~\ref{fig:validation} compactly summarizes the validation and
+the computational-efficacy result for all four models in a single
+panel set: representative extracellular AP and gating-variable traces
+with the stimulus overlaid (panel a, jaxon solid over NEURON dashed),
+the strength--duration curves at every tested diameter (panel b),
+the activation-threshold agreement broken down as a jaxon-vs-NEURON
+scatter and by model, waveform and diameter (panel c),
+CV-vs.-diameter agreement (panel d), and the forward-pass throughput
+benchmark (panel e, detailed in Section~\ref{sec:results-scaling}).
+Across panel c the jaxon-vs-NEURON scatter lies on the unity line at
+$R^{2}>0.99999$, and every per-waveform and per-diameter error
+distribution sits below the $1\,\%$ acceptance criterion.
+
+\begin{figure}[h]
+  \centering
+  \figmaybe[width=0.98\textwidth]{main/fig1_validation.png}
+  \caption{Validation of jaxon against \texttt{pyfibers}-wrapped NEURON
+    and computational-efficacy benchmark, all four fiber models.
+    \textbf{(a)} Membrane-potential and gating-variable response to a
+    single extracellular cathodic stimulus (overlaid as the solid
+    black step at resting potential), one column per model; jaxon
+    (colored solid) over NEURON (dashed gray).
+    \textbf{(b)} Strength--duration threshold (absolute value) vs.\
+    pulse width at every tested diameter (viridis = small$\to$large
+    diameter); jaxon solid line + circle markers, PyFibers dashed line
+    + cross markers in a lighter tint of the same color.
+    \textbf{(c)} Activation-threshold agreement: jaxon-vs-PyFibers
+    scatter with $R^{2}$ and median relative error (top left), and
+    relative-error distributions broken down per model, per stimulus
+    waveform and per diameter bin.  Median is the black bar; the
+    $1\,\%$ acceptance criterion is the dotted red line.
+    \textbf{(d)} Conduction velocity vs.\ fiber diameter for the
+    A-fiber (MRG, Sweeney) and C-fiber (Sundt, Rattay) models; same
+    jaxon-solid / PyFibers-lighter-dashed convention.
+    \textbf{(e)} Forward-pass throughput on a single NVIDIA A100 GPU:
+    absolute wall time (left) and jaxon-vs-PyFibers speedup (right)
+    vs.\ fiber count $N$, log--log
+    (Section~\ref{sec:results-scaling}).}
+  \label{fig:validation}
+\end{figure}
+
+\subsection{Propagation phenomena}
+\label{sec:results-phenomena}
+
+Beyond threshold agreement, we verified that jaxon reproduces three
+characteristic propagation phenomena that arise from the nonlinear
+coupling of the axon's active membrane to the extracellular field, in
+both a myelinated (MRG, A-fiber) and an unmyelinated (Sundt, C-fiber)
+model.  Each phenomenon was run independently in jaxon and in
+\texttt{pyfibers}-wrapped NEURON with identical parameters;
+Figure~\ref{fig:phenomena} overlays jaxon (solid) and NEURON (dashed)
+for the A-fiber (top row, \textbf{a}--\textbf{c}) and the C-fiber
+(bottom row, \textbf{d}--\textbf{f}).
+
+\paragraph{AP propagation.}
+A single suprathreshold cathodic pulse delivered at the center of the
+fiber initiates an action potential that propagates symmetrically
+toward both ends.  The waterfall plot
+(Figure~\ref{fig:phenomena}\textbf{a},\textbf{d}) stacks the
+membrane-potential trace of every node along the fiber against time,
+so the diagonal sweep of the depolarization front directly visualizes
+the propagation velocity.  jaxon and PyFibers traces are
+visually indistinguishable at every node, for both the fast
+myelinated A-fiber and the slow unmyelinated C-fiber.
+
+\paragraph{kHz conduction block.}
+A continuous $20\,\mathrm{kHz}$ sinusoidal extracellular hold of
+sufficient amplitude prevents AP propagation past the source
+node~\cite{kilgore2014block}.  We delivered a train of cathodic pace
+pulses and varied the kHz amplitude;
+Figure~\ref{fig:phenomena}\textbf{b},\textbf{e} shows the
+distal-node voltage trace for four amplitudes (kHz-on window shaded),
+spanning no block, partial block and full block.  The block threshold
+(the smallest amplitude at which no APs propagate past the source)
+computed by jaxon matches NEURON within the $0.01\,\mathrm{mA}$ scan
+resolution, and the AP count at each amplitude agrees exactly, for
+both fiber models.
+
+\paragraph{AP collision.}
+Two cathodic pulses delivered simultaneously from opposite ends of a
+fiber initiate two action potentials that propagate inward, meet near
+the center, and annihilate due to mutual refractory-period overlap
+(Figure~\ref{fig:phenomena}\textbf{c},\textbf{f}; $V_m$ along the
+fiber at five times, for four diameters).  The peak voltage
+discrepancy between jaxon and NEURON at the moment of collision is
+below $1\,\mu\mathrm{V}$ for every tested diameter, an agreement
+bounded by the floating-point precision of the comparison itself.
+
+\begin{figure}[h]
+  \centering
+  \figmaybe[width=0.98\textwidth]{main/fig2_phenomena.png}
+  \caption{Reproduction of three canonical propagation phenomena under
+    jaxon (solid) vs.\ PyFibers/NEURON (dashed), for a myelinated
+    A-fiber (MRG, top row \textbf{a}--\textbf{c}) and an unmyelinated
+    C-fiber (Sundt, bottom row \textbf{d}--\textbf{f}).
+    \textbf{(a, d)} AP propagation: waterfall of the membrane-potential
+    trace at each node (y = position along fiber, x = time); the
+    horizontal arrow marks the central stimulation site.
+    \textbf{(b, e)} kHz conduction block at $20\,\mathrm{kHz}$
+    extracellular hold; distal-node $V_m$ traces at four block
+    amplitudes show the pace train passing, partially blocking and
+    fully blocking as amplitude increases (kHz-on window shaded).
+    \textbf{(c, f)} AP collision; snapshots of $V_m$ along the fiber
+    at five times (columns) for four diameters (rows) show the two
+    inward-propagating APs meeting and annihilating.}
+  \label{fig:phenomena}
+\end{figure}
+
+\subsection{Forward-pass throughput}
+\label{sec:results-scaling}
+
+The principal performance motivation for the JAX implementation is
+the expectation that GPU vmap-batching will outperform CPU-parallel
+NEURON as the fiber count grows.  We benchmarked all five
+implemented axon models (MRG with both the original and the
+interpolated parameter tables, Sweeney, Sundt and Rattay) at
+$N \in \{1, 10, 100, 1\,000, 10\,000, 100\,000\}$ fibers on a single
+NVIDIA A100 GPU, against \texttt{pyfibers} running 8-thread
+CPU-parallel on a matched Xeon host.
+Figure~\ref{fig:validation}\textbf{e} reports the per-model wall time
+and the resulting jaxon-vs-pyfibers speedup;
+Table~\ref{tab:scaling} summarizes the headline numbers.
+
+At small $N$, GPU launch overhead dominates and \texttt{pyfibers}
+on CPU is faster (jaxon takes $0.15$\,s vs.\ \texttt{pyfibers}'s
+$0.05$\,s on $N=1$ MRG).  Throughput then scales sub-linearly with
+$N$ on the GPU because the vmap-batched forward pass amortizes the
+per-step launch cost across all fibers in the batch; the crossover
+at which jaxon overtakes \texttt{pyfibers} is $N \approx 10$ for every
+model tested.  By $N=1\,000$ MRG, jaxon completes in $0.24\,\mathrm{s}$
+vs.\ \texttt{pyfibers}'s $49.3\,\mathrm{s}$ (a $209\times$ wall-time
+reduction); by $N=10\,000$ MRG, $0.78\,\mathrm{s}$ vs.\
+$525\,\mathrm{s}$ ($671\times$); by $N=100\,000$ MRG,
+$9.5\,\mathrm{s}$ vs.\ $5\,172\,\mathrm{s}$ ($544\times$).  Sweeney,
+whose smaller per-fiber state vector fits more efficiently in GPU
+registers, achieves the largest single-model speedup at
+$N=100\,000$: $4.3\,\mathrm{s}$ vs.\ $5\,972\,\mathrm{s}$,
+a factor of $1\,377\times$.  The unmyelinated Sundt and Rattay
+C-fibers, whose longer time courses make \texttt{pyfibers}
+substantially slower per fiber, reach $1\,006\times$ and $929\times$
+speedups respectively at $N=100\,000$ ($16.5$ vs.\
+$16\,593\,\mathrm{s}$ and $15.1$ vs.\ $14\,068\,\mathrm{s}$).
+The geometric mean across all five models at $N=100\,000$ is
+$\sim 820\times$, taking what would have been multiple CPU-hours of
+\texttt{pyfibers} time per forward pass down to under twenty
+seconds of GPU wall time.
+This throughput is what brings the population-scale
+optimize-and-re-score analysis below ---
+$\sim\!1\,000$ fibers per nerve, simulated thousands of times during
+optimization, across 29 anatomies and five sampling levels --- within
+reach on a single GPU-day.
+
+\begin{table}[h]
+  \centering
+  \caption{Wall time per forward simulation (in seconds) and speedup
+    of jaxon over \texttt{pyfibers} at representative fiber counts.
+    jaxon runs on a single NVIDIA A100 GPU; \texttt{pyfibers} runs
+    8-thread CPU-parallel on a matched Xeon host.  All timings exclude
+    JAX compile time (5--30\,s one-time per model, amortized over each
+    batched run).  Geometric mean of the $N=100\,000$ speedups across
+    the five benchmarked models is $\sim 820\times$.}
+  \label{tab:scaling}
+  \small
+  \begin{tabular}{lrrrrrr}
+    \toprule
+                            & \multicolumn{2}{c}{$N=1\,000$}
+                            & \multicolumn{2}{c}{$N=10\,000$}
+                            & \multicolumn{2}{c}{$N=100\,000$} \\
+    \cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+    Model      & pyf.\ (s) & speedup & pyf.\ (s) & speedup & pyf.\ (s) & speedup \\
+    \midrule
+    MRG        &  49.3 & $209\times$ &     525 & $671\times$ &  $5\,172$ &  $544\times$ \\
+    MRG-interp.&  58.0 & $246\times$ &     537 & $695\times$ &  $5\,021$ &  $527\times$ \\
+    Sweeney    &  62.6 & $268\times$ &     603 & $1\,322\times$ & $5\,972$ & $1\,377\times$ \\
+    Sundt      &   183 & $304\times$ & $1\,742$ &   $985\times$ & $16\,593$ & $1\,006\times$ \\
+    Rattay     &   151 & $259\times$ & $1\,425$ &   $868\times$ & $14\,068$ &   $929\times$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}
 
 \subsection{Selectivity optimization on microCT-derived vagus nerves}
 \label{sec:results-duke}
@@ -65,31 +309,35 @@ optimization is left to future work (Section~\ref{sec:discussion}).
 
 \begin{table}[h]
   \centering
+  \small
   \caption{Per-species summary of the microCT cohort.  Dense
     $\mathrm{SI}$ and the $\mathrm{SI}\ge0.90$ rate are over all
     target-cluster seeds; the deployment penalty
     ($\mathrm{SI_{dense}} - \mathrm{SI_{transfer}}$, averaged over the
-    four sparse strategies) and fibers-per-target-fascicle are per
+    four sparse strategies) and fibers per target fascicle are per
     nerve, over the $112$ seeds whose dense optimization converged
     ($\mathrm{SI}\ge0.5$; $4$ human seeds excluded).}
   \label{tab:duke-cohort}
-  \begin{tabular}{lrrcccc}
+  \setlength{\tabcolsep}{5pt}
+  \begin{tabular}{lcccccc}
     \toprule
-    & nerves & seeds & dense SI mean (median) & SI\,$\ge$\,0.90
-    & penalty median (mean) & fibers/tgt fasc.\ (median) \\
+    & \multicolumn{2}{c}{count} & \multicolumn{2}{c}{dense SI}
+    & penalty & fibers/fasc. \\
+    \cmidrule(lr){2-3}\cmidrule(lr){4-5}
+    & nerves & seeds & mean (med.) & $\ge0.90$ & med.\ (mean) & median \\
     \midrule
-    Swine & 18 &  72 & 0.926 (0.946) & 72\,\% & 0.03 (0.04) & 30 \\
-    Human & 11 &  44 & 0.857 (0.965) & 66\,\% & 0.27 (0.31) & 92 \\
+    Swine        & 18 &  72 & 0.926 (0.946) & 72\,\% & 0.03 (0.04) & 30 \\
+    Human        & 11 &  44 & 0.857 (0.965) & 66\,\% & 0.27 (0.31) & 92 \\
     \midrule
     \textbf{All} & \textbf{29} & \textbf{116} & \textbf{0.900 (0.948)}
-    & \textbf{70\,\%} & --- & --- \\
+                 & \textbf{70\,\%} & --- & --- \\
     \bottomrule
   \end{tabular}
 
   \vspace{2pt}
   {\footnotesize Species penalty difference: two-sided Mann--Whitney
-   $p = 10^{-4}$.  Penalty vs.\ fibers-per-target-fascicle:
-   Spearman $r = +0.72$, $p < 10^{-3}$ ($n = 29$ nerves).}
+   $p = 10^{-4}$.  Penalty vs.\ fibers per target fascicle: Spearman
+   $r = +0.72$, $p < 10^{-3}$ ($n = 29$ nerves).}
 \end{table}
 
 \paragraph{Emergent stimulation strategy.}
@@ -203,257 +451,3 @@ work~\cite{hussain2024} --- recovers most of the achievable selectivity
 on small-fascicle anatomies but materially over-states the selectivity
 that will actually be delivered on large-fascicle nerves, precisely the
 human vagus geometry most relevant to clinical translation.
-
-% ====================================================================
-% Supporting results: the simulator (accuracy, phenomena, throughput)
-% ====================================================================
-\subsection{Validation against NEURON}
-\label{sec:results-validation}
-
-The findings above rest on jaxon reproducing NEURON and scaling to
-whole-nerve populations; we establish both here.  For each axon model
-we drove jaxon and \texttt{pyfibers}-wrapped NEURON with identical
-stimuli and compared activation thresholds across diameters, eight
-waveforms (monophasic and biphasic cathodic- and anodic-first,
-sinusoidal, sawtooth, exponential, Gaussian) and pulse widths
-$0.02$--$1\,\mathrm{ms}$ --- 943 configurations in total.
-\textbf{$99.6\,\%$ agree to within $1\,\%$ relative threshold error}
-(Table~\ref{tab:validation-sd}; jaxon--NEURON $r = 0.999998$, mean
-signed bias $+0.11\,\%$).  Only the Rattay model exceeds the criterion,
-in a single edge regime --- biphasic cathodic-first pulses at the four
-smallest diameters (peak $2.24\,\%$ at $D=0.3\,\mu\mathrm{m}$) --- which
-we attribute to reduced bisection resolution near the
-strength--duration inflection; the intracellular traces agree to
-NEURON-level precision (Figure~\ref{fig:validation}\textbf{a}).
-
-\begin{table}[h]
-  \centering
-  \caption{Strength--duration threshold agreement of jaxon vs.\
-    \texttt{pyfibers}-wrapped NEURON, aggregated across all tested
-    diameters, waveforms and pulse widths per model.
-    Diameters tested ($\mu$m):
-    MRG = \{5.7, 7.3, 8.7, 10.0, 11.5, 12.8, 14.0, 15.0, 16.0\};
-    Sundt = \{0.3, 0.5, 0.8, 1.0, 1.2\};
-    Sweeney = \{10\};
-    Rattay = \{0.3, 0.5, 0.8, 1.0, 1.5\}.
-    Sweeney is evaluated at $D=10\,\mu\mathrm{m}$ only because Sweeney's
-    original parameterization~\cite{sweeney1987} was derived and
-    validated at $D=10\,\mu\mathrm{m}$ and the pyfibers reference
-    implementation~\cite{hussain2024} follows the same convention;
-    the 17 cells dropped from Sweeney's 48-cell sweep at $D=10$ are
-    NEURON \texttt{extracellular}-mechanism singular-solve failures
-    under anodic-leading pulses, not jaxon errors (the jaxon values
-    in those cells are themselves finite and consistent with the
-    surrounding cathodic results).
-    Waveforms tested: monophasic cathodic and anodic, biphasic
-    cathodic-first and anodic-first, sinusoidal, sawtooth,
-    exponentially-decaying, Gaussian (8 total).  Pulse widths tested:
-    \{0.02, 0.05, 0.1, 0.2, 0.5, 1.0\}\,ms (6 total).}
-  \label{tab:validation-sd}
-  \begin{tabular}{lrcrr}
-    \toprule
-    Model    & configs tested & median err.\ [IQR] & 95\textsuperscript{th} \%ile & peak err.\ \\
-    \midrule
-    MRG      &  432 & 0.04\,\% [0.02--0.09] & 0.20\,\% & 0.39\,\% \\
-    Sundt    &  240 & 0.34\,\% [0.28--0.39] & 0.42\,\% & 0.46\,\% \\
-    Sweeney  &   31 & 0.02\,\% [0.02--0.05] & 0.06\,\% & 0.06\,\% \\
-    Rattay   &  240 & 0.07\,\% [0.04--0.10] & 0.15\,\% & 2.24\,\% \\
-    \midrule
-    \textbf{total} & \textbf{943} & \textbf{0.08\,\% [0.03--0.20]} & \textbf{0.40\,\%} & \textbf{2.24\,\%} \\
-    \bottomrule
-  \end{tabular}
-\end{table}
-
-Seven of the eight waveforms agree within $1\,\%$ on \emph{every}
-configuration; the lone exceptions are the four biphasic cathodic-first
-Rattay cases above (and even there $96.5\,\%$ pass).  Conduction
-velocity, which probes the internodal and nodal time constants, agrees
-to a median $<0.1\,\%$ across all models and diameters (peak $0.24\,\%$
-for Sundt at $D=0.3\,\mu\mathrm{m}$).  Per-waveform and per-diameter
-breakdowns are in Supplementary
-Tables~\ref{tab:validation-sd-per-wf}--\ref{tab:validation-cv}; the
-per-waveform error distribution is Figure~\ref{fig:validation}\textbf{c}.
-
-Figure~\ref{fig:validation} compactly summarizes the validation and
-the computational-efficacy result for all four models in a single
-panel set: representative extracellular AP and gating-variable traces
-with the stimulus overlaid (panel a, jaxon solid over NEURON dashed),
-the strength--duration curves at every tested diameter (panel b),
-the activation-threshold agreement broken down as a jaxon-vs-NEURON
-scatter and by model, waveform and diameter (panel c),
-CV-vs.-diameter agreement (panel d), and the forward-pass throughput
-benchmark (panel e, detailed in Section~\ref{sec:results-scaling}).
-Across panel c the jaxon-vs-NEURON scatter lies on the unity line at
-$R^{2}>0.99999$, and every per-waveform and per-diameter error
-distribution sits below the $1\,\%$ acceptance criterion.  Because the
-manuscript ultimately targets \emph{extracellular} stimulation
-(Section~\ref{sec:results-duke}), the AP traces in panel a are driven
-by an extracellular cathodic pulse and match NEURON's analytic update
-within the $\Delta t$-quantisation noise floor of the comparison.
-
-\begin{figure}[h]
-  \centering
-  \figmaybe[width=0.98\textwidth]{main/fig1_validation.png}
-  \caption{Validation of jaxon against \texttt{pyfibers}-wrapped NEURON
-    and computational-efficacy benchmark, all four fiber models.
-    \textbf{(a)} Membrane-potential and gating-variable response to a
-    single extracellular cathodic stimulus (overlaid as the solid
-    black step at resting potential), one column per model; jaxon
-    (colored solid) over NEURON (dashed gray).
-    \textbf{(b)} Strength--duration threshold (absolute value) vs.\
-    pulse width at every tested diameter (viridis = small$\to$large
-    diameter); jaxon solid line + circle markers, PyFibers dashed line
-    + cross markers in a lighter tint of the same color.
-    \textbf{(c)} Activation-threshold agreement: jaxon-vs-PyFibers
-    scatter with $R^{2}$ and median relative error (top left), and
-    relative-error distributions broken down per model, per stimulus
-    waveform and per diameter bin.  Median is the black bar; the
-    $1\,\%$ acceptance criterion is the dotted red line.
-    \textbf{(d)} Conduction velocity vs.\ fiber diameter for the
-    A-fiber (MRG, Sweeney) and C-fiber (Sundt, Rattay) models; same
-    jaxon-solid / PyFibers-lighter-dashed convention.
-    \textbf{(e)} Forward-pass throughput on a single NVIDIA A100 GPU:
-    absolute wall time (left) and jaxon-vs-PyFibers speedup (right)
-    vs.\ fiber count $N$, log--log
-    (Section~\ref{sec:results-scaling}).}
-  \label{fig:validation}
-\end{figure}
-
-\subsection{Propagation phenomena}
-\label{sec:results-phenomena}
-
-Beyond threshold agreement, we verified that jaxon reproduces three
-characteristic propagation phenomena that arise from the nonlinear
-coupling of the axon's active membrane to the extracellular field, in
-both a myelinated (MRG, A-fiber) and an unmyelinated (Sundt, C-fiber)
-model.  Each phenomenon was run independently in jaxon and in
-\texttt{pyfibers}-wrapped NEURON with identical parameters;
-Figure~\ref{fig:phenomena} overlays jaxon (solid) and NEURON (dashed)
-for the A-fiber (top row, \textbf{a}--\textbf{c}) and the C-fiber
-(bottom row, \textbf{d}--\textbf{f}).
-
-\paragraph{AP propagation.}
-A single suprathreshold cathodic pulse delivered at the center of the
-fiber initiates an action potential that propagates symmetrically
-toward both ends.  The waterfall plot
-(Figure~\ref{fig:phenomena}\textbf{a},\textbf{d}) stacks the
-membrane-potential trace of every node along the fiber against time,
-so the diagonal sweep of the depolarisation front directly visualizes
-the propagation velocity.  jaxon and PyFibers traces are
-visually indistinguishable at every node, for both the fast
-myelinated A-fiber and the slow unmyelinated C-fiber.
-
-\paragraph{kHz conduction block.}
-A continuous $20\,\mathrm{kHz}$ sinusoidal extracellular hold of
-sufficient amplitude prevents AP propagation past the source
-node~\cite{kilgore2014block}.  We delivered a train of cathodic pace
-pulses and varied the kHz amplitude;
-Figure~\ref{fig:phenomena}\textbf{b},\textbf{e} shows the
-distal-node voltage trace for four amplitudes (kHz-on window shaded),
-spanning no block, partial block and full block.  The block threshold
-(the smallest amplitude at which no APs propagate past the source)
-computed by jaxon matches NEURON within the $0.01\,\mathrm{mA}$ scan
-resolution, and the AP count at each amplitude agrees exactly, for
-both fiber models.
-
-\paragraph{AP collision.}
-Two cathodic pulses delivered simultaneously from opposite ends of a
-fiber initiate two action potentials that propagate inward, meet near
-the center, and annihilate due to mutual refractory-period overlap
-(Figure~\ref{fig:phenomena}\textbf{c},\textbf{f}; $V_m$ along the
-fiber at five times, for four diameters).  The peak voltage
-discrepancy between jaxon and NEURON at the moment of collision is
-below $1\,\mu\mathrm{V}$ for every tested diameter, an agreement
-bounded by the floating-point precision of the comparison itself.
-
-\begin{figure}[h]
-  \centering
-  \figmaybe[width=0.98\textwidth]{main/fig2_phenomena.png}
-  \caption{Reproduction of three canonical propagation phenomena under
-    jaxon (solid) vs.\ PyFibers/NEURON (dashed), for a myelinated
-    A-fiber (MRG, top row \textbf{a}--\textbf{c}) and an unmyelinated
-    C-fiber (Sundt, bottom row \textbf{d}--\textbf{f}).
-    \textbf{(a, d)} AP propagation: waterfall of the membrane-potential
-    trace at each node (y = position along fiber, x = time); the
-    horizontal arrow marks the central stimulation site.
-    \textbf{(b, e)} kHz conduction block at $20\,\mathrm{kHz}$
-    extracellular hold; distal-node $V_m$ traces at four block
-    amplitudes show the pace train passing, partially blocking and
-    fully blocking as amplitude increases (kHz-on window shaded).
-    \textbf{(c, f)} AP collision; snapshots of $V_m$ along the fiber
-    at five times (columns) for four diameters (rows) show the two
-    inward-propagating APs meeting and annihilating.}
-  \label{fig:phenomena}
-\end{figure}
-
-\subsection{Forward-pass throughput}
-\label{sec:results-scaling}
-
-The principal performance motivation for the JAX implementation is
-the expectation that GPU vmap-batching will outperform CPU-parallel
-NEURON as the fiber count grows.  We benchmarked all five
-implemented axon models (MRG with both the original and the
-interpolated parameter tables, Sweeney, Sundt and Rattay) at
-$N \in \{1, 10, 100, 1\,000, 10\,000, 100\,000\}$ fibers on a single
-NVIDIA A100 GPU, against \texttt{pyfibers} running 8-thread
-CPU-parallel on a matched Xeon host.
-Figure~\ref{fig:validation}\textbf{e} reports the per-model wall time
-and the resulting jaxon-vs-pyfibers speedup;
-Table~\ref{tab:scaling} summarizes the headline numbers.
-
-At small $N$, GPU launch overhead dominates and \texttt{pyfibers}
-on CPU is faster (jaxon takes $0.15$\,s vs.\ \texttt{pyfibers}'s
-$0.05$\,s on $N=1$ MRG).  Throughput then scales sub-linearly with
-$N$ on the GPU because the vmap-batched forward pass amortises the
-per-step launch cost across all fibers in the batch; the crossover
-at which jaxon overtakes \texttt{pyfibers} is $N \approx 10$ for every
-model tested.  By $N=1\,000$ MRG, jaxon completes in $0.24\,\mathrm{s}$
-vs.\ \texttt{pyfibers}'s $49.3\,\mathrm{s}$ (a $209\times$ wall-time
-reduction); by $N=10\,000$ MRG, $0.78\,\mathrm{s}$ vs.\
-$525\,\mathrm{s}$ ($671\times$); by $N=100\,000$ MRG,
-$9.5\,\mathrm{s}$ vs.\ $5\,172\,\mathrm{s}$ ($544\times$).  Sweeney,
-whose smaller per-fiber state vector fits more efficiently in GPU
-registers, achieves the largest single-model speedup at
-$N=100\,000$: $4.3\,\mathrm{s}$ vs.\ $5\,972\,\mathrm{s}$,
-a factor of $1\,377\times$.  The unmyelinated Sundt and Rattay
-C-fibers, whose longer time courses make \texttt{pyfibers}
-substantially slower per fiber, reach $1\,006\times$ and $929\times$
-speedups respectively at $N=100\,000$ ($16.5$ vs.\
-$16\,593\,\mathrm{s}$ and $15.1$ vs.\ $14\,068\,\mathrm{s}$).
-The geometric mean across all five models at $N=100\,000$ is
-$\sim 820\times$, taking what would have been multiple CPU-hours of
-\texttt{pyfibers} time per forward pass down to under twenty
-seconds of GPU wall time.
-This throughput is what brings the population-scale
-optimize-and-re-score analysis of
-Sections~\ref{sec:results-duke}--\ref{sec:results-sparse} ---
-$\sim\!1\,000$ fibers per nerve, simulated thousands of times during
-optimization, across 29 anatomies and five sampling levels --- within
-reach on a single GPU-day.
-
-\begin{table}[h]
-  \centering
-  \caption{Wall time per forward simulation (in seconds) and speedup
-    of jaxon over \texttt{pyfibers} at representative fiber counts.
-    jaxon runs on a single NVIDIA A100 GPU; \texttt{pyfibers} runs
-    8-thread CPU-parallel on a matched Xeon host.  All timings exclude
-    JAX compile time (5--30\,s one-time per model, amortised over each
-    batched run).  Geometric mean of the $N=100\,000$ speedups across
-    the five benchmarked models is $\sim 820\times$.}
-  \label{tab:scaling}
-  \begin{tabular}{lrrrrrr}
-    \toprule
-                            & \multicolumn{2}{c}{$N=1\,000$}
-                            & \multicolumn{2}{c}{$N=10\,000$}
-                            & \multicolumn{2}{c}{$N=100\,000$} \\
-    \cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
-    Model      & pyf.\ (s) & speedup & pyf.\ (s) & speedup & pyf.\ (s) & speedup \\
-    \midrule
-    MRG        &  49.3 & $209\times$ &     525 & $671\times$ &  $5\,172$ &  $544\times$ \\
-    MRG-interp.&  58.0 & $246\times$ &     537 & $695\times$ &  $5\,021$ &  $527\times$ \\
-    Sweeney    &  62.6 & $268\times$ &     603 & $1\,322\times$ & $5\,972$ & $1\,377\times$ \\
-    Sundt      &   183 & $304\times$ & $1\,742$ &   $985\times$ & $16\,593$ & $1\,006\times$ \\
-    Rattay     &   151 & $259\times$ & $1\,425$ &   $868\times$ & $14\,068$ &   $929\times$ \\
-    \bottomrule
-  \end{tabular}
-\end{table}

@@ -101,6 +101,36 @@ def _lighten(color, amount: float = 0.55):
             b + (1.0 - b) * amount)
 
 
+def _pulse_icon_xy(kind: str):
+    """Normalised (t in [0,1], y in [-1,1]) glyph for a stimulus waveform,
+    drawn as a small icon above the by-waveform error boxes.  Cathodic =
+    downward by convention."""
+    t = np.linspace(0.0, 1.0, 240)
+    z = np.zeros_like(t)
+    if kind == "mono_c":            # monophasic cathodic
+        return t, np.where((t > 0.38) & (t < 0.62), -1.0, 0.0)
+    if kind == "mono_a":            # monophasic anodic
+        return t, np.where((t > 0.38) & (t < 0.62), 1.0, 0.0)
+    if kind == "bi_ca":             # biphasic, cathodic-first
+        y = np.where((t > 0.30) & (t < 0.50), -1.0, z)
+        return t, np.where((t > 0.50) & (t < 0.70), 1.0, y)
+    if kind == "bi_ac":             # biphasic, anodic-first
+        y = np.where((t > 0.30) & (t < 0.50), 1.0, z)
+        return t, np.where((t > 0.50) & (t < 0.70), -1.0, y)
+    if kind == "sine":              # one period, cathodic-first
+        m = (t > 0.20) & (t < 0.80)
+        return t, np.where(m, -np.sin(2 * np.pi * (t - 0.20) / 0.60), 0.0)
+    if kind == "sawtooth":          # cathodic ramp with sharp reset
+        m = (t > 0.28) & (t < 0.74)
+        return t, np.where(m, -(t - 0.28) / 0.46, 0.0)
+    if kind == "exp":               # exponentially-decaying cathodic
+        m = (t > 0.32) & (t < 0.82)
+        return t, np.where(m, -np.exp(-(t - 0.32) / 0.46 * 4.0), 0.0)
+    if kind == "gaussian":          # gaussian cathodic bump
+        return t, -np.exp(-((t - 0.50) / 0.09) ** 2)
+    return t, z
+
+
 # ── Data helpers ──────────────────────────────────────────────────────────────
 def _load_sd(model: str) -> dict:
     p = ROOT / "outputs" / f"{model.lower()}_validation" / f"data_{model.lower()}_sd.json"
@@ -433,6 +463,21 @@ def _panel_c(gs_cell, fig, rows: list[dict]) -> plt.Axes:
     ax_wav.set_xlim(-0.6, len(pulses) - 0.4)
     ax_wav.set_yscale("log")
     ax_wav.tick_params(axis="x", length=0)
+
+    # Representative stimulus-waveform glyph above each box.  Insets are
+    # placed in axes-fraction coords (x mapped from the box position, y just
+    # above the axes), so they sit directly over their boxplot column.
+    _xspan = (len(pulses) - 0.4) - (-0.6)        # axis x-range in data units
+    _wf    = 0.74 / _xspan                        # icon width  (axes fraction)
+    for xi, pulse in enumerate(pulses):
+        xf = (xi - (-0.6)) / _xspan               # box centre  (axes fraction)
+        ic = ax_wav.inset_axes([xf - _wf / 2, 1.03, _wf, 0.12])
+        tt, yy = _pulse_icon_xy(pulse)
+        ic.plot(tt, yy, color=wav_colors[xi], lw=0.9, solid_capstyle="round")
+        ic.axhline(0.0, color=PALETTE["lgrey"], lw=0.3, zorder=0)
+        ic.set_xlim(-0.05, 1.05)
+        ic.set_ylim(-1.35, 1.35)
+        ic.axis("off")
 
     # ── by diameter range (finer bins, pooled across models, per-bin color) ───
     dia_colors = plt.cm.tab10(np.arange(len(DIAM_BINS)) / 10.0)

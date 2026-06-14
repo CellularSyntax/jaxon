@@ -389,3 +389,37 @@ yields the lead field $V_e^{(k)}$ in V/A for each of the 12 contacts.
     \bottomrule
   \end{tabular}
 \end{table}
+
+\section{Duke cohort summary}
+\label{sec:app-cohort}
+
+\begin{table}[h]
+  \centering
+  \caption{Per-species summary of the microCT cohort
+    (Section~\ref{sec:results-duke}).  Dense $\mathrm{SI}$ and the
+    $\mathrm{SI}\ge0.90$ rate are over all target-cluster seeds;
+    the deployment penalty
+    ($\mathrm{SI_{dense}} - \mathrm{SI_{transfer}}$, averaged over the
+    four sparse strategies) and fibres-per-target-fascicle are
+    per nerve, over the $112$ seeds whose dense optimisation converged
+    ($\mathrm{SI}\ge0.5$; $4$ human seeds excluded).  Two-sided
+    Mann--Whitney $U$ for the species penalty difference.}
+  \label{tab:duke-cohort}
+  \begin{tabular}{lrrcccc}
+    \toprule
+    & nerves & seeds & dense SI mean (median) & SI\,$\ge$\,0.90
+    & penalty median (mean) & fibres/tgt fasc.\ (median) \\
+    \midrule
+    Swine & 18 &  72 & 0.926 (0.946) & 72\,\% & 0.03 (0.04) & 30 \\
+    Human & 11 &  44 & 0.857 (0.965) & 66\,\% & 0.27 (0.31) & 92 \\
+    \midrule
+    \textbf{All} & \textbf{29} & \textbf{116} & \textbf{0.900 (0.948)}
+    & \textbf{70\,\%} & --- & --- \\
+    \bottomrule
+  \end{tabular}
+
+  \vspace{2pt}
+  {\footnotesize Species penalty difference: Mann--Whitney
+   $p = 10^{-4}$.  Penalty vs.\ fibres-per-target-fascicle:
+   Spearman $r = +0.72$, $p < 10^{-3}$ ($n = 29$ nerves).}
+\end{table}

@@ -19,14 +19,17 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from collections import defaultdict
 
 import io
 
 import numpy as np
+from scipy import stats
 import matplotlib as mpl
 import matplotlib.gridspec as gridspec
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 from matplotlib.offsetbox import AnnotationBbox, OffsetImage
 
 from experiments_v2.figures_duke import (
@@ -614,106 +617,105 @@ def _place_icons(ax: plt.Axes, xpos_strats: list[tuple[float, str, object]],
         ax.add_artist(ab)
 
 
-# Display order for panel d: dense → 10/fasc → 3/fasc → 1/fasc → centroid
+# Panel d order: 10/fasc → 3/fasc → 1/fasc → centroid (dense shown as a band).
 # Tuple: (data_xi, strat_key, n_per_fasc, label)
-_D_LAYOUT = [
-    (0, "dense",   None, "dense"),
+_D_SPARSE = [
     (4, "random",    10, "10/fasc"),
     (3, "random",     3, "3/fasc"),
     (2, "random",     1, "1/fasc"),
     (1, "centroid",   1, "centroid"),
 ]
-_D_SPARSE = _D_LAYOUT[1:]   # excludes dense
 
 
-def _si_violin_ax(ax: plt.Axes, sparse_rows: list[dict]) -> None:
-    """Left sub-panel: per strategy, paired SI violins — in-sample (hollow,
-    measured on the sparse model) vs transfer (filled, the sparse-optimised
-    strategy re-scored on the FULL nerve), swine + human."""
-    _nan = float("nan")
-    for plot_xi, (xi, _, _, _) in enumerate(_D_LAYOUT):
-        is_dense = (plot_xi == 0)
-        for sp, xoff in [("swine", -0.22), ("human", 0.22)]:
-            col = PALETTE[sp]
-            ins = np.array([r["si"][xi] for r in sparse_rows
-                            if r["species"] == sp
-                            and np.isfinite(r["si"].get(xi, _nan))])
-            tr = np.array([r["si_transfer"][xi] for r in sparse_rows
-                           if r["species"] == sp
-                           and np.isfinite(r["si_transfer"].get(xi, _nan))])
-            if is_dense:                       # full->full: one filled violin
-                _violin(ax, tr, plot_xi + xoff, col, width=0.30, fill=True)
-            else:                              # in-sample (hollow) | transfer (filled)
-                _violin(ax, ins, plot_xi + xoff - 0.09, col, width=0.16, fill=False)
-                _violin(ax, tr,  plot_xi + xoff + 0.09, col, width=0.16, fill=True)
-    ax.axhline(0.90, color=PALETTE["lgrey"], ls="--", lw=0.5, zorder=0)
-    ax.set_xticks(range(len(_D_LAYOUT)))
-    ax.set_xticklabels([t[3] for t in _D_LAYOUT], fontsize=FS_SM)
-    ax.set_ylabel("SI")
-    ax.set_ylim(0, 1.08)
-    ax.set_xlim(-0.55, len(_D_LAYOUT) - 0.45)
-    ax.tick_params(axis="x", length=0)
-    _place_icons(ax, [(float(pi), t[1], t[2]) for pi, t in enumerate(_D_LAYOUT)],
-                 zoom=0.28, y_offset_pt=-6)
-
-
-def _gap_ax(ax: plt.Axes, sparse_rows: list[dict], species: str) -> None:
-    """Single-species optimism gap: SI_in-sample − SI_transfer (how much the
-    sparse optimiser overestimates its selectivity vs the real nerve)."""
-    col = PALETTE[species]
-    rng = np.random.default_rng(7)
-    _nan = float("nan")
-    for plot_xi, (xi, _, _, lbl) in enumerate(_D_SPARSE):
-        gaps = np.array([r["si"][xi] - r["si_transfer"][xi]
-                         for r in sparse_rows
-                         if r["species"] == species
-                         and np.isfinite(r["si"].get(xi, _nan))
-                         and np.isfinite(r["si_transfer"].get(xi, _nan))])
-        if gaps.size < 3:
+def _ps_mean(sparse_rows, species, valfn) -> np.ndarray:
+    """Aggregate seed-rows to one value per nerve (avoids pseudoreplication from
+    seeds sharing a geometry)."""
+    by = defaultdict(list)
+    for r in sparse_rows:
+        if r["species"] != species:
             continue
-        _violin(ax, gaps, float(plot_xi), col, width=0.50)
-        jit = rng.uniform(-0.10, 0.10, gaps.size)
-        ax.scatter(float(plot_xi) + jit, gaps, s=3, color=col,
-                   alpha=0.38, edgecolors="none", zorder=3)
-    ax.axhline(0, color=PALETTE["lgrey"], ls="--", lw=0.5, zorder=0)
-    ax.set_xticks(range(len(_D_SPARSE)))
-    ax.set_xticklabels([t[3] for t in _D_SPARSE], fontsize=FS_SM)
-    ax.set_ylabel(r"optimism: $\mathrm{SI_{sparse}}-\mathrm{SI_{full}}$",
-                  fontsize=FS_SM)
-    ax.set_xlim(-0.55, len(_D_SPARSE) - 0.45)
-    ax.tick_params(axis="x", length=0)
-    _place_icons(ax, [(float(pi), t[1], t[2]) for pi, t in enumerate(_D_SPARSE)],
-                 zoom=0.28, y_offset_pt=-6)
+        v = valfn(r)
+        if v is not None and np.isfinite(v):
+            by[r["sample"]].append(v)
+    return np.array([float(np.mean(v)) for v in by.values()])
+
+
+def _boot_ci(x, n: int = 4000, seed: int = 0):
+    if x.size < 2:
+        return (float(x.mean()) if x.size else np.nan,) * 2
+    rng = np.random.default_rng(seed)
+    bs = [np.mean(rng.choice(x, x.size, replace=True)) for _ in range(n)]
+    return tuple(np.percentile(bs, [2.5, 97.5]))
+
+
+def _holm(pvals):
+    p = [pp if np.isfinite(pp) else 1.0 for pp in pvals]
+    m = len(p); order = np.argsort(p); adj = np.empty(m); run = 0.0
+    for k, i in enumerate(order):
+        run = max(run, min((m - k) * p[i], 1.0)); adj[i] = run
+    return adj
+
+
+def _stars(p):
+    return "***" if p < 1e-3 else "**" if p < 1e-2 else "*" if p < 0.05 else "n.s."
 
 
 def _panel_d(gs, fig, sparse_rows: list[dict]) -> plt.Axes:
-    """3-column sub-panel: paired SI violins | swine optimism gap | human gap."""
-    gs_inner = gridspec.GridSpecFromSubplotSpec(
-        1, 3, subplot_spec=gs, wspace=0.30,
-        width_ratios=[1.5, 1.0, 1.0],
-    )
-    ax_vi  = fig.add_subplot(gs_inner[0])
-    ax_gsw = fig.add_subplot(gs_inner[1])
-    ax_ghu = fig.add_subplot(gs_inner[2])
+    """Sparse fiber-sampling: dense-optimised SI ceiling vs sparse-optimised
+    TRANSFER SI on the full nerve, per nerve, swine | human.  Star = transfer vs
+    dense (per-nerve one-sided Wilcoxon, Holm-corrected across the 8 cells)."""
+    gs_inner = gridspec.GridSpecFromSubplotSpec(1, 2, subplot_spec=gs, wspace=0.10)
+    ax_sw = fig.add_subplot(gs_inner[0])
+    ax_hu = fig.add_subplot(gs_inner[1], sharey=ax_sw)
 
-    _si_violin_ax(ax_vi, sparse_rows)
-    _gap_ax(ax_gsw, sparse_rows, "swine")
-    _gap_ax(ax_ghu, sparse_rows, "human")
-    ax_ghu.set_ylabel("")
+    # Holm-adjusted transfer-vs-dense p-values across both species × 4 strategies.
+    def _pen(xi):
+        return lambda r: (r["dense_si"] - r["si_transfer"][xi]
+                          if np.isfinite(r["si_transfer"].get(xi, np.nan)) else None)
+    cells = [(sp, xi) for sp in ("swine", "human") for xi, *_ in _D_SPARSE]
+    raw = []
+    for sp, xi in cells:
+        pen = _ps_mean(sparse_rows, sp, _pen(xi))
+        raw.append(stats.wilcoxon(pen, alternative="greater").pvalue
+                   if pen.size >= 6 else np.nan)
+    padj = {c: a for c, a in zip(cells, _holm(raw))}
 
-    # Legend: species (colour) + in-sample/transfer (hollow/filled).
-    leg = [mpatches.Patch(color=PALETTE["swine"], alpha=0.7, label="swine"),
-           mpatches.Patch(color=PALETTE["human"], alpha=0.7, label="human"),
-           mpatches.Patch(facecolor="none", edgecolor=PALETTE["dgrey"],
-                          label="sparse model (in-sample)"),
-           mpatches.Patch(facecolor=PALETTE["dgrey"], alpha=0.5,
-                          label="full nerve (transfer)")]
-    ax_vi.legend(handles=leg, frameon=False, fontsize=FS_SM - 1,
-                 loc="lower left", bbox_to_anchor=(0.0, 1.04),
-                 ncol=2, handlelength=1.0, columnspacing=1.0,
-                 handletextpad=0.4, borderaxespad=0)
+    rng = np.random.default_rng(42)
+    for ax, sp in [(ax_sw, "swine"), (ax_hu, "human")]:
+        col = PALETTE[sp]
+        dense = _ps_mean(sparse_rows, sp, lambda r: r["dense_si"])
+        dlo, dhi = _boot_ci(dense)
+        ax.axhspan(dlo, dhi, color=PALETTE["lgrey"], alpha=0.30, zorder=0)
+        ax.axhline(float(dense.mean()), color=PALETTE["grey"], ls="--", lw=0.8, zorder=1)
+        for gi, (xi, _, _, lbl) in enumerate(_D_SPARSE):
+            tr = _ps_mean(sparse_rows, sp,
+                          lambda r, xi=xi: r["si_transfer"].get(xi, np.nan))
+            if not tr.size:
+                continue
+            ax.scatter(gi + rng.uniform(-0.13, 0.13, tr.size), tr, s=8, color=col,
+                       alpha=0.40, edgecolors="none", zorder=3)
+            m = float(tr.mean()); lo, hi = _boot_ci(tr)
+            ax.errorbar(gi, m, yerr=[[m - lo], [hi - m]], fmt="o", ms=5, mfc=col,
+                        mec="black", color="black", elinewidth=1.2, capsize=3, zorder=5)
+            ax.text(gi, 1.05, _stars(padj[(sp, xi)]), ha="center", va="bottom",
+                    fontsize=FS_SM - 1)
+        ax.set_xticks(range(len(_D_SPARSE)))
+        ax.set_xticklabels([t[3] for t in _D_SPARSE], fontsize=FS_SM)
+        ax.set_xlim(-0.55, len(_D_SPARSE) - 0.45)
+        ax.set_ylim(0, 1.20)
+        ax.tick_params(axis="x", length=0)
+        ax.set_title(sp, fontsize=FS_SM, color=col, weight="semibold")
+        _place_icons(ax, [(float(gi), t[1], t[2]) for gi, t in enumerate(_D_SPARSE)],
+                     zoom=0.26, y_offset_pt=-4)
+    ax_sw.set_ylabel("SI")
+    plt.setp(ax_hu.get_yticklabels(), visible=False)
 
-    return ax_vi
+    leg = [Line2D([], [], color=PALETTE["grey"], ls="--", label="dense-optimised SI"),
+           Line2D([], [], marker="o", ls="none", mfc=PALETTE["dgrey"], mec="black",
+                  label="sparse→full transfer SI")]
+    ax_sw.legend(handles=leg, frameon=False, fontsize=FS_SM - 1,
+                 loc="lower left", handlelength=1.4, borderaxespad=0.3)
+    return ax_sw
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────

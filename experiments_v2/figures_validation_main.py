@@ -131,6 +131,25 @@ def _pulse_icon_xy(kind: str):
     return t, z
 
 
+def _draw_axon_glyph(ax, color, lw: float = 4.0, myelinated: bool = False):
+    """Draw a small horizontal axon icon into inset axes ``ax``.
+    Myelinated = thick internodes separated by node-of-Ranvier gaps over a
+    thin core; unmyelinated = a single smooth tube.  ``lw`` sets the fibre
+    thickness (used for the diameter glyphs)."""
+    ax.set_xlim(-0.02, 1.02)
+    ax.set_ylim(-1.0, 1.0)
+    ax.axis("off")
+    if myelinated:
+        ax.plot([0.03, 0.97], [0, 0], color=color,
+                lw=max(lw * 0.30, 0.6), solid_capstyle="butt", zorder=1)
+        for x0, x1 in [(0.05, 0.25), (0.31, 0.51), (0.57, 0.77), (0.83, 0.97)]:
+            ax.plot([x0, x1], [0, 0], color=color, lw=lw,
+                    solid_capstyle="butt", zorder=2)
+    else:
+        ax.plot([0.04, 0.96], [0, 0], color=color, lw=lw,
+                solid_capstyle="round", zorder=2)
+
+
 # ── Data helpers ──────────────────────────────────────────────────────────────
 def _load_sd(model: str) -> dict:
     p = ROOT / "outputs" / f"{model.lower()}_validation" / f"data_{model.lower()}_sd.json"
@@ -513,6 +532,19 @@ def _panel_c(gs_cell, fig, rows: list[dict]) -> plt.Axes:
     ax_dia.set_xlim(-0.6, len(DIAM_BINS) - 0.4)
     ax_dia.set_yscale("log")
     ax_dia.tick_params(axis="x", length=0)
+
+    # Headroom + axon-thickness glyph over each diameter box (thin -> thick).
+    _dlo, _dhi = ax_dia.get_ylim()
+    ax_dia.set_ylim(_dlo, _dhi * 4.5)
+    _dxspan = (len(DIAM_BINS) - 0.4) - (-0.6)
+    _dwf    = 0.74 / _dxspan
+    _nb     = len(DIAM_BINS)
+    for xi in range(_nb):
+        xf = (xi - (-0.6)) / _dxspan
+        ic = ax_dia.inset_axes([xf - _dwf / 2, 0.85, _dwf, 0.12])
+        _draw_axon_glyph(ic, dia_colors[xi],
+                         lw=1.6 + 4.2 * (xi / max(_nb - 1, 1)),
+                         myelinated=False)
     return ax_sc
 
 
@@ -521,9 +553,9 @@ def _panel_d(gs_cell, fig) -> plt.Axes:
     gs_in = gridspec.GridSpecFromSubplotSpec(1, 2, subplot_spec=gs_cell, wspace=0.45)
     ax_a  = fig.add_subplot(gs_in[0])
     ax_c  = fig.add_subplot(gs_in[1])
-    for models, ax, title in [
-        (["MRG", "Sweeney"], ax_a, "A-fibres"),
-        (["Sundt", "Rattay"], ax_c, "C-fibres"),
+    for models, ax, title, myel in [
+        (["MRG", "Sweeney"], ax_a, "A-fibres", True),
+        (["Sundt", "Rattay"], ax_c, "C-fibres", False),
     ]:
         all_diams = []
         for m in models:
@@ -550,6 +582,9 @@ def _panel_d(gs_cell, fig) -> plt.Axes:
         ax.text(0.04, 0.96, title, transform=ax.transAxes,
                 ha="left", va="top", fontsize=FS_SM,
                 color=PALETTE["grey"], weight="semibold")
+        # Myelinated (A) vs unmyelinated (C) axon glyph, upper-left.
+        gic = ax.inset_axes([0.06, 0.79, 0.34, 0.11])
+        _draw_axon_glyph(gic, PALETTE["grey"], lw=4.5, myelinated=myel)
         ax.set_xlabel(r"fibre diameter (µm)")
         ax.set_ylabel("CV (m/s)")
         ax.set_ylim(bottom=0)

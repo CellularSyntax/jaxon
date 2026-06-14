@@ -21,6 +21,7 @@ import numpy as np
 import matplotlib as mpl
 import matplotlib.gridspec as gridspec
 import matplotlib.lines as mlines
+import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 
 ROOT    = Path(__file__).resolve().parent.parent
@@ -131,33 +132,55 @@ def _pulse_icon_xy(kind: str):
     return t, z
 
 
-def _draw_axon_glyph(ax, color, lw: float = 4.0, myelinated: bool = False,
+def _cyl_gradient(color, n: int = 256, hi: float = 0.35):
+    """Vertical brightness gradient (top->bottom row order) that gives a
+    horizontal cylinder its rounded-surface sheen: a highlight in the upper
+    third fading to shade at the top and (more) bottom edges."""
+    base = np.array(mpl.colors.to_rgb(color))
+    v = np.linspace(1.0, -1.0, n)                       # +1 top .. -1 bottom
+    f = (1.0 - np.clip(np.abs(v - hi) / 1.35, 0.0, 1.0))[:, None]
+    light = base[None, :] + (1.0 - base[None, :]) * np.clip((f - 0.5) * 2.0, 0, 1) * 0.75
+    dark  = base[None, :] * (0.42 + 0.58 * np.clip(f * 2.0, 0, 1))
+    return np.where(f >= 0.5, light, dark).reshape(n, 1, 3)
+
+
+def _draw_cylinder(ax, color, x0, x1, r, border="#3a3a3a", ex=None):
+    """Draw one horizontal, 3D-stylised cylinder spanning x0..x1 at height
+    +/-r (data coords).  Caller sets the inset axis limits / turns it off."""
+    if ex is None:
+        ex = min(0.055, (x1 - x0) * 0.16)               # end-ellipse half-width
+    crgb = np.array(mpl.colors.to_rgb(color))
+    # receding back rim (left)
+    ax.add_patch(mpatches.Ellipse((x0, 0), 2 * ex, 2 * r, facecolor=tuple(crgb * 0.55),
+                                  edgecolor=border, lw=0.4, zorder=1))
+    # curved body with vertical sheen
+    ax.imshow(_cyl_gradient(color), extent=(x0, x1, -r, r), aspect="auto",
+              interpolation="bilinear", zorder=2)
+    # top / bottom silhouette
+    ax.plot([x0, x1], [r, r],  color=border, lw=0.45, zorder=3, solid_capstyle="butt")
+    ax.plot([x0, x1], [-r, -r], color=border, lw=0.45, zorder=3, solid_capstyle="butt")
+    # front circular face (right)
+    ax.add_patch(mpatches.Ellipse((x1, 0), 2 * ex, 2 * r,
+                                  facecolor=tuple(crgb + (1 - crgb) * 0.22),
+                                  edgecolor=border, lw=0.4, zorder=4))
+
+
+def _draw_axon_glyph(ax, color, r: float = 0.6, myelinated: bool = False,
                      border: str = "#3a3a3a"):
-    """Draw a small horizontal axon icon as an outlined tube into inset axes
-    ``ax``.  Myelinated = capsule internodes separated by node-of-Ranvier
-    gaps over a thin core; unmyelinated = one smooth tube.  ``lw`` (points)
-    sets the fibre thickness; a very thin dark-grey border outlines the tube
-    (drawn as a slightly wider line beneath the coloured fill)."""
+    """Small horizontal axon icon drawn from 3D cylinders.  Myelinated =
+    cylindrical internodes separated by node-of-Ranvier gaps over a thin
+    core; unmyelinated = one cylinder.  ``r`` is the half-thickness."""
     ax.set_xlim(-0.02, 1.02)
-    ax.set_ylim(-1.0, 1.0)
+    ax.set_ylim(-1.08, 1.08)
     ax.axis("off")
-    bw = 0.7  # total border width added around the fill (points)
     if myelinated:
-        core = max(lw * 0.30, 0.6)
-        ax.plot([0.03, 0.97], [0, 0], color=border, lw=core + bw,
-                solid_capstyle="butt", zorder=1)
-        ax.plot([0.03, 0.97], [0, 0], color=color, lw=core,
-                solid_capstyle="butt", zorder=2)
-        for x0, x1 in [(0.05, 0.30), (0.37, 0.62), (0.69, 0.95)]:
-            ax.plot([x0, x1], [0, 0], color=border, lw=lw + bw,
-                    solid_capstyle="round", zorder=3)
-            ax.plot([x0, x1], [0, 0], color=color, lw=lw,
-                    solid_capstyle="round", zorder=4)
+        cr = np.array(mpl.colors.to_rgb(color)) * 0.6
+        ax.plot([0.04, 0.96], [0, 0], color=tuple(cr), lw=1.6,
+                solid_capstyle="butt", zorder=0)
+        for x0, x1 in [(0.05, 0.32), (0.385, 0.655), (0.72, 0.95)]:
+            _draw_cylinder(ax, color, x0, x1, r, border=border, ex=0.028)
     else:
-        ax.plot([0.04, 0.96], [0, 0], color=border, lw=lw + bw,
-                solid_capstyle="round", zorder=1)
-        ax.plot([0.04, 0.96], [0, 0], color=color, lw=lw,
-                solid_capstyle="round", zorder=2)
+        _draw_cylinder(ax, color, 0.05, 0.95, r, border=border)
 
 
 # ── Data helpers ──────────────────────────────────────────────────────────────
@@ -551,10 +574,12 @@ def _panel_c(gs_cell, fig, rows: list[dict]) -> plt.Axes:
     _nb     = len(DIAM_BINS)
     for xi in range(_nb):
         xf = (xi - (-0.6)) / _dxspan
-        ic = ax_dia.inset_axes([xf - _dwf / 2, 0.85, _dwf, 0.12])
-        _draw_axon_glyph(ic, dia_colors[xi],
-                         lw=1.6 + 4.2 * (xi / max(_nb - 1, 1)),
-                         myelinated=False)
+        ic = ax_dia.inset_axes([xf - _dwf / 2, 0.83, _dwf, 0.15])
+        ic.set_xlim(-0.02, 1.02)
+        ic.set_ylim(-1.08, 1.08)
+        ic.axis("off")
+        r = 0.30 + 0.62 * (xi / max(_nb - 1, 1))      # thin -> thick
+        _draw_cylinder(ic, dia_colors[xi], 0.10, 0.82, r)
     return ax_sc
 
 
@@ -593,8 +618,8 @@ def _panel_d(gs_cell, fig) -> plt.Axes:
                 ha="left", va="top", fontsize=FS_SM,
                 color=PALETTE["grey"], weight="semibold")
         # Myelinated (A) vs unmyelinated (C) axon glyph, upper-left.
-        gic = ax.inset_axes([0.06, 0.79, 0.20, 0.11])
-        _draw_axon_glyph(gic, PALETTE["grey"], lw=4.0, myelinated=myel)
+        gic = ax.inset_axes([0.06, 0.77, 0.20, 0.14])
+        _draw_axon_glyph(gic, PALETTE["grey"], r=0.6, myelinated=myel)
         ax.set_xlabel(r"fibre diameter (µm)")
         ax.set_ylabel("CV (m/s)")
         ax.set_ylim(bottom=0)

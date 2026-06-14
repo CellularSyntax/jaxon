@@ -656,8 +656,11 @@ def _holm(pvals):
     return adj
 
 
-def _stars(p):
-    return "***" if p < 1e-3 else "**" if p < 1e-2 else "*" if p < 0.05 else "n.s."
+def _pfmt(p):
+    """Compact p-value label (journals often prefer values over stars)."""
+    if not np.isfinite(p):
+        return ""
+    return "p<0.001" if p < 1e-3 else f"p={p:.3f}"
 
 
 def _panel_d(gs, fig, sparse_rows: list[dict]) -> plt.Axes:
@@ -697,8 +700,9 @@ def _panel_d(gs, fig, sparse_rows: list[dict]) -> plt.Axes:
             m = float(tr.mean()); lo, hi = _boot_ci(tr)
             ax.errorbar(gi, m, yerr=[[m - lo], [hi - m]], fmt="o", ms=5, mfc=col,
                         mec="black", color="black", elinewidth=1.2, capsize=3, zorder=5)
-            ax.text(gi, 1.05, _stars(padj[(sp, xi)]), ha="center", va="bottom",
-                    fontsize=FS_SM - 1)
+            _pt = ax.text(gi, hi + 0.025, _pfmt(padj[(sp, xi)]), ha="center",
+                          va="bottom", fontsize=FS_SM, color="#222222")
+            _pt.set_zorder(60)
         ax.set_xticks(range(len(_D_SPARSE)))
         ax.set_xticklabels([t[3] for t in _D_SPARSE], fontsize=FS_SM)
         ax.set_xlim(-0.55, len(_D_SPARSE) - 0.45)
@@ -711,12 +715,14 @@ def _panel_d(gs, fig, sparse_rows: list[dict]) -> plt.Axes:
         _t = ax.set_title(sp.capitalize(), fontsize=FS_SM + 1, color=col,
                           weight="bold", y=1.18)
         _t.set_zorder(1000)
-    ax_sw.set_ylabel("SI")
+    ax_sw.set_ylabel("SI (full nerve)")
     plt.setp(ax_hu.get_yticklabels(), visible=False)
 
-    leg = [Line2D([], [], color=PALETTE["grey"], ls="--", label="dense-optimised SI"),
+    # Both series are SI evaluated on the FULL nerve; they differ only in what
+    # the stimulus was optimised on (dense vs sparse fiber model).
+    leg = [Line2D([], [], color=PALETTE["grey"], ls="--", label="dense-optimised"),
            Line2D([], [], marker="o", ls="none", mfc=PALETTE["dgrey"], mec="black",
-                  label="sparse→full transfer SI")]
+                  label="sparse-optimised")]
     ax_sw.legend(handles=leg, frameon=False, fontsize=FS_SM - 1,
                  loc="lower left", handlelength=1.4, borderaxespad=0.3)
     return ax_sw

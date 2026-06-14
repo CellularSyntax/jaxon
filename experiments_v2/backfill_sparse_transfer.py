@@ -174,16 +174,18 @@ def _backfill_sample(sample: str) -> tuple[int, float]:
 
 
 def _sharded(samples: list[str]) -> list[str]:
-    """Interleaved SLURM-array sharding, mirroring run_duke_sweep.sbatch.
+    """Interleaved sharding for SLURM arrays.
 
-    N_SHARDS = GLOBAL_N_SHARDS or SLURM_ARRAY_TASK_COUNT (default 1).
-    SHARD_IDX = SLURM_ARRAY_TASK_ID + SHARD_OFFSET (defaults 0).
-    Sample i is processed iff i % N_SHARDS == SHARD_IDX.
+    Count  = GLOBAL_N_SHARDS  (fallback SLURM_ARRAY_TASK_COUNT, default 1).
+    Index  = SHARD_INDEX      (fallback SLURM_ARRAY_TASK_ID,    default 0).
+    The explicit GLOBAL_N_SHARDS/SHARD_INDEX are set by the sbatch so this works
+    even inside a container where SLURM_ARRAY_* may not propagate.  Sample i is
+    processed iff i % count == index.
     """
-    n_shards  = int(os.environ.get("GLOBAL_N_SHARDS",
-                                   os.environ.get("SLURM_ARRAY_TASK_COUNT", "1")))
-    shard_idx = (int(os.environ.get("SLURM_ARRAY_TASK_ID", "0"))
-                 + int(os.environ.get("SHARD_OFFSET", "0")))
+    n_shards  = int(os.environ.get("GLOBAL_N_SHARDS")
+                    or os.environ.get("SLURM_ARRAY_TASK_COUNT") or 1)
+    shard_idx = int(os.environ.get("SHARD_INDEX")
+                    or os.environ.get("SLURM_ARRAY_TASK_ID") or 0)
     if n_shards <= 1:
         return samples
     mine = [s for i, s in enumerate(samples) if i % n_shards == shard_idx]

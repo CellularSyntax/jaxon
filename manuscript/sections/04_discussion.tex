@@ -67,10 +67,21 @@ biophysical models to CUDA and reports up to $200\times$ speedup over
 NEURON-MPI on a single GPU, and
 \texttt{Brian2GeNN}~\cite{stimberg2020brian2genn} accelerates Brian
 spiking-network simulations via the GeNN code generator with
-comparable throughput gains.  These pipelines accelerate the forward
-pass but, like pyfibers, expose no end-to-end gradients;
-gradient-based optimisation over design variables still requires the
-finite-difference detour the present work is designed to obviate.
+comparable throughput gains.  Crucially, however, none of these
+GPU simulators models \emph{extracellular} field stimulation, which is
+the regime relevant to cuff-electrode neuromodulation: \texttt{NeuroGPU}
+supports intracellular current injection only,
+\texttt{CoreNEURON}~\cite{kumbhar2019coreneuron} does not implement
+NEURON's \texttt{extracellular} mechanism, and \texttt{Arbor} models
+no extracellular fields --- so CPU-based NEURON has remained the only
+established simulator of extracellular peripheral-fibre stimulation.
+This is why our throughput comparison is against CPU NEURON, and why
+jaxon's GPU-native extracellular forward pass is itself a capability
+gap that the existing GPU simulators do not fill.  These pipelines
+also accelerate only the forward pass and, like pyfibers, expose no
+end-to-end gradients; gradient-based optimisation over design
+variables still requires the finite-difference detour the present work
+is designed to obviate.
 
 \subsection{Limitations}
 

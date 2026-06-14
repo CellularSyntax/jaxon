@@ -214,6 +214,8 @@ def _load_dense_transfer_pairs() -> list[dict]:
                 continue
             df = rect.get("firing") or {}
             tf = (res.get("transfer") or {}).get("firing") or {}
+            dcur = float(np.sum(np.abs(np.asarray(rect.get("amps_mA", []), float))))
+            scur = float(np.sum(np.abs(np.asarray(res.get("amps_mA", []), float))))
             pairs.append(dict(
                 sample=sd.name, species=_species_of(sd.name),
                 dense_si=dsi,        trans_si=float(tsi),
@@ -221,6 +223,7 @@ def _load_dense_transfer_pairs() -> list[dict]:
                 dense_off=float(df.get("frac_fired_nontarget", float("nan"))),
                 trans_tgt=float(tf.get("frac_fired_target", float("nan"))),
                 trans_off=float(tf.get("frac_fired_nontarget", float("nan"))),
+                dense_cur=dcur,      trans_cur=scur,
             ))
     return pairs
 
@@ -515,8 +518,9 @@ def _metric_bar(ax: plt.Axes, rows: list[dict], field: str, ylabel: str,
 def _paired_metric(ax, nerves: list[dict], dkey: str, tkey: str,
                    ylabel: str, scale: float = 1.0,
                    ylim: tuple | None = None) -> None:
-    """Per species, two bars (dense vs sparse-transfer); per-nerve median+IQR
-    with a per-nerve strip.  Dense = solid fill, transfer = hatched."""
+    """Per species, two bars (dense vs sparse-transfer): bar = mean, symmetric
+    error = SEM (centred on the bar top), with a per-nerve strip.  Dense = solid
+    fill, transfer = hatched."""
     rng = np.random.default_rng(0)
     for xi, sp in enumerate(["swine", "human"]):
         col = PALETTE[sp]
@@ -528,12 +532,12 @@ def _paired_metric(ax, nerves: list[dict], dkey: str, tkey: str,
                              if n["species"] == sp and np.isfinite(n.get(key, np.nan))])
             if not vals.size:
                 continue
-            med = float(np.median(vals))
-            q25, q75 = (float(q) for q in np.quantile(vals, [0.25, 0.75]))
-            ax.bar(xi + dx, med, width=0.34, color=col, alpha=alpha,
+            mean = float(np.mean(vals))
+            sem = float(np.std(vals, ddof=1) / np.sqrt(vals.size)) if vals.size > 1 else 0.0
+            ax.bar(xi + dx, mean, width=0.34, color=col, alpha=alpha,
                    edgecolor=col if hatch else "none", linewidth=0.5,
                    hatch=hatch, zorder=2)
-            ax.errorbar(xi + dx, med, yerr=[[med - q25], [q75 - med]], fmt="none",
+            ax.errorbar(xi + dx, mean, yerr=sem, fmt="none",
                         ecolor=PALETTE["dgrey"], elinewidth=1.0, capsize=2.5,
                         capthick=0.9, zorder=5)
             jit = rng.uniform(-0.07, 0.07, vals.size)
@@ -562,22 +566,24 @@ def _panel_b(gs, fig, pairs: list[dict]) -> plt.Axes:
     for sample, ps in by_nerve.items():
         agg = {"sample": sample, "species": ps[0]["species"]}
         for k in ("dense_si", "trans_si", "dense_tgt", "dense_off",
-                  "trans_tgt", "trans_off"):
+                  "trans_tgt", "trans_off", "dense_cur", "trans_cur"):
             agg[k] = float(np.nanmean([p[k] for p in ps]))
         nerves.append(agg)
 
     gs_inner = gridspec.GridSpecFromSubplotSpec(
-        3, 1, subplot_spec=gs, hspace=0.55,
+        2, 2, subplot_spec=gs, wspace=0.55, hspace=0.55,
     )
-    ax_si  = fig.add_subplot(gs_inner[0])
-    ax_on  = fig.add_subplot(gs_inner[1])
-    ax_off = fig.add_subplot(gs_inner[2])
+    ax_si  = fig.add_subplot(gs_inner[0, 0])
+    ax_on  = fig.add_subplot(gs_inner[0, 1])
+    ax_off = fig.add_subplot(gs_inner[1, 0])
+    ax_cur = fig.add_subplot(gs_inner[1, 1])
 
     _paired_metric(ax_si,  nerves, "dense_si",  "trans_si",  "SI", ylim=(0, 1.10))
     _paired_metric(ax_on,  nerves, "dense_tgt", "trans_tgt", "on-target (%)",
                    scale=100.0, ylim=(0, 110))
     _paired_metric(ax_off, nerves, "dense_off", "trans_off", "off-target (%)",
                    scale=100.0)
+    _paired_metric(ax_cur, nerves, "dense_cur", "trans_cur", "total current (mA)")
 
     leg = [mpatches.Patch(facecolor=PALETTE["grey"], alpha=0.45, edgecolor="none",
                           label="dense"),
@@ -669,12 +675,11 @@ def _panel_c(gs, fig, crows: list[dict]) -> plt.Axes:
                 continue
             fr = np.array(fr)
             col, xpos = PALETTE[sp], xi + xoff
-            med = float(np.median(fr))
-            q25, q75 = (float(q) for q in np.quantile(fr, [0.25, 0.75]))
-            ax_phi.bar(xpos, med, width=0.34, color=col, alpha=0.38,
+            mean = float(np.mean(fr))
+            sem = float(np.std(fr, ddof=1) / np.sqrt(fr.size)) if fr.size > 1 else 0.0
+            ax_phi.bar(xpos, mean, width=0.34, color=col, alpha=0.38,
                        edgecolor="none", zorder=2)
-            ax_phi.errorbar(xpos, med,
-                            yerr=[[med - q25], [q75 - med]], fmt="none",
+            ax_phi.errorbar(xpos, mean, yerr=sem, fmt="none",
                             ecolor=PALETTE["dgrey"], elinewidth=1.1,
                             capsize=3.0, capthick=1.0, zorder=5)
             jit = rng.uniform(-0.09, 0.09, fr.size)
@@ -893,7 +898,7 @@ def _panel_d(gs, fig, sparse_rows: list[dict]) -> plt.Axes:
             m = float(tr.mean()); lo, hi = _boot_ci(tr)
             ax.errorbar(gi, m, yerr=[[m - lo], [hi - m]], fmt="o", ms=5, mfc=col,
                         mec="black", color="black", elinewidth=1.2, capsize=3, zorder=5)
-            _pt = ax.text(gi, hi + 0.025, _pfmt(padj[(sp, xi)]), ha="center",
+            _pt = ax.text(gi, hi + 0.07, _pfmt(padj[(sp, xi)]), ha="center",
                           va="bottom", fontsize=FS_SM, color="#222222")
             _pt.set_zorder(60)
         ax.set_xticks(range(len(_D_SPARSE)))
@@ -1014,7 +1019,7 @@ def main() -> int:
 
     print(f"[figures_duke_main] {len(pairs)} dense/transfer pairs")
     _panel_heading(ax_a_ref, "a", "Dense vs sparse activation maps",  dx=-0.11)
-    _panel_heading(ax_b_ref, "b", "Dense vs sparse recruitment",      dx=-0.16)
+    _panel_heading(ax_b_ref, "b", "Dense vs sparse performance",      dx=-0.16)
     _panel_heading(ax_c_ref, "c", "Emergent stimulation strategy",
                    dx=-0.14, dy=1.08)
     _panel_heading(ax_d_ref, "d", "Sparse fiber-sampling analysis",  dx=-0.14, dy=1.34)

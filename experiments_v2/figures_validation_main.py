@@ -464,14 +464,19 @@ def _panel_c(gs_cell, fig, rows: list[dict]) -> plt.Axes:
     ax_wav.set_yscale("log")
     ax_wav.tick_params(axis="x", length=0)
 
-    # Representative stimulus-waveform glyph above each box.  Insets are
-    # placed in axes-fraction coords (x mapped from the box position, y just
-    # above the axes), so they sit directly over their boxplot column.
+    # Open a little headroom above the data so the waveform glyphs sit just
+    # above the top whisker caps rather than floating above the axes.
+    _ylo, _yhi = ax_wav.get_ylim()
+    ax_wav.set_ylim(_ylo, _yhi * 4.5)
+
+    # Representative stimulus-waveform glyph over each box, in a single row
+    # tucked into the headroom band just above the whiskers.  Insets are in
+    # axes-fraction coords (x mapped from the box position).
     _xspan = (len(pulses) - 0.4) - (-0.6)        # axis x-range in data units
     _wf    = 0.74 / _xspan                        # icon width  (axes fraction)
     for xi, pulse in enumerate(pulses):
         xf = (xi - (-0.6)) / _xspan               # box centre  (axes fraction)
-        ic = ax_wav.inset_axes([xf - _wf / 2, 1.03, _wf, 0.12])
+        ic = ax_wav.inset_axes([xf - _wf / 2, 0.85, _wf, 0.12])
         tt, yy = _pulse_icon_xy(pulse)
         ic.plot(tt, yy, color=wav_colors[xi], lw=0.9, solid_capstyle="round")
         ic.axhline(0.0, color=PALETTE["lgrey"], lw=0.3, zorder=0)

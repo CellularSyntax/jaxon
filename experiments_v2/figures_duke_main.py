@@ -149,6 +149,82 @@ def _load_all_seeds() -> list[dict]:
     return rows
 
 
+# ── Data: dense + sparse-transfer pairing ─────────────────────────────────────
+# Representative sparse strategy used for panels a & b: 1 fibre per fascicle,
+# random draw — a realistic single-fibre-per-fascicle sample (panel d shows the
+# penalty is driven by fascicle size, not sampling density, so this is typical).
+_A_STRAT, _A_NPER = "random", 1
+
+
+def _sparse_result(spd: dict, strat: str = _A_STRAT, nper: int = _A_NPER) -> dict | None:
+    for r in spd.get("results", []):
+        if (not r.get("skipped") and r.get("strategy") == strat
+                and r.get("n_per_fascicle") == nper):
+            return r
+    return None
+
+
+def _dense_transfer_example(sample: str, seed: int) -> tuple[dict, dict | None]:
+    """Return (dense_raw, transfer_raw) for one nerve/seed.
+
+    transfer_raw is the dense JSON with rect overridden by the sparse-optimised
+    config evaluated on the full nerve, so _draw_xsection renders it unchanged.
+    """
+    import copy
+    sd = SWEEP / sample
+    dense = json.loads((sd / f"data_seed_{seed:04d}.json").read_text())
+    spd = json.loads((sd / f"sparse_sampling_seed_{seed:04d}.json").read_text())
+    res = _sparse_result(spd)
+    if res is None:
+        return dense, None
+    tr = copy.deepcopy(dense)
+    rect = tr["rect"]
+    rect["final_acts"]    = res["transfer"]["final_acts"]
+    rect["amps_mA"]       = res["amps_mA"]
+    rect["achievable_si"] = res["si_transfer"]
+    rect["firing"]        = res["transfer"]["firing"]
+    return dense, tr
+
+
+def _load_dense_transfer_pairs() -> list[dict]:
+    """Per-seed dense vs sparse-transfer recruitment, dense_si>=_DENSE_MIN."""
+    pairs = []
+    for sd in sorted(SWEEP.iterdir()):
+        if not sd.is_dir():
+            continue
+        for spx in sorted(sd.glob("sparse_sampling_seed_*.json")):
+            seed = int(spx.stem.split("_")[-1])
+            dp = sd / f"data_seed_{seed:04d}.json"
+            if not dp.exists():
+                continue
+            try:
+                dense = json.loads(dp.read_text())
+                spd = json.loads(spx.read_text())
+            except Exception:
+                continue
+            rect = dense.get("rect") or {}
+            dsi = float(rect.get("achievable_si", abs(rect.get("final_si", float("nan")))))
+            if not np.isfinite(dsi) or dsi < _DENSE_MIN:
+                continue
+            res = _sparse_result(spd)
+            if res is None:
+                continue
+            tsi = res.get("si_transfer")
+            if tsi is None or not np.isfinite(tsi):
+                continue
+            df = rect.get("firing") or {}
+            tf = (res.get("transfer") or {}).get("firing") or {}
+            pairs.append(dict(
+                sample=sd.name, species=_species_of(sd.name),
+                dense_si=dsi,        trans_si=float(tsi),
+                dense_tgt=float(df.get("frac_fired_target", float("nan"))),
+                dense_off=float(df.get("frac_fired_nontarget", float("nan"))),
+                trans_tgt=float(tf.get("frac_fired_target", float("nan"))),
+                trans_off=float(tf.get("frac_fired_nontarget", float("nan"))),
+            ))
+    return pairs
+
+
 def _best_seed_raw(rows: list[dict], species: str) -> tuple[str, int, dict] | None:
     sp = [r for r in rows if r["species"] == species and np.isfinite(r["si"])]
     if not sp:
@@ -280,7 +356,7 @@ def _draw_compass(ax: plt.Axes) -> None:
 # ── Panel a: anatomy (swine + human, 2 rows; each row = xsec + cuff) ─────────
 def _draw_example(ax_xsec: plt.Axes, ax_cuff: plt.Axes,
                   sample: str, seed_num: int, raw: dict, species: str,
-                  case: str = "best") -> None:
+                  case: str = "best", top_label: str | None = None) -> None:
     col = PALETTE[species]
     try:
         _draw_xsection(ax_xsec, sample, raw, draw_electrodes=True, draw_label=False)
@@ -301,9 +377,10 @@ def _draw_example(ax_xsec: plt.Axes, ax_cuff: plt.Axes,
             sample_id = sample_id[len(pfx):].lstrip("_- ")
             break
 
-    # Top centre: "Swine (sample-id · sN)" in species colour
-    ax_xsec.text(0.50, 1.03,
-                 f"{species.capitalize()} ({sample_id} · s{seed_num})",
+    # Top centre: condition label (override) or "Swine (sample-id · sN)"
+    head = top_label if top_label is not None else \
+        f"{species.capitalize()} ({sample_id} · s{seed_num})"
+    ax_xsec.text(0.50, 1.03, head,
                  transform=ax_xsec.transAxes,
                  ha="center", va="bottom", fontsize=FS_SM,
                  color=col, weight="bold", clip_on=False)
@@ -314,7 +391,7 @@ def _draw_example(ax_xsec: plt.Axes, ax_cuff: plt.Axes,
                  ha="right", va="top", fontsize=FS_SM,
                  color="black", clip_on=False)
 
-    # Bottom centre: "best" / "worst" in black italic
+    # Bottom centre: case label in black italic
     ax_xsec.text(0.50, -0.04, case,
                  transform=ax_xsec.transAxes,
                  ha="center", va="top", fontsize=FS_SM,
@@ -332,11 +409,20 @@ def _draw_example(ax_xsec: plt.Axes, ax_cuff: plt.Axes,
                      color=PALETTE["lgrey"])
 
 
-def _panel_a(gs, fig, rows: list[dict]) -> plt.Axes:
-    """2-row × 4-col anatomy panel.
+# Representative nerves for panel a (matched target size ~0.28, dense SI ~0.97):
+# swine transfers well (small penalty), human degrades (large penalty).
+_A_EXAMPLES = [
+    ("swine", "sub-11_sam-3", 2),
+    ("human", "human_sub-56_sam-1", 2),
+]
 
-    Row 0 (tall):  sw-best | sw-worst | hu-best | hu-worst  (nerve xsec)
-    Row 1 (short): corresponding activation maps (cuff grids)
+
+def _panel_a(gs, fig, rows: list[dict]) -> plt.Axes:
+    """2-row × 4-col activation panel: dense vs sparse-transfer, swine + human.
+
+    Columns: sw-dense | sw-sparse | hu-dense | hu-sparse.
+    Row 0 (tall): nerve cross-section coloured by fibre activation.
+    Row 1 (short): the corresponding optimised cuff amplitude pattern.
     """
     from experiments_v2.figures_duke import (
         FIB_TGT_FIRED, FIB_TGT_SILENT, FIB_OFF_FIRED, FIB_OFF_SILENT,
@@ -347,25 +433,28 @@ def _panel_a(gs, fig, rows: list[dict]) -> plt.Axes:
         height_ratios=[1.8, 1.0],
     )
 
-    examples = [
-        ("swine", "best",  _best_seed_raw(rows,  "swine")),
-        ("swine", "worst", _worst_seed_raw(rows, "swine")),
-        ("human", "best",  _best_seed_raw(rows,  "human")),
-        ("human", "worst", _worst_seed_raw(rows, "human")),
-    ]
+    # build (species, dense_raw|transfer_raw, condition) columns
+    columns = []
+    for species, sample, seed in _A_EXAMPLES:
+        dense, trans = _dense_transfer_example(sample, seed)
+        columns.append((species, sample, seed, dense, "dense", ""))
+        columns.append((species, sample, seed, trans, "sparse",
+                        "1 fibre/fascicle"))
 
     first_ax = last_ax = None
-    for ci, (species, case, res) in enumerate(examples):
+    for ci, (species, sample, seed, raw, cond, bottom) in enumerate(columns):
         ax_x = fig.add_subplot(gs_inner[0, ci])
         ax_c = fig.add_subplot(gs_inner[1, ci])
         if ci == 0:
             first_ax = ax_x
-        if ci == 3:
+        if ci == len(columns) - 1:
             last_ax = ax_x
-        if res:
-            _draw_example(ax_x, ax_c, res[0], res[1], res[2], species, case=case)
+        if raw is not None:
+            top = f"{species.capitalize()} — {cond}"
+            _draw_example(ax_x, ax_c, sample, seed, raw, species,
+                          case=bottom, top_label=top)
         else:
-            ax_x.text(0.5, 0.5, f"no {species} data",
+            ax_x.text(0.5, 0.5, f"no {species} sparse data",
                       ha="center", va="center",
                       transform=ax_x.transAxes, fontsize=FS_SM,
                       color=PALETTE["lgrey"])
@@ -423,20 +512,81 @@ def _metric_bar(ax: plt.Axes, rows: list[dict], field: str, ylabel: str,
         ax.set_yscale("log")
 
 
-def _panel_b(gs, fig, rows: list[dict]) -> plt.Axes:
-    # Same validity filter as panel d: drop dense seeds that did not converge
-    # (dense SI < _DENSE_MIN) so the two panels can't drift.
-    rows = [r for r in rows
-            if np.isfinite(r.get("si", np.nan)) and r["si"] >= _DENSE_MIN]
+def _paired_metric(ax, nerves: list[dict], dkey: str, tkey: str,
+                   ylabel: str, scale: float = 1.0,
+                   ylim: tuple | None = None) -> None:
+    """Per species, two bars (dense vs sparse-transfer); per-nerve median+IQR
+    with a per-nerve strip.  Dense = solid fill, transfer = hatched."""
+    rng = np.random.default_rng(0)
+    for xi, sp in enumerate(["swine", "human"]):
+        col = PALETTE[sp]
+        for which, key, dx, hatch, alpha in [
+            ("dense",    dkey, -0.20, None,  0.45),
+            ("transfer", tkey, +0.20, "////", 0.45),
+        ]:
+            vals = np.array([n[key] * scale for n in nerves
+                             if n["species"] == sp and np.isfinite(n.get(key, np.nan))])
+            if not vals.size:
+                continue
+            med = float(np.median(vals))
+            q25, q75 = (float(q) for q in np.quantile(vals, [0.25, 0.75]))
+            ax.bar(xi + dx, med, width=0.34, color=col, alpha=alpha,
+                   edgecolor=col if hatch else "none", linewidth=0.5,
+                   hatch=hatch, zorder=2)
+            ax.errorbar(xi + dx, med, yerr=[[med - q25], [q75 - med]], fmt="none",
+                        ecolor=PALETTE["dgrey"], elinewidth=1.0, capsize=2.5,
+                        capthick=0.9, zorder=5)
+            jit = rng.uniform(-0.07, 0.07, vals.size)
+            ax.scatter(xi + dx + jit, vals, s=5, color=col, marker=SP_MARKER[sp],
+                       edgecolors="white", linewidth=0.25, alpha=0.8, zorder=4)
+    ax.set_xticks([0, 1])
+    ax.set_xticklabels(["swine", "human"], fontsize=FS_SM)
+    ax.set_ylabel(ylabel, fontsize=FS_SM)
+    ax.set_xlim(-0.6, 1.6)
+    ax.tick_params(labelsize=FS_SM)
+    if ylim is not None:
+        ax.set_ylim(*ylim)
+
+
+def _panel_b(gs, fig, pairs: list[dict]) -> plt.Axes:
+    """Dense vs sparse-transfer recruitment (SI / on-target / off-target).
+
+    Per-nerve aggregation (mean over seeds) to avoid pseudoreplication; same
+    dense_si>=_DENSE_MIN filter as panels c/d (applied in the loader).
+    """
+    # aggregate per nerve (mean over seeds)
+    by_nerve: dict[str, list[dict]] = defaultdict(list)
+    for p in pairs:
+        by_nerve[p["sample"]].append(p)
+    nerves = []
+    for sample, ps in by_nerve.items():
+        agg = {"sample": sample, "species": ps[0]["species"]}
+        for k in ("dense_si", "trans_si", "dense_tgt", "dense_off",
+                  "trans_tgt", "trans_off"):
+            agg[k] = float(np.nanmean([p[k] for p in ps]))
+        nerves.append(agg)
+
     gs_inner = gridspec.GridSpecFromSubplotSpec(
-        2, 2, subplot_spec=gs, wspace=0.42, hspace=0.48,
+        3, 1, subplot_spec=gs, hspace=0.55,
     )
-    axes = [[fig.add_subplot(gs_inner[r, c]) for c in range(2)] for r in range(2)]
-    _metric_bar(axes[0][0], rows, "si",       "SI",          ylim=(0, 1.10))
-    _metric_bar(axes[0][1], rows, "frac_tgt", "on-tgt (%)",  scale=100.0, ylim=(0, 110))
-    _metric_bar(axes[1][0], rows, "frac_off", "off-tgt (%)", scale=100.0)
-    _metric_bar(axes[1][1], rows, "loss",     "loss",        log=True)
-    return axes[0][0]
+    ax_si  = fig.add_subplot(gs_inner[0])
+    ax_on  = fig.add_subplot(gs_inner[1])
+    ax_off = fig.add_subplot(gs_inner[2])
+
+    _paired_metric(ax_si,  nerves, "dense_si",  "trans_si",  "SI", ylim=(0, 1.10))
+    _paired_metric(ax_on,  nerves, "dense_tgt", "trans_tgt", "on-target (%)",
+                   scale=100.0, ylim=(0, 110))
+    _paired_metric(ax_off, nerves, "dense_off", "trans_off", "off-target (%)",
+                   scale=100.0)
+
+    leg = [mpatches.Patch(facecolor=PALETTE["grey"], alpha=0.45, edgecolor="none",
+                          label="dense"),
+           mpatches.Patch(facecolor="white", alpha=1.0, edgecolor=PALETTE["grey"],
+                          hatch="////", label="sparse")]
+    ax_off.legend(handles=leg, frameon=False, fontsize=FS_SM - 1,
+                  loc="upper center", handlelength=1.0, ncol=2, columnspacing=0.8,
+                  borderpad=0.0)
+    return ax_si
 
 
 # ── Electrode-config icon helpers ─────────────────────────────────────────────
@@ -803,6 +953,7 @@ def main() -> int:
     rows   = _load_all_seeds()
     crows  = _load_contact_amplitudes()
     sparse = _load_sparse()
+    pairs  = _load_dense_transfer_pairs()
 
     if not rows:
         print("[figures_duke_main] no seed data found", file=sys.stderr)
@@ -857,12 +1008,13 @@ def main() -> int:
                                  bottom=bottom, top=top)
 
     ax_a_ref = _panel_a(_gs1(a_l, a_r, top_bot, top_top)[0, 0], fig, rows)
-    ax_b_ref = _panel_b(_gs1(b_l, b_r, top_bot, top_top)[0, 0], fig, rows)
+    ax_b_ref = _panel_b(_gs1(b_l, b_r, top_bot, top_top)[0, 0], fig, pairs)
     ax_c_ref = _panel_c(_gs1(c_l, c_r, bot_bot, c_top)[0, 0],   fig, crows)
     ax_d_ref = _panel_d(_gs1(d_l, d_r, bot_bot, bot_top)[0, 0], fig, sparse)
 
-    _panel_heading(ax_a_ref, "a", "Fiber activation maps",            dx=-0.11)
-    _panel_heading(ax_b_ref, "b", "Selectivity performance",         dx=-0.16)
+    print(f"[figures_duke_main] {len(pairs)} dense/transfer pairs")
+    _panel_heading(ax_a_ref, "a", "Dense vs sparse activation maps",  dx=-0.11)
+    _panel_heading(ax_b_ref, "b", "Dense vs sparse recruitment",      dx=-0.16)
     _panel_heading(ax_c_ref, "c", "Emergent stimulation strategy",
                    dx=-0.14, dy=1.08)
     _panel_heading(ax_d_ref, "d", "Sparse fiber-sampling analysis",  dx=-0.14, dy=1.34)

@@ -75,6 +75,11 @@ for Sundt at $D=0.3\,\mu\mathrm{m}$).  Per-waveform and per-diameter
 breakdowns are in Supplementary
 Tables~\ref{tab:validation-sd-per-wf}--\ref{tab:validation-cv}; the
 per-waveform error distribution is Figure~\ref{fig:validation}\textbf{c}.
+Beyond thresholds, jaxon reproduces three canonical propagation
+phenomena --- action-potential propagation, $20\,\mathrm{kHz}$
+conduction block and AP collision --- in both a myelinated and an
+unmyelinated model, each matching NEURON within the scan resolution or
+the floating-point floor (Supplementary Fig.~\ref{fig:phenomena}).
 
 Figure~\ref{fig:validation} compactly summarizes the validation and
 the computational-efficacy result for all four models in a single
@@ -115,73 +120,6 @@ distribution sits below the $1\,\%$ acceptance criterion.
     vs.\ fiber count $N$, log--log
     (Section~\ref{sec:results-scaling}).}
   \label{fig:validation}
-\end{figure}
-
-\subsection{Propagation phenomena}
-\label{sec:results-phenomena}
-
-Beyond threshold agreement, we verified that jaxon reproduces three
-characteristic propagation phenomena that arise from the nonlinear
-coupling of the axon's active membrane to the extracellular field, in
-both a myelinated (MRG, A-fiber) and an unmyelinated (Sundt, C-fiber)
-model.  Each phenomenon was run independently in jaxon and in
-\texttt{pyfibers}-wrapped NEURON with identical parameters;
-Figure~\ref{fig:phenomena} overlays jaxon (solid) and NEURON (dashed)
-for the A-fiber (top row, \textbf{a}--\textbf{c}) and the C-fiber
-(bottom row, \textbf{d}--\textbf{f}).
-
-\paragraph{AP propagation.}
-A single suprathreshold cathodic pulse delivered at the center of the
-fiber initiates an action potential that propagates symmetrically
-toward both ends.  The waterfall plot
-(Figure~\ref{fig:phenomena}\textbf{a},\textbf{d}) stacks the
-membrane-potential trace of every node along the fiber against time,
-so the diagonal sweep of the depolarization front directly visualizes
-the propagation velocity.  jaxon and PyFibers traces are
-visually indistinguishable at every node, for both the fast
-myelinated A-fiber and the slow unmyelinated C-fiber.
-
-\paragraph{kHz conduction block.}
-A continuous $20\,\mathrm{kHz}$ sinusoidal extracellular hold of
-sufficient amplitude prevents AP propagation past the source
-node~\cite{kilgore2014block}.  We delivered a train of cathodic pace
-pulses and varied the kHz amplitude;
-Figure~\ref{fig:phenomena}\textbf{b},\textbf{e} shows the
-distal-node voltage trace for four amplitudes (kHz-on window shaded),
-spanning no block, partial block and full block.  The block threshold
-(the smallest amplitude at which no APs propagate past the source)
-computed by jaxon matches NEURON within the $0.01\,\mathrm{mA}$ scan
-resolution, and the AP count at each amplitude agrees exactly, for
-both fiber models.
-
-\paragraph{AP collision.}
-Two cathodic pulses delivered simultaneously from opposite ends of a
-fiber initiate two action potentials that propagate inward, meet near
-the center, and annihilate due to mutual refractory-period overlap
-(Figure~\ref{fig:phenomena}\textbf{c},\textbf{f}; $V_m$ along the
-fiber at five times, for four diameters).  The peak voltage
-discrepancy between jaxon and NEURON at the moment of collision is
-below $1\,\mu\mathrm{V}$ for every tested diameter, an agreement
-bounded by the floating-point precision of the comparison itself.
-
-\begin{figure}[h]
-  \centering
-  \figmaybe[width=0.98\textwidth]{main/fig2_phenomena.png}
-  \caption{Reproduction of three canonical propagation phenomena under
-    jaxon (solid) vs.\ PyFibers/NEURON (dashed), for a myelinated
-    A-fiber (MRG, top row \textbf{a}--\textbf{c}) and an unmyelinated
-    C-fiber (Sundt, bottom row \textbf{d}--\textbf{f}).
-    \textbf{(a, d)} AP propagation: waterfall of the membrane-potential
-    trace at each node (y = position along fiber, x = time); the
-    horizontal arrow marks the central stimulation site.
-    \textbf{(b, e)} kHz conduction block at $20\,\mathrm{kHz}$
-    extracellular hold; distal-node $V_m$ traces at four block
-    amplitudes show the pace train passing, partially blocking and
-    fully blocking as amplitude increases (kHz-on window shaded).
-    \textbf{(c, f)} AP collision; snapshots of $V_m$ along the fiber
-    at five times (columns) for four diameters (rows) show the two
-    inward-propagating APs meeting and annihilating.}
-  \label{fig:phenomena}
 \end{figure}
 
 \subsection{Forward-pass throughput}

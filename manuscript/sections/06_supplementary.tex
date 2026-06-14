@@ -12,6 +12,29 @@
 \section*{Supplementary Figures}
 \addcontentsline{toc}{section}{Supplementary Figures}
 
+\begin{figure}[h]
+  \centering
+  \figmaybe[width=0.98\textwidth]{main/fig2_phenomena.png}
+  \caption{jaxon reproduces three canonical propagation phenomena
+    (solid) vs.\ PyFibers/NEURON (dashed), for a myelinated A-fiber
+    (MRG, top row \textbf{a}--\textbf{c}) and an unmyelinated C-fiber
+    (Sundt, bottom row \textbf{d}--\textbf{f}).
+    \textbf{(a, d)} AP propagation: waterfall of the membrane-potential
+    trace at each node (y = position along fiber, x = time); the
+    horizontal arrow marks the central stimulation site.
+    \textbf{(b, e)} kHz conduction block at $20\,\mathrm{kHz}$
+    extracellular hold; distal-node $V_m$ traces at four block
+    amplitudes show the pace train passing, partially and fully blocking
+    as amplitude increases (kHz-on window shaded).  The block threshold
+    matches NEURON within the $0.01\,\mathrm{mA}$ scan resolution and the
+    AP count agrees exactly.
+    \textbf{(c, f)} AP collision; snapshots of $V_m$ along the fiber at
+    five times (columns) for four diameters (rows) show two
+    inward-propagating APs meeting and annihilating, with a
+    jaxon-vs-NEURON peak-voltage discrepancy below $1\,\mu\mathrm{V}$.}
+  \label{fig:phenomena}
+\end{figure}
+
 \noindent Per-specimen selectivity-optimization outcomes for the full
 microCT-derived vagus-nerve cohort
 (Section~\ref{sec:results-duke}).  Each figure collects all

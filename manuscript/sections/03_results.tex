@@ -1,25 +1,194 @@
 \section{Results}
 \label{sec:results}
 
-We benchmarked jaxon across four axes: \emph{(i)} numerical agreement
-with NEURON on activation thresholds, conduction velocity and
-intracellular traces; \emph{(ii)} reproduction of canonical
-propagation phenomena (AP propagation, kHz conduction block and AP
-collision) in both a myelinated and an unmyelinated fibre model;
-\emph{(iii)} forward-pass throughput against the standard
-\texttt{pyfibers} pipeline on a single GPU; and \emph{(iv)}
-differentiable selectivity optimisation on microCT-derived vagus-nerve
-anatomies.  All raw data and reproduction scripts are in the
-repository under \texttt{outputs/} and \texttt{experiments\_v2/}.
+Our central result is that the reduced-order fibre sampling used to
+keep selectivity models tractable systematically overestimates the
+selectivity actually delivered to the nerve, by an amount set by
+fascicular architecture.  We establish this on real cross-species
+anatomy (Sections~\ref{sec:results-duke}--\ref{sec:results-sparse}),
+then document the simulator that makes population-scale optimisation
+feasible --- its agreement with NEURON, its reproduction of canonical
+propagation phenomena and its throughput
+(Sections~\ref{sec:results-validation}--\ref{sec:results-scaling}).
+All raw data and reproduction scripts are in the repository under
+\texttt{outputs/} and \texttt{experiments\_v2/}.
 
+\subsection{Selectivity optimisation on microCT-derived vagus nerves}
+\label{sec:results-duke}
+
+Using jaxon --- validated against NEURON and fast enough to optimise
+whole-nerve populations (Sections~\ref{sec:results-validation}--\ref{sec:results-scaling})
+--- we ran the differentiable optimiser on a cohort of
+$n_{\mathrm{cohort}} = 29$ (18 swine, 11 human; 116 target-cluster
+seeds) subject-specific FE-modelled vagus-nerve cross-sections drawn
+from the SPARC quantified morphology releases of
+swine~\cite{pelot2020swineSPARC} and human~\cite{pelot2021humanSPARC},
+with per-contact extracellular lead-fields computed in-house with the
+Golgi pipeline~\cite{haberbusch2026golgi}
+(Section~\ref{sec:methods-duke}).  The cuff is the 12-contact
+MultiContact array (three axial rows $\times$ four angular
+columns), so the rectangular optimiser searches over $K=12$
+amplitudes per nerve.  Target fascicles were selected by a
+peripheral-cluster selector that picks one contiguous angular
+sector of the nerve perimeter containing the largest
+peripheral-fascicle cluster (by total fibre count), giving every
+nerve a single anatomically contiguous target region.
+Figure~\ref{fig:duke}\textbf{a} shows, for a representative swine and
+human nerve, the fibre activation maps and unrolled 12-contact cuff
+patterns under dense- and sparse-optimised stimulation (the sparse
+condition is defined in Section~\ref{sec:results-sparse}); fibres are
+coloured by post-optimisation activation status
+(target/off-target $\times$ fired/silent).
+
+\paragraph{Dense optimisation recovers focal, selective drive.}
+The rectangular optimiser uses a probe-based smart initialisation
+(Section~\ref{sec:methods-opt}): a small set of bipolar and
+single-column tripolar spatial patterns is scored at eight magnitudes
+in 80 forward passes per seed, and the best initialises a single
+gradient (Adam-FD) trajectory with the probe's zero contacts frozen to
+preserve sparsity.  Across the cohort (116 seeds over 29 nerves) this
+achieves mean $\mathrm{SI} = 0.90$ (median $0.95$), with $70\,\%$ of
+seeds reaching the $\mathrm{SI} \geq 0.90$ noise-floor threshold.
+Swine and human reach a near-identical median ($0.946$ vs.\ $0.965$),
+but the human \emph{mean} is lower ($0.857$ vs.\ $0.926$) because a
+heavy tail of geometric-ceiling anatomies (below) pulls it down rather
+than a uniform downward shift.  The optimiser converges to a focal,
+sparse drive: $105$ of $116$ seeds ($91\,\%$) use exactly three active
+contacts --- a single-column tripolar configuration (cathode at the
+column's $z$-middle contact, charge-balancing anodes at $z$-top and
+$z$-bottom).  A per-species cohort summary is given in
+Appendix Table~\ref{tab:duke-cohort}.  Per-sample dense and
+sparse-transfer activation maps with their cuff
+patterns, for every nerve and seed, are provided as Supplementary
+Figures~\ref{fig:supp-sub-4-sam-3}--\ref{fig:supp-human-sub-58-sam-3}.
+All results here use optimised rectangular pulses; waveform-shape
+optimisation is left to future work (Section~\ref{sec:discussion}).
+
+\paragraph{Emergent stimulation strategy.}
+The optimised configurations are physically interpretable rather than
+arbitrary (Figure~\ref{fig:duke}\textbf{c}).  Circumferentially, the
+optimiser steers cathodic drive \emph{toward} the target sector: the
+fraction of contacts that are cathodic is highest in the
+target-facing direction ($0.34$ swine, $0.40$ human) and near zero to
+the side.  Longitudinally it forms a centre--surround current profile
+--- a mid-cathode tripole flanked by charge-balancing anodes ---
+whose polarity is a species-dependent tendency (more often the
+classic mid-cathode form in swine, the inverse in human).  The
+optimiser thus rediscovers, without being told to, the steered
+tripolar configurations that the selectivity literature arrives at by
+design.
+
+\paragraph{Geometric-ceiling cases.}
+The cohort separates into anatomies the cuff can steer and a minority
+it cannot.  Geometric-ceiling cases have a target-to-off-target
+minimum-distance ratio close to unity --- the off-target fascicles sit
+as close to the contacts as the target --- so no per-contact
+configuration has a spatial gradient to exploit, and the optimiser
+either co-activates off-target fascicles or fails to reach threshold.
+Four of the $116$ seeds (all human) fall below $\mathrm{SI} = 0.5$ and
+are excluded from the dense-versus-sparse comparison below as they
+provide no valid selectivity ceiling.
+
+\begin{figure}[h]
+  \centering
+  \figmaybe[width=0.98\textwidth]{main/fig3_duke.png}
+  \caption{Selectivity optimisation on the Duke microCT-derived
+    vagus-nerve cohort (29 nerves: 18 swine, 11 human; 116
+    target-cluster seeds).  ``Sparse'' throughout denotes a
+    configuration optimised on one randomly-sampled fibre per fascicle
+    and evaluated on the full ${\sim}1000$-fibre population (transfer).
+    \textbf{(a)} Dense- versus sparse-optimised activation for a
+    representative swine and human nerve, matched on target size
+    ($\sim$28\,\% of fibres) and dense $\mathrm{SI}$ ($\sim$0.97);
+    fibres coloured by activation status (target/off-target $\times$
+    fired/silent), with the optimised 12-contact cuff pattern below
+    (contacts coloured by polarity, sized by $|I_k|$).
+    \textbf{(b)} Dense versus sparse performance per nerve (mean
+    $\pm$ SEM, dots = nerves): selectivity index, on-target and
+    off-target recruitment, and total stimulation current.  Brackets
+    give two-sided per-nerve Wilcoxon $p$ (Holm-corrected over the
+    eight cells).
+    \textbf{(c)} Emergent stimulation strategy: (left) fraction of
+    contacts that are cathodic by target-relative direction ---
+    cathodes steer toward the target; (right) longitudinal mean
+    current by axial row --- a centre--surround (tripolar) profile.
+    \textbf{(d)} Sparse fibre-sampling: dense-optimised $\mathrm{SI}$
+    ceiling (dashed line $\pm$ bootstrap CI) versus sparse-optimised
+    transfer $\mathrm{SI}$ per strategy (centroid, 1/3/10 fibres per
+    fascicle) for swine and human; right, the deployment penalty
+    $\mathrm{SI_{dense}} - \mathrm{SI_{transfer}}$ versus the number of
+    fibres per target fascicle (Spearman $r$).}
+  \label{fig:duke}
+\end{figure}
+
+\subsection{Reduced-order fibre sampling overestimates deliverable
+  selectivity}
+\label{sec:results-sparse}
+
+Prior GPU-accelerated selectivity work reduces each fascicle to a
+single centroid fibre to keep the population
+tractable~\cite{hussain2024}.  Because jaxon simulates the full
+${\sim}1000$-fibre population directly, we can ask what this
+approximation costs at deployment.  For each nerve $\times$ seed we
+re-ran the identical optimisation on four sparse fibre-sampling levels
+--- one centroid fibre per fascicle, and $1$, $3$ or $10$
+randomly-sampled fibres per fascicle --- by pure row-subsampling of the
+precomputed $V_e$ lead-field with no FEM recomputation.  The
+selectivity such a model \emph{reports} is optimistic, because its
+amplitudes are tuned to the few fibres it can see; we therefore take
+each sparse-optimised amplitude vector and re-score it on the full
+population \emph{without re-optimising}, giving the transfer
+selectivity $\mathrm{SI_{transfer}}$ --- the selectivity actually
+delivered.  The deployment penalty is the drop from the dense ceiling,
+$\mathrm{SI_{dense}} - \mathrm{SI_{transfer}}$
+(Figure~\ref{fig:duke}\textbf{d}).
+
+The penalty is small in swine but large in human.  Per nerve it is a
+median $0.03$ in swine (mean $0.04$) versus $0.27$ in human (mean
+$0.31$; Mann--Whitney $p = 10^{-4}$), and the transfer SI lies
+significantly below the dense ceiling for every sampling strategy in
+both species (two-sided per-nerve Wilcoxon, Holm-corrected; all
+$p \le 0.008$).  Sampling \emph{density} barely matters: ten fibres per
+fascicle transfer no better than one, or than the centroid, so the
+shortfall is not closed by sampling a few more fibres.
+
+What drives it is fascicle \emph{size}.  The per-nerve penalty scales
+with the number of fibres per target fascicle (Spearman $r = +0.72$,
+$p < 10^{-3}$, $n = 29$ nerves), which has median $30$ in swine versus
+$92$ in human.  This mediates the species gap: swine vagus nerves carry
+many small fascicles, so a handful of sampled fibres represents the
+target well and the optimised field transfers; human nerves carry a few
+large fascicles, so a field tuned to one sampled fibre does not cover
+the rest of that fascicle.  Counterintuitively, the more fascicular
+nerve (swine) is the more forgiving one.
+
+The recruitment signature confirms the mechanism
+(Figure~\ref{fig:duke}\textbf{b}).  Relative to the dense optimum, the
+sparse-transfer configuration in human loses on-target recruitment
+(median $100\,\% \rightarrow 65\,\%$; $p = 0.023$) and selectivity
+($p = 0.014$), whereas off-target recruitment and total delivered
+current are statistically unchanged ($p > 0.4$).  The penalty is thus a
+failure to recruit the large target fascicle, not off-target spill or
+reduced drive.  The practical implication is that centroid-only fibre
+sampling --- standard in GPU-accelerated selectivity
+work~\cite{hussain2024} --- recovers most of the achievable selectivity
+on small-fascicle anatomies but materially over-states the selectivity
+that will actually be delivered on large-fascicle nerves, precisely the
+human vagus geometry most relevant to clinical translation.
+
+% ====================================================================
+% Supporting results: the simulator (accuracy, phenomena, throughput)
+% ====================================================================
 \subsection{Validation against NEURON}
 \label{sec:results-validation}
 
-For each axon model we drove jaxon and \texttt{pyfibers}-wrapped
-NEURON with identical stimuli and compared activation thresholds across
-diameters, eight waveforms (monophasic and biphasic cathodic- and
-anodic-first, sinusoidal, sawtooth, exponential, Gaussian) and pulse
-widths $0.02$--$1\,\mathrm{ms}$ --- 943 configurations in total.
+The findings above rest on jaxon reproducing NEURON and scaling to
+whole-nerve populations; we establish both here.  For each axon model
+we drove jaxon and \texttt{pyfibers}-wrapped NEURON with identical
+stimuli and compared activation thresholds across diameters, eight
+waveforms (monophasic and biphasic cathodic- and anodic-first,
+sinusoidal, sawtooth, exponential, Gaussian) and pulse widths
+$0.02$--$1\,\mathrm{ms}$ --- 943 configurations in total.
 \textbf{$99.6\,\%$ agree to within $1\,\%$ relative threshold error}
 (Table~\ref{tab:validation-sd}; jaxon--NEURON $r = 0.999998$, mean
 signed bias $+0.11\,\%$).  Only the Rattay model exceeds the criterion,
@@ -227,11 +396,11 @@ The geometric mean across all five models at $N=100\,000$ is
 $\sim 820\times$, taking what would have been multiple CPU-hours of
 \texttt{pyfibers} time per forward pass down to under twenty
 seconds of GPU wall time.
-For the fascicular selectivity sweeps reported in
-Section~\ref{sec:results-duke}, where $\sim 1\,000$ fibers per
-nerve realisation are simulated thousands of times during
-optimisation, this throughput differential is what brings
-multi-anatomy gradient-based optimisation on a 12-contact cuff into
+This throughput is what brings the population-scale
+optimise-and-re-score analysis of
+Sections~\ref{sec:results-duke}--\ref{sec:results-sparse} ---
+$\sim\!1\,000$ fibres per nerve, simulated thousands of times during
+optimisation, across 29 anatomies and five sampling levels --- within
 reach on a single GPU-day.
 
 \begin{table}[h]
@@ -260,167 +429,3 @@ reach on a single GPU-day.
     \bottomrule
   \end{tabular}
 \end{table}
-
-\subsection{Selectivity on microCT-derived vagus nerve geometries}
-\label{sec:results-duke}
-
-To test the optimisation pipeline on realistic anatomy we ran it on a
-cohort of $n_{\mathrm{cohort}} = 29$ (18 swine, 11 human; 116
-target-cluster seeds)
-subject-specific FE-modelled vagus-nerve cross-sections drawn from the
-SPARC quantified morphology releases of
-swine~\cite{pelot2020swineSPARC} and human~\cite{pelot2021humanSPARC},
-with per-contact extracellular lead-fields computed in-house with the
-Golgi pipeline~\cite{haberbusch2026golgi}
-(Section~\ref{sec:methods-duke}).  The cuff is the 12-contact
-MultiContact array (three axial rows $\times$ four angular
-columns), so the rectangular optimiser searches over $K=12$
-amplitudes per nerve.  Target fascicles were selected by a
-peripheral-cluster selector that picks one contiguous angular
-sector of the nerve perimeter containing the largest
-peripheral-fascicle cluster (by total fibre count), giving every
-nerve a single anatomically contiguous target region.
-Figure~\ref{fig:duke}\textbf{a} shows, for a representative swine and
-human nerve, the fibre activation maps and unrolled 12-contact cuff
-patterns under dense- and sparse-optimised stimulation (the sparse
-condition is defined in Section~\ref{sec:results-sparse}); fibres are
-coloured by post-optimisation activation status
-(target/off-target $\times$ fired/silent).
-
-\paragraph{Dense optimisation recovers focal, selective drive.}
-The rectangular optimiser uses a probe-based smart initialisation
-(Section~\ref{sec:methods-opt}): a small set of bipolar and
-single-column tripolar spatial patterns is scored at eight magnitudes
-in 80 forward passes per seed, and the best initialises a single
-gradient (Adam-FD) trajectory with the probe's zero contacts frozen to
-preserve sparsity.  Across the cohort (116 seeds over 29 nerves) this
-achieves mean $\mathrm{SI} = 0.90$ (median $0.95$), with $70\,\%$ of
-seeds reaching the $\mathrm{SI} \geq 0.90$ noise-floor threshold.
-Swine and human reach a near-identical median ($0.946$ vs.\ $0.965$),
-but the human \emph{mean} is lower ($0.857$ vs.\ $0.926$) because a
-heavy tail of geometric-ceiling anatomies (below) pulls it down rather
-than a uniform downward shift.  The optimiser converges to a focal,
-sparse drive: $105$ of $116$ seeds ($91\,\%$) use exactly three active
-contacts --- a single-column tripolar configuration (cathode at the
-column's $z$-middle contact, charge-balancing anodes at $z$-top and
-$z$-bottom).  A per-species cohort summary is given in
-Appendix Table~\ref{tab:duke-cohort}.  Per-sample dense and
-sparse-transfer activation maps with their cuff
-patterns, for every nerve and seed, are provided as Supplementary
-Figures~\ref{fig:supp-sub-4-sam-3}--\ref{fig:supp-human-sub-58-sam-3}.
-All results here use optimised rectangular pulses; waveform-shape
-optimisation is left to future work (Section~\ref{sec:discussion}).
-
-\paragraph{Emergent stimulation strategy.}
-The optimised configurations are physically interpretable rather than
-arbitrary (Figure~\ref{fig:duke}\textbf{c}).  Circumferentially, the
-optimiser steers cathodic drive \emph{toward} the target sector: the
-fraction of contacts that are cathodic is highest in the
-target-facing direction ($0.34$ swine, $0.40$ human) and near zero to
-the side.  Longitudinally it forms a centre--surround current profile
---- a mid-cathode tripole flanked by charge-balancing anodes ---
-whose polarity is a species-dependent tendency (more often the
-classic mid-cathode form in swine, the inverse in human).  The
-optimiser thus rediscovers, without being told to, the steered
-tripolar configurations that the selectivity literature arrives at by
-design.
-
-\paragraph{Geometric-ceiling cases.}
-The cohort separates into anatomies the cuff can steer and a minority
-it cannot.  Geometric-ceiling cases have a target-to-off-target
-minimum-distance ratio close to unity --- the off-target fascicles sit
-as close to the contacts as the target --- so no per-contact
-configuration has a spatial gradient to exploit, and the optimiser
-either co-activates off-target fascicles or fails to reach threshold.
-Four of the $116$ seeds (all human) fall below $\mathrm{SI} = 0.5$ and
-are excluded from the dense-versus-sparse comparison below as they
-provide no valid selectivity ceiling.  That gradient-based
-optimisation succeeds on real cross-species microCT anatomies, and
-honestly reports the geometric ceiling where it does not, is the
-principal application result of this paper.
-
-\begin{figure}[h]
-  \centering
-  \figmaybe[width=0.98\textwidth]{main/fig3_duke.png}
-  \caption{Selectivity optimisation on the Duke microCT-derived
-    vagus-nerve cohort (29 nerves: 18 swine, 11 human; 116
-    target-cluster seeds).  ``Sparse'' throughout denotes a
-    configuration optimised on one randomly-sampled fibre per fascicle
-    and evaluated on the full ${\sim}1000$-fibre population (transfer).
-    \textbf{(a)} Dense- versus sparse-optimised activation for a
-    representative swine and human nerve, matched on target size
-    ($\sim$28\,\% of fibres) and dense $\mathrm{SI}$ ($\sim$0.97);
-    fibres coloured by activation status (target/off-target $\times$
-    fired/silent), with the optimised 12-contact cuff pattern below
-    (contacts coloured by polarity, sized by $|I_k|$).
-    \textbf{(b)} Dense versus sparse performance per nerve (mean
-    $\pm$ SEM, dots = nerves): selectivity index, on-target and
-    off-target recruitment, and total stimulation current.  Brackets
-    give two-sided per-nerve Wilcoxon $p$ (Holm-corrected over the
-    eight cells).
-    \textbf{(c)} Emergent stimulation strategy: (left) fraction of
-    contacts that are cathodic by target-relative direction ---
-    cathodes steer toward the target; (right) longitudinal mean
-    current by axial row --- a centre--surround (tripolar) profile.
-    \textbf{(d)} Sparse fibre-sampling: dense-optimised $\mathrm{SI}$
-    ceiling (dashed line $\pm$ bootstrap CI) versus sparse-optimised
-    transfer $\mathrm{SI}$ per strategy (centroid, 1/3/10 fibres per
-    fascicle) for swine and human; right, the deployment penalty
-    $\mathrm{SI_{dense}} - \mathrm{SI_{transfer}}$ versus the number of
-    fibres per target fascicle (Spearman $r$).}
-  \label{fig:duke}
-\end{figure}
-
-\subsection{Sparse fibre-sampling bias and the deployment penalty}
-\label{sec:results-sparse}
-
-Prior GPU-accelerated selectivity work reduces each fascicle to a
-single centroid fibre to keep the population
-tractable~\cite{hussain2024}.  Because jaxon simulates the full
-${\sim}1000$-fibre population directly, we can ask what this
-approximation costs at deployment.  For each nerve $\times$ seed we
-re-ran the identical optimisation on four sparse fibre-sampling levels
---- one centroid fibre per fascicle, and $1$, $3$ or $10$
-randomly-sampled fibres per fascicle --- by pure row-subsampling of the
-precomputed $V_e$ lead-field with no FEM recomputation.  The
-selectivity such a model \emph{reports} is optimistic, because its
-amplitudes are tuned to the few fibres it can see; we therefore take
-each sparse-optimised amplitude vector and re-score it on the full
-population \emph{without re-optimising}, giving the transfer
-selectivity $\mathrm{SI_{transfer}}$ --- the selectivity actually
-delivered.  The deployment penalty is the drop from the dense ceiling,
-$\mathrm{SI_{dense}} - \mathrm{SI_{transfer}}$
-(Figure~\ref{fig:duke}\textbf{d}).
-
-The penalty is small in swine but large in human.  Per nerve it is a
-median $0.03$ in swine (mean $0.04$) versus $0.27$ in human (mean
-$0.31$; Mann--Whitney $p = 10^{-4}$), and the transfer SI lies
-significantly below the dense ceiling for every sampling strategy in
-both species (two-sided per-nerve Wilcoxon, Holm-corrected; all
-$p \le 0.008$).  Sampling \emph{density} barely matters: ten fibres per
-fascicle transfer no better than one, or than the centroid, so the
-shortfall is not closed by sampling a few more fibres.
-
-What drives it is fascicle \emph{size}.  The per-nerve penalty scales
-with the number of fibres per target fascicle (Spearman $r = +0.72$,
-$p < 10^{-3}$, $n = 29$ nerves), which has median $30$ in swine versus
-$92$ in human.  This mediates the species gap: swine vagus nerves carry
-many small fascicles, so a handful of sampled fibres represents the
-target well and the optimised field transfers; human nerves carry a few
-large fascicles, so a field tuned to one sampled fibre does not cover
-the rest of that fascicle.  Counterintuitively, the more fascicular
-nerve (swine) is the more forgiving one.
-
-The recruitment signature confirms the mechanism
-(Figure~\ref{fig:duke}\textbf{b}).  Relative to the dense optimum, the
-sparse-transfer configuration in human loses on-target recruitment
-(median $100\,\% \rightarrow 65\,\%$; $p = 0.023$) and selectivity
-($p = 0.014$), whereas off-target recruitment and total delivered
-current are statistically unchanged ($p > 0.4$).  The penalty is thus a
-failure to recruit the large target fascicle, not off-target spill or
-reduced drive.  The practical implication is that centroid-only fibre
-sampling --- standard in GPU-accelerated selectivity
-work~\cite{hussain2024} --- recovers most of the achievable selectivity
-on small-fascicle anatomies but materially over-states the selectivity
-that will actually be delivered on large-fascicle nerves, precisely the
-human vagus geometry most relevant to clinical translation.

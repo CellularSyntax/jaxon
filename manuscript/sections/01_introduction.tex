@@ -40,6 +40,13 @@ gradient-free methods---grid sweeps, finite-difference
 approximations~\cite{hussain2024} or evolutionary
 search~\cite{aristovich2021}---scaling poorly to the high-dimensional
 spaces opened up by waveform shaping or many-contact cuffs.
+A second, less-examined economy compounds the first: to keep the fibre
+count manageable, these pipelines typically reduce each fascicle to a
+single representative (centroid) fibre~\cite{hussain2024}.  Whether
+this reduction preserves the selectivity of candidate designs --- or
+quietly biases it --- has not been tested, because testing it demands
+simulating the full fibre population under the very fields the reduced
+model selects.
 
 Recent work in differentiable simulation suggests an alternative.
 Frameworks such as \texttt{jaxley}~\cite{deistler2024} have shown that
@@ -68,47 +75,42 @@ when batched across large fiber populations; and (iii) does the
 differentiability enable selectivity optimisation strategies that
 the gradient-free pipelines cannot perform?
 
-In this paper we present \textbf{jaxon}, a JAX-based differentiable
-peripheral nerve fiber simulator that answers these three questions
-affirmatively.  Our contributions are:
+In this paper we use population-scale differentiable simulation to ask
+whether the reduced-order fibre sampling that keeps selectivity models
+tractable biases the selectivity they predict --- and we find that it
+does, systematically and in a species-dependent way.  Our
+contributions are:
 
 \begin{enumerate}
-  \item A JAX implementation of four canonical axon models --- the
-        myelinated MRG (double-cable) and Sweeney, and the unmyelinated
-        Sundt and Rattay C-fibers --- with a backward-Euler integrator
-        (coupled $(V_i, V_{\mathrm{px}})$ for the MRG double cable),
-        validated against NEURON on strength--duration, conduction
-        velocity and intracellular-trace benchmarks for all four
-        models (Section~\ref{sec:results-validation}).
-  \item A batched forward solver that integrates $N$ fibers in
-        parallel via \texttt{jax.vmap} over a shared scan, yielding
-        a $209\times$ wall-time reduction over \texttt{pyfibers} at
-        $N=1\,000$ MRG and rising to $\sim 820\times$ geometric mean
-        (peak $1\,377\times$ on Sweeney) at $N=100\,000$ across all
-        five implemented axon models on a single NVIDIA A100
-        (Section~\ref{sec:results-scaling}).
-  \item An end-to-end differentiable selectivity optimisation pipeline
-        that uses gradient-based multi-start optimisation over
-        per-contact rectangular-pulse amplitudes, exposing exact
-        end-to-end gradients that the gradient-free PNS pipelines of
-        prior work lack.
-  \item A demonstration of that pipeline on a cross-species cohort of
-        microCT-segmented vagus nerve cross-sections drawn from the
-        SPARC consortium, with FEM-derived per-contact extracellular
-        potentials computed by an in-house pipeline and the 12-contact
-        MultiContact cuff array
-        (Section~\ref{sec:results-duke}).  This is, to
-        our knowledge, the first cross-species gradient-based
-        selectivity optimisation on real microCT-derived
-        peripheral nerve anatomies.
-  \item A direct quantification, enabled by simulating the full
-        ${\sim}1000$-fibre population rather than a per-fascicle
-        centroid, of the \emph{deployment penalty} incurred when a
-        configuration optimised on sparsely-sampled fibres is deployed
-        on the full nerve, and of its anatomical driver --- the number
-        of fibres per target fascicle --- which we show mediates a
-        cross-species gap in transferable selectivity
+  \item \textbf{The central finding.}  On a cross-species cohort of
+        microCT-segmented vagus nerves, stimulation configurations
+        optimised on sparsely-sampled fibres --- the per-fascicle
+        reduction used in GPU-accelerated selectivity
+        work~\cite{hussain2024} --- lose substantial selectivity when
+        deployed on the full fibre population.  This \emph{deployment
+        penalty} scales with the number of fibres per target fascicle
+        and thereby differs systematically between species (small in
+        swine, large in human), exposing a translational bias that
+        reduced-order models cannot detect
         (Section~\ref{sec:results-sparse}).
+  \item \textbf{The enabling simulator.}  \emph{jaxon}, a fully
+        differentiable, GPU-native reimplementation in JAX of four
+        canonical axon models (myelinated MRG double-cable and Sweeney;
+        unmyelinated Sundt and Rattay), validated against NEURON on
+        strength--duration, conduction-velocity and intracellular-trace
+        benchmarks ($99.6\,\%$ of 943 configurations within $1\,\%$)
+        and $\sim\!820\times$ faster than \texttt{pyfibers} at
+        $N=100{,}000$ fibres on a single A100 --- fast enough to
+        optimise and re-score whole-nerve populations
+        (Sections~\ref{sec:results-validation}--\ref{sec:results-scaling}).
+  \item \textbf{The pipeline.}  An end-to-end differentiable
+        selectivity-optimisation method over per-contact stimulus
+        amplitudes, exposing exact gradients that gradient-free PNS
+        pipelines lack, demonstrated on 29 microCT-derived vagus
+        anatomies with FEM-computed extracellular fields --- to our
+        knowledge the first cross-species gradient-based selectivity
+        optimisation on real microCT nerve geometry
+        (Section~\ref{sec:results-duke}).
 \end{enumerate}
 
 We discuss the limits of the current implementation, including the

@@ -1,32 +1,32 @@
 \section{Discussion}
 \label{sec:discussion}
 
-We have presented jaxon, a fully differentiable peripheral nerve
-fiber simulator that reproduces the canonical MRG, Sundt, Sweeney
-and Rattay axon models with $99.6\,\%$ of $943$ threshold-test
-configurations under the $1\,\%$ error criterion vs.\ NEURON,
-achieves a $209\times$ throughput improvement over \texttt{pyfibers}
-at $N=1\,000$ MRG fibers, rising to a geometric-mean speedup of
-$\sim 820\times$ at $N=100\,000$ across all five implemented axon
-models (peak $1\,377\times$ on Sweeney) on a single A100 GPU,
-and exposes
-end-to-end gradients with respect to per-contact stimulus amplitudes.
-The gradient capability is the conceptual contribution: previous PNS
-optimisation pipelines have been gradient-free, restricting
-selectivity search to grid sweeps or evolutionary methods that scale
-poorly with the dimensionality of the design space.  With jaxon,
-gradient-based rectangular-pulse amplitude optimisation recovers
-selective configurations directly on subject-specific microCT-derived
-vagus-nerve anatomies (Section~\ref{sec:results-duke}).  The
-fibre-model generalisation matters: the same optimisation pipeline
-applies to myelinated and unmyelinated fibres with no algorithmic
-change.  Because jaxon simulates the full fibre population rather than
-a per-fascicle centroid, it furthermore quantifies --- for the first
-time --- the \emph{deployment penalty} incurred when a configuration
-optimised on sparsely-sampled fibres is run on the full nerve, and
-shows that this penalty is governed by the number of fibres per target
-fascicle and thereby mediates a cross-species gap in transferable
-selectivity (Section~\ref{sec:results-sparse}).
+Using population-scale differentiable simulation, we have shown that
+the reduced-order fibre sampling standard in GPU-accelerated
+selectivity modelling --- reducing each fascicle to one or a few
+representative fibres --- systematically overestimates the selectivity
+actually delivered to the nerve.  The error is not a fixed offset: this
+\emph{deployment penalty} is governed by fascicular architecture, the
+number of fibres per target fascicle, and is therefore small in swine
+(median $0.03$) but large in human (median $0.27$), a translational
+bias that reduced-order models cannot detect because they never
+simulate the fibres the bias acts on.  Mechanistically the penalty is
+a failure to recruit the large human target fascicle from a field
+tuned to a few sampled fibres, not off-target spill or reduced drive.
+This was measurable only because jaxon simulates the full
+${\sim}1000$-fibre population: a fully differentiable, GPU-native
+reimplementation of the canonical MRG, Sweeney, Sundt and Rattay axon
+models that reproduces NEURON ($99.6\,\%$ of $943$ configurations under
+the $1\,\%$ criterion) at a geometric-mean $\sim\!820\times$ throughput
+gain (peak $1\,377\times$) on a single A100, and exposes end-to-end
+gradients over per-contact stimulus amplitudes.  Those gradients are
+the enabling capability: previous PNS pipelines have been
+gradient-free, restricting selectivity search to grid sweeps or
+evolutionary methods, whereas jaxon recovers selective configurations
+directly on subject-specific microCT vagus anatomies
+(Section~\ref{sec:results-duke}) --- and, crucially, can re-score them
+on the full population to expose the penalty
+(Section~\ref{sec:results-sparse}).
 
 \subsection{Comparison with prior work}
 
@@ -84,6 +84,19 @@ variables still requires the finite-difference detour the present work
 is designed to obviate.
 
 \subsection{Limitations}
+
+\paragraph{Scope of the deployment-penalty finding.}
+The penalty is established \emph{in silico}, at a single fibre diameter
+($5.7\,\mu\mathrm{m}$ MRG), with one cuff and one FE pipeline, on 29
+nerves (11 human).  We therefore frame fascicular architecture as the
+\emph{driver} the penalty scales with (per-nerve Spearman
+$r = +0.72$; fibres-per-fascicle mediates the species gap), not as a
+manipulated cause, and we expect the magnitude --- though not the
+direction --- to depend on diameter, fibre-type mix, cuff geometry and
+the conductivity model.  Confirming the effect across diameters and
+fibre populations, and anchoring it experimentally, is the natural next
+step; jaxon's throughput makes the required population-scale sweeps
+tractable.
 
 \paragraph{Single-cuff geometry.}
 The microCT selectivity results use a single 12-contact MultiContact

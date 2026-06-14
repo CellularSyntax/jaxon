@@ -647,7 +647,7 @@ def _draw_xsection(ax, sample_dir_name: str, raw: dict,
     if draw_electrodes and patches:
         from matplotlib.patches import Circle
         _R_in = float(patches[0]["R"]) * 1e6
-        ax.add_patch(Circle((0.0, 0.0), _R_in, facecolor="#e3f0fb",
+        ax.add_patch(Circle((0.0, 0.0), _R_in, facecolor="#f0f7fd",
                             edgecolor="none", zorder=0.5))
 
     # Nerve outline.

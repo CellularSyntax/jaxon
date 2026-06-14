@@ -98,14 +98,17 @@ def _panel_heading(ax: plt.Axes, letter: str, title: str,
 
 
 def _violin(ax: plt.Axes, data: np.ndarray, pos: float,
-            col: str, width: float = 0.36) -> None:
+            col: str, width: float = 0.36, fill: bool = True) -> None:
     if data.size < 3:
         return
     vp = ax.violinplot([data], positions=[pos], widths=width,
                        showmedians=True, showextrema=False)
     for body in vp["bodies"]:
-        body.set_facecolor(col); body.set_edgecolor(col)
-        body.set_alpha(0.42);    body.set_linewidth(0.4)
+        if fill:
+            body.set_facecolor(col); body.set_alpha(0.42)
+        else:                                  # hollow outline (in-sample)
+            body.set_facecolor("none"); body.set_alpha(0.9)
+        body.set_edgecolor(col); body.set_linewidth(0.8 if not fill else 0.4)
     vp["cmedians"].set_color("black")
     vp["cmedians"].set_linewidth(1.4)
 
@@ -624,20 +627,25 @@ _D_SPARSE = _D_LAYOUT[1:]   # excludes dense
 
 
 def _si_violin_ax(ax: plt.Axes, sparse_rows: list[dict]) -> None:
-    """Left sub-panel: SI violin per strategy, swine + human side by side."""
-    rng = np.random.default_rng(42)
+    """Left sub-panel: per strategy, paired SI violins — in-sample (hollow,
+    measured on the sparse model) vs transfer (filled, the sparse-optimised
+    strategy re-scored on the FULL nerve), swine + human."""
+    _nan = float("nan")
     for plot_xi, (xi, _, _, _) in enumerate(_D_LAYOUT):
+        is_dense = (plot_xi == 0)
         for sp, xoff in [("swine", -0.22), ("human", 0.22)]:
-            vals = np.array([r["si"][xi] for r in sparse_rows
-                             if r["species"] == sp
-                             and np.isfinite(r["si"].get(xi, float("nan")))])
-            if vals.size < 3:
-                continue
             col = PALETTE[sp]
-            _violin(ax, vals, plot_xi + xoff, col, width=0.36)
-            jit = rng.uniform(-0.07, 0.07, vals.size)
-            ax.scatter(plot_xi + xoff + jit, vals, s=3, color=col,
-                       alpha=0.38, edgecolors="none", zorder=3)
+            ins = np.array([r["si"][xi] for r in sparse_rows
+                            if r["species"] == sp
+                            and np.isfinite(r["si"].get(xi, _nan))])
+            tr = np.array([r["si_transfer"][xi] for r in sparse_rows
+                           if r["species"] == sp
+                           and np.isfinite(r["si_transfer"].get(xi, _nan))])
+            if is_dense:                       # full->full: one filled violin
+                _violin(ax, tr, plot_xi + xoff, col, width=0.30, fill=True)
+            else:                              # in-sample (hollow) | transfer (filled)
+                _violin(ax, ins, plot_xi + xoff - 0.09, col, width=0.16, fill=False)
+                _violin(ax, tr,  plot_xi + xoff + 0.09, col, width=0.16, fill=True)
     ax.axhline(0.90, color=PALETTE["lgrey"], ls="--", lw=0.5, zorder=0)
     ax.set_xticks(range(len(_D_LAYOUT)))
     ax.set_xticklabels([t[3] for t in _D_LAYOUT], fontsize=FS_SM)
@@ -650,14 +658,17 @@ def _si_violin_ax(ax: plt.Axes, sparse_rows: list[dict]) -> None:
 
 
 def _gap_ax(ax: plt.Axes, sparse_rows: list[dict], species: str) -> None:
-    """Single-species gap violin (SI_dense − SI_sparse), own y-scale."""
+    """Single-species optimism gap: SI_in-sample − SI_transfer (how much the
+    sparse optimiser overestimates its selectivity vs the real nerve)."""
     col = PALETTE[species]
     rng = np.random.default_rng(7)
+    _nan = float("nan")
     for plot_xi, (xi, _, _, lbl) in enumerate(_D_SPARSE):
-        gaps = np.array([r["dense_si"] - r["si"][xi]
+        gaps = np.array([r["si"][xi] - r["si_transfer"][xi]
                          for r in sparse_rows
                          if r["species"] == species
-                         and np.isfinite(r["si"].get(xi, float("nan")))])
+                         and np.isfinite(r["si"].get(xi, _nan))
+                         and np.isfinite(r["si_transfer"].get(xi, _nan))])
         if gaps.size < 3:
             continue
         _violin(ax, gaps, float(plot_xi), col, width=0.50)
@@ -667,7 +678,8 @@ def _gap_ax(ax: plt.Axes, sparse_rows: list[dict], species: str) -> None:
     ax.axhline(0, color=PALETTE["lgrey"], ls="--", lw=0.5, zorder=0)
     ax.set_xticks(range(len(_D_SPARSE)))
     ax.set_xticklabels([t[3] for t in _D_SPARSE], fontsize=FS_SM)
-    ax.set_ylabel(r"$\mathrm{SI_{dense}}-\mathrm{SI_{sparse}}$", fontsize=FS_SM)
+    ax.set_ylabel(r"optimism: $\mathrm{SI_{sparse}}-\mathrm{SI_{full}}$",
+                  fontsize=FS_SM)
     ax.set_xlim(-0.55, len(_D_SPARSE) - 0.45)
     ax.tick_params(axis="x", length=0)
     _place_icons(ax, [(float(pi), t[1], t[2]) for pi, t in enumerate(_D_SPARSE)],
@@ -675,10 +687,10 @@ def _gap_ax(ax: plt.Axes, sparse_rows: list[dict], species: str) -> None:
 
 
 def _panel_d(gs, fig, sparse_rows: list[dict]) -> plt.Axes:
-    """3-column sub-panel: SI violins | swine gap | human gap."""
+    """3-column sub-panel: paired SI violins | swine optimism gap | human gap."""
     gs_inner = gridspec.GridSpecFromSubplotSpec(
-        1, 3, subplot_spec=gs, wspace=0.28,
-        width_ratios=[1.4, 1.0, 1.0],
+        1, 3, subplot_spec=gs, wspace=0.30,
+        width_ratios=[1.5, 1.0, 1.0],
     )
     ax_vi  = fig.add_subplot(gs_inner[0])
     ax_gsw = fig.add_subplot(gs_inner[1])
@@ -687,17 +699,19 @@ def _panel_d(gs, fig, sparse_rows: list[dict]) -> plt.Axes:
     _si_violin_ax(ax_vi, sparse_rows)
     _gap_ax(ax_gsw, sparse_rows, "swine")
     _gap_ax(ax_ghu, sparse_rows, "human")
-
-    # Remove duplicated y-label on gap plots for compactness
     ax_ghu.set_ylabel("")
 
-    # Legend at same height as panel title (dy=1.26), floated to top-right
+    # Legend: species (colour) + in-sample/transfer (hollow/filled).
     leg = [mpatches.Patch(color=PALETTE["swine"], alpha=0.7, label="swine"),
-           mpatches.Patch(color=PALETTE["human"], alpha=0.7, label="human")]
-    ax_ghu.legend(handles=leg, frameon=False, fontsize=FS_SM,
-                  loc="lower right", bbox_to_anchor=(1.0, 1.26),
-                  bbox_transform=ax_ghu.transAxes, ncol=2, handlelength=0.8,
-                  borderaxespad=0)
+           mpatches.Patch(color=PALETTE["human"], alpha=0.7, label="human"),
+           mpatches.Patch(facecolor="none", edgecolor=PALETTE["dgrey"],
+                          label="sparse model (in-sample)"),
+           mpatches.Patch(facecolor=PALETTE["dgrey"], alpha=0.5,
+                          label="full nerve (transfer)")]
+    ax_vi.legend(handles=leg, frameon=False, fontsize=FS_SM - 1,
+                 loc="lower left", bbox_to_anchor=(0.0, 1.04),
+                 ncol=2, handlelength=1.0, columnspacing=1.0,
+                 handletextpad=0.4, borderaxespad=0)
 
     return ax_vi
 

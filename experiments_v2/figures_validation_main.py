@@ -131,21 +131,31 @@ def _pulse_icon_xy(kind: str):
     return t, z
 
 
-def _draw_axon_glyph(ax, color, lw: float = 4.0, myelinated: bool = False):
-    """Draw a small horizontal axon icon into inset axes ``ax``.
-    Myelinated = thick internodes separated by node-of-Ranvier gaps over a
-    thin core; unmyelinated = a single smooth tube.  ``lw`` sets the fibre
-    thickness (used for the diameter glyphs)."""
+def _draw_axon_glyph(ax, color, lw: float = 4.0, myelinated: bool = False,
+                     border: str = "#3a3a3a"):
+    """Draw a small horizontal axon icon as an outlined tube into inset axes
+    ``ax``.  Myelinated = capsule internodes separated by node-of-Ranvier
+    gaps over a thin core; unmyelinated = one smooth tube.  ``lw`` (points)
+    sets the fibre thickness; a very thin dark-grey border outlines the tube
+    (drawn as a slightly wider line beneath the coloured fill)."""
     ax.set_xlim(-0.02, 1.02)
     ax.set_ylim(-1.0, 1.0)
     ax.axis("off")
+    bw = 0.7  # total border width added around the fill (points)
     if myelinated:
-        ax.plot([0.03, 0.97], [0, 0], color=color,
-                lw=max(lw * 0.30, 0.6), solid_capstyle="butt", zorder=1)
-        for x0, x1 in [(0.05, 0.25), (0.31, 0.51), (0.57, 0.77), (0.83, 0.97)]:
+        core = max(lw * 0.30, 0.6)
+        ax.plot([0.03, 0.97], [0, 0], color=border, lw=core + bw,
+                solid_capstyle="butt", zorder=1)
+        ax.plot([0.03, 0.97], [0, 0], color=color, lw=core,
+                solid_capstyle="butt", zorder=2)
+        for x0, x1 in [(0.05, 0.30), (0.37, 0.62), (0.69, 0.95)]:
+            ax.plot([x0, x1], [0, 0], color=border, lw=lw + bw,
+                    solid_capstyle="round", zorder=3)
             ax.plot([x0, x1], [0, 0], color=color, lw=lw,
-                    solid_capstyle="butt", zorder=2)
+                    solid_capstyle="round", zorder=4)
     else:
+        ax.plot([0.04, 0.96], [0, 0], color=border, lw=lw + bw,
+                solid_capstyle="round", zorder=1)
         ax.plot([0.04, 0.96], [0, 0], color=color, lw=lw,
                 solid_capstyle="round", zorder=2)
 
@@ -583,8 +593,8 @@ def _panel_d(gs_cell, fig) -> plt.Axes:
                 ha="left", va="top", fontsize=FS_SM,
                 color=PALETTE["grey"], weight="semibold")
         # Myelinated (A) vs unmyelinated (C) axon glyph, upper-left.
-        gic = ax.inset_axes([0.06, 0.79, 0.34, 0.11])
-        _draw_axon_glyph(gic, PALETTE["grey"], lw=4.5, myelinated=myel)
+        gic = ax.inset_axes([0.06, 0.79, 0.20, 0.11])
+        _draw_axon_glyph(gic, PALETTE["grey"], lw=4.0, myelinated=myel)
         ax.set_xlabel(r"fibre diameter (µm)")
         ax.set_ylabel("CV (m/s)")
         ax.set_ylim(bottom=0)

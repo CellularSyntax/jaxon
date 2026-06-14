@@ -16,31 +16,18 @@ repository under \texttt{outputs/} and \texttt{experiments\_v2/}.
 \label{sec:results-validation}
 
 For each axon model we drove jaxon and \texttt{pyfibers}-wrapped
-NEURON with the identical stimulus and compared the activation
-threshold (the lowest amplitude at which the centre node fired an
-AP) across diameters, pulse widths and stimulus waveforms.  In
-total we ran 943 distinct test configurations, spanning all four
-models and the diameters they are parameterised over, eight stimulus
-waveforms (monophasic cathodic / anodic, biphasic cathodic-first /
-anodic-first, sinusoidal, sawtooth, exponentially-decaying and
-Gaussian), and six pulse widths ($0.02$--$1\,\mathrm{ms}$).
-\textbf{$99.6\,\%$ of the 943 configurations agree to within $1\,\%$
-relative threshold error with NEURON}
-(Table~\ref{tab:validation-sd}).  Across the same 943 configurations,
-the Pearson correlation between jaxon and NEURON thresholds is
-$r = 0.999998$ ($R^{2} = 0.999996$), with a mean signed bias of
-$+0.11\,\%$ (jaxon marginally high) and $95\,\%$ limits of agreement
-of $[-0.05\,\%, +0.41\,\%]$.  Only the Rattay model has
-configurations exceeding the $1\,\%$ acceptance criterion, and those
-exceptions are concentrated in a single edge regime
-(biphasic cathodic-first pulses at the shortest pulse width
-$\mathrm{PW}=0.1\,\mathrm{ms}$ across the four smallest Rattay
-diameters; peak $2.24\,\%$ at $D=0.3\,\mu\mathrm{m}$).  We attribute
-this to the bisection-based threshold detector having reduced
-resolution near the inflection point of the biphasic cathodic-first
-strength--duration curve at the smallest diameters; the
-intracellular voltage traces themselves agree to NEURON-level
-precision (Figure~\ref{fig:validation}\textbf{a}).
+NEURON with identical stimuli and compared activation thresholds across
+diameters, eight waveforms (monophasic and biphasic cathodic- and
+anodic-first, sinusoidal, sawtooth, exponential, Gaussian) and pulse
+widths $0.02$--$1\,\mathrm{ms}$ --- 943 configurations in total.
+\textbf{$99.6\,\%$ agree to within $1\,\%$ relative threshold error}
+(Table~\ref{tab:validation-sd}; jaxon--NEURON $r = 0.999998$, mean
+signed bias $+0.11\,\%$).  Only the Rattay model exceeds the criterion,
+in a single edge regime --- biphasic cathodic-first pulses at the four
+smallest diameters (peak $2.24\,\%$ at $D=0.3\,\mu\mathrm{m}$) --- which
+we attribute to reduced bisection resolution near the
+strength--duration inflection; the intracellular traces agree to
+NEURON-level precision (Figure~\ref{fig:validation}\textbf{a}).
 
 \begin{table}[h]
   \centering

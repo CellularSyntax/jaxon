@@ -200,35 +200,17 @@ quality metric and threshold are reproducible via
 \subsection{Validation protocol}
 \label{sec:methods-validation}
 
-For each fiber model we computed and compared against NEURON:
-\begin{itemize}
-  \item the strength--duration curve at the terminal node, sweeping
-        pulse width $\mathrm{PW} \in [0.05, 1.0]\,\mathrm{ms}$ at the
-        nominal diameter (5.7\,$\mu\mathrm{m}$ MRG, 1.0\,$\mu\mathrm{m}$
-        Sundt, etc.);
-  \item the conduction velocity as a function of fiber diameter
-        across the manufacturer-supported range;
-  \item the full intracellular trace at the centre node for one
-        representative stimulus, agreement scored by maximum
-        absolute voltage difference.
-\end{itemize}
-
-Each comparison runs the same stimulus through both the jaxon
-forward solver and a pyfibers-wrapped NEURON simulation of the
-identical model with identical parameters; agreement to within
-$<\!1\%$ on all three metrics is required for model acceptance.
-Reproduction scripts are
-\texttt{experiments\_v2/validate\_\{mrg,sundt,sweeney,rattay\}.py}.
-
-\subsection{Hardware and software}
-
-All results in this paper were produced on a single NVIDIA A100 GPU
-(40\,GB) of the MedUni Vienna HPC cluster.  jaxon was run on
-Python 3.11.15, \texttt{jax} 0.6.2, \texttt{jaxley} 0.13.0 and a
-CUDA 12.4 container (\texttt{nvcr.io/nvidia/pytorch:25.03-py3}).
-\texttt{pyfibers} comparisons used pyfibers version 0.8.5 with the
-NEURON 8.2 backend.  The full software environment is reproducible
-via the \texttt{slurm/setup\_env.sh} script in the code repository.
+For each model we drove jaxon and \texttt{pyfibers}-wrapped NEURON with
+identical stimuli and compared three quantities against NEURON: the
+strength--duration threshold (terminal node, $\mathrm{PW} \in
+[0.02,1.0]\,\mathrm{ms}$), the conduction velocity over the published
+diameter range, and the full centre-node intracellular trace; agreement
+to $<\!1\,\%$ on all three was required for acceptance.  Reproduction
+scripts are \texttt{experiments\_v2/validate\_\{mrg,sundt,sweeney,rattay\}.py}.
+All results were produced on one NVIDIA A100 (40\,GB) with
+\texttt{jax} 0.6.2 / \texttt{jaxley} 0.13.0 (CUDA 12.4) and pyfibers
+0.8.5 (NEURON 8.2); the environment is reproducible via
+\texttt{slurm/setup\_env.sh}.
 
 \subsection{Statistical analysis}
 \label{sec:methods-stats}

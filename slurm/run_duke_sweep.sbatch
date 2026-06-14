@@ -222,8 +222,17 @@ fi
 # sbatch is run as an array, each task processes only the samples
 # whose interleaved index matches the task id; outside an array we
 # fall back to single-shard (all samples).
-N_SHARDS="${SLURM_ARRAY_TASK_COUNT:-1}"
-SHARD_IDX="${SLURM_ARRAY_TASK_ID:-0}"
+#
+# Global override for spanning multiple sbatch jobs / QOS over ONE
+# disjoint shard space: set GLOBAL_N_SHARDS to the total shard count
+# and SHARD_OFFSET to this job's first global shard id.  Each array
+# task then owns global shard (SLURM_ARRAY_TASK_ID + SHARD_OFFSET) out
+# of GLOBAL_N_SHARDS.  e.g. job A on a100 with --array=0-3
+# GLOBAL_N_SHARDS=8 SHARD_OFFSET=0 owns shards 0-3, while job B on b200
+# with --array=0-1 GLOBAL_N_SHARDS=8 SHARD_OFFSET=4 owns shards 4-5 ---
+# no overlap.  With neither var set the behaviour is unchanged.
+N_SHARDS="${GLOBAL_N_SHARDS:-${SLURM_ARRAY_TASK_COUNT:-1}}"
+SHARD_IDX="$(( ${SLURM_ARRAY_TASK_ID:-0} + ${SHARD_OFFSET:-0} ))"
 
 echo "Duke sweep: seeds ${SEED_START}..$((SEED_END-1))  D=${FIBER_DIAMETER_UM} µm"
 echo "DUKE_VES_ROOT=${DUKE_VES_ROOT}"

@@ -663,8 +663,14 @@ def _sparse_subsample_duke(duke: dict, n_per_fascicle: int | str,
     }
 
 
-def _eval_amps_on_dense(amps_mA: np.ndarray, seed_in: dict, dt: float) -> float:
-    """One forward pass: apply amps on the full dense fiber set, return SI."""
+def _eval_amps_on_dense(amps_mA: np.ndarray, seed_in: dict,
+                        dt: float) -> tuple[float, np.ndarray]:
+    """One forward pass: apply amps on the full dense fiber set.
+
+    Returns ``(SI, acts)`` where ``acts`` is the per-fiber activation proxy on
+    the full dense population — needed to dump the same per-fiber data we store
+    for dense runs (activation maps + firing summary for the transferred amps).
+    """
     amps_j     = jnp.asarray(amps_mA, dtype=jnp.float64)
     Ve_unit_j  = jnp.asarray(seed_in["Ve_unit"], dtype=jnp.float64)
     pulse_j    = jnp.asarray(seed_in["pulse_mask"], dtype=jnp.float64)
@@ -673,13 +679,16 @@ def _eval_amps_on_dense(amps_mA: np.ndarray, seed_in: dict, dt: float) -> float:
     Ve_seq = jnp.einsum("kt,kfn->ftn", -u, Ve_unit_j)
     m_max  = batch_integrate_m_max(seed_in["fs_batch"], seed_in["s0_batch"], Ve_seq, dt)
     acts   = np.asarray(activation_proxy_batch(m_max, node_idx_j))
-    return float(selectivity_index(acts, seed_in["target_mask"]))
+    return float(selectivity_index(acts, seed_in["target_mask"])), acts
 
 
 def _run_sparse_sweep(duke: dict, seed_in: dict) -> dict:
     """Optimize at each SPARSE_N_PER_FASCICLE_LIST density using the same
-    target fascicle cluster as the dense run.  Returns a lightweight dict
-    (no activation arrays) for sparse_sampling_seed_NNNN.json.
+    target fascicle cluster as the dense run.  For every sparsity level we now
+    store the same per-fiber data as the dense run: the sparse-nerve
+    ``final_acts``/``firing`` (in-sample), plus a ``transfer`` block holding the
+    sparse-optimised amps re-evaluated on the FULL dense nerve
+    (``final_acts``/``firing``/``si``).  Written to sparse_sampling_seed_NNNN.json.
     """
     cluster_info = seed_in.get("cluster_info")
     if cluster_info is None:
@@ -739,7 +748,12 @@ def _run_sparse_sweep(duke: dict, seed_in: dict) -> dict:
 
         si          = float(res["rect"]["achievable_si"])
         amps_mA     = list(res["rect"]["amps_mA"])
-        si_transfer = _eval_amps_on_dense(np.asarray(amps_mA), seed_in, DT)
+        si_transfer, acts_tr = _eval_amps_on_dense(np.asarray(amps_mA), seed_in, DT)
+        firing_tr   = _firing_summary(acts_tr, seed_in["target_mask"])
+        # Sparse-nerve (in-sample) per-fiber data — same fields as the dense run.
+        sp_acts   = np.asarray(res["rect"].get("final_acts", []), dtype=float)
+        sp_firing = (res["rect"].get("firing")
+                     or _firing_summary(sp_acts, target_mask_sp))
         wall_s      = time.time() - t0
         print(f"{label} [sparse] {lbl:10s}: "
               f"n={n_tot:4d}  n_tgt={n_tgt:4d}  SI={si:.3f}  "
@@ -753,6 +767,15 @@ def _run_sparse_sweep(duke: dict, seed_in: dict) -> dict:
             "si":             si,
             "si_transfer":    si_transfer,
             "amps_mA":        amps_mA,
+            # Per-fiber data on the sparse nerve (in-sample), mirroring dense.
+            "final_acts":     sp_acts.tolist(),
+            "firing":         sp_firing,
+            # Sparse-optimised amps re-evaluated on the FULL dense nerve.
+            "transfer": {
+                "si":         si_transfer,
+                "final_acts": np.asarray(acts_tr, dtype=float).tolist(),
+                "firing":     firing_tr,
+            },
             "wall_s":         wall_s,
             "skipped":        False,
         })

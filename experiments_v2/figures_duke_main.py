@@ -704,9 +704,13 @@ def _panel_d(gs, fig, sparse_rows: list[dict]) -> plt.Axes:
         ax.set_xlim(-0.55, len(_D_SPARSE) - 0.45)
         ax.set_ylim(0, 1.20)
         ax.tick_params(axis="x", length=0)
-        ax.set_title(sp, fontsize=FS_SM, color=col, weight="semibold")
         _place_icons(ax, [(float(gi), t[1], t[2]) for gi, t in enumerate(_D_SPARSE)],
-                     zoom=0.26, y_offset_pt=-4)
+                     zoom=0.24, y_offset_pt=-12)
+        # Species title between the glyph icons and the panel heading,
+        # drawn on top of everything.
+        _t = ax.set_title(sp.capitalize(), fontsize=FS_SM + 1, color=col,
+                          weight="bold", y=1.18)
+        _t.set_zorder(1000)
     ax_sw.set_ylabel("SI")
     plt.setp(ax_hu.get_yticklabels(), visible=False)
 
@@ -784,7 +788,7 @@ def main() -> int:
     _panel_heading(ax_b_ref, "b", "Selectivity performance",         dx=-0.16)
     _panel_heading(ax_c_ref, "c", "Stimulus amplitude by contact position",
                    dx=-0.14, dy=1.08)
-    _panel_heading(ax_d_ref, "d", "Sparse fiber-sampling analysis",  dx=-0.14, dy=1.26)
+    _panel_heading(ax_d_ref, "d", "Sparse fiber-sampling analysis",  dx=-0.14, dy=1.34)
 
     for ext in (".png", ".svg"):
         p = OUT_DIR / f"fig3_duke{ext}"

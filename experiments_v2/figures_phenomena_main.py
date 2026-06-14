@@ -28,11 +28,27 @@ ROOT    = Path(__file__).resolve().parent.parent
 OUT_DIR = ROOT / "manuscript" / "figures" / "main"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-C_PF   = "#0072B2"   # blue       — PyFibers (original; matches NEURON blue in fig1/3)
-C_JAX  = "#D55E00"  # vermillion — JAXON   (Wong palette; replaces shrill amber)
+C_PF   = "#0072B2"   # blue       — PyFibers (used by the supplementary kHz/collision panels)
+C_JAX  = "#D55E00"  # vermillion — JAXON
 C_REST = "#555555"
 V_REST = -80.0
 VM_LIM = (-92, 55)
+
+# Per-model colours (match fig1).  In fig2's waterfalls the MODEL sets the hue;
+# PyFibers = solid full colour, JAXON = lighter dashed (overlay) — so a perfect
+# match shows the lighter dashes tracking the solid line.
+MODEL_COLORS = {
+    "MRG":     "#0072B2",   # blue
+    "Sweeney": "#009E73",   # green
+    "Sundt":   "#D55E00",   # vermillion
+    "Rattay":  "#CC79A7",   # pink
+}
+
+
+def _lighten(color, amount: float = 0.5):
+    import matplotlib.colors as mc
+    c = np.array(mc.to_rgb(color))
+    return tuple(c + (1.0 - c) * amount)
 
 FS    = 9
 FS_SM = 8
@@ -89,8 +105,9 @@ _WATERFALL_T_MAX = 3.5   # ms
 
 def _panel_a(gs_cell, fig, dc_data: dict | None,
              v_rest: float = V_REST, t_max: float = _WATERFALL_T_MAX,
-             stride: int = 2) -> plt.Axes:
+             stride: int = 2, color: str = C_PF) -> plt.Axes:
     ax = fig.add_subplot(gs_cell)
+    cj = _lighten(color)
 
     if dc_data is None:
         ax.text(0.5, 0.5, "data missing", ha="center", va="center",
@@ -123,10 +140,8 @@ def _panel_a(gs_cell, fig, dc_data: dict | None,
         y_off     = pos[i]
         trace_pf  = (vm_pf[:,  i] - v_rest) * y_scale
         trace_jax = (vm_jax[:, i] - v_rest) * y_scale
-        ax.plot(t_pf,  y_off + trace_pf,  color=C_PF,  lw=0.7, alpha=0.9,
-                label="PyFibers" if i == 0 else None)
-        ax.plot(t_jax, y_off + trace_jax, color=C_JAX, lw=0.7, ls="--", alpha=0.9,
-                label="JAXON"    if i == 0 else None)
+        ax.plot(t_pf,  y_off + trace_pf,  color=color, lw=0.7, alpha=0.9)
+        ax.plot(t_jax, y_off + trace_jax, color=cj, lw=0.7, ls="--", alpha=0.9)
 
     ax.set_xlabel("time (ms)")
     ax.set_ylabel("position (mm)")
@@ -141,10 +156,6 @@ def _panel_a(gs_cell, fig, dc_data: dict | None,
                 xytext=(stim_t - t_max * 0.07, stim_pos),
                 arrowprops=dict(arrowstyle="-|>", color="black",
                                 lw=1.6, mutation_scale=16))
-
-    # Legend above the axes, right-aligned, single row
-    ax.legend(loc="lower right", bbox_to_anchor=(1.0, 1.02),
-              ncol=2, frameon=False, fontsize=FS_SM, borderaxespad=0)
     return ax
 
 
@@ -153,12 +164,13 @@ def _panel_a(gs_cell, fig, dc_data: dict | None,
 def _panel_block_waterfall(gs_cell, fig, blk: dict | None,
                            v_rest: float = V_REST,
                            t_max: float | None = None,
-                           stride: int = 2) -> plt.Axes:
+                           stride: int = 2, color: str = C_PF) -> plt.Axes:
     """Node-vs-time waterfall: AP initiated mid-fibre; a sustained cathodic field
     at the block node (red line) blocks the lower arm while the upper arm
     propagates.  Vm clipped for display so the overdriven block node doesn't
     dominate the y-scale."""
     ax = fig.add_subplot(gs_cell)
+    cj = _lighten(color)
     if blk is None:
         ax.text(0.5, 0.5, "data missing", ha="center", va="center",
                 transform=ax.transAxes, fontsize=FS_SM, color="#AAAAAA")
@@ -187,10 +199,10 @@ def _panel_block_waterfall(gs_cell, fig, blk: dict | None,
 
     for i in plot_idx:
         y_off = pos[i]
-        ax.plot(t_pf,  y_off + (vm_pf[:,  i] - v_rest) * y_scale, color=C_PF,
-                lw=0.6, alpha=0.9, label="PyFibers" if i == 0 else None)
-        ax.plot(t_jax, y_off + (vm_jax[:, i] - v_rest) * y_scale, color=C_JAX,
-                lw=0.6, ls="--", alpha=0.9, label="JAXON" if i == 0 else None)
+        ax.plot(t_pf,  y_off + (vm_pf[:,  i] - v_rest) * y_scale, color=color,
+                lw=0.6, alpha=0.9)
+        ax.plot(t_jax, y_off + (vm_jax[:, i] - v_rest) * y_scale, color=cj,
+                lw=0.6, ls="--", alpha=0.9)
 
     # Block-node marker (electrode) + init arrow.
     blk_pos = float(blk["block_pos_mm"])
@@ -208,8 +220,6 @@ def _panel_block_waterfall(gs_cell, fig, blk: dict | None,
     ax.set_ylabel("position (mm)")
     ax.set_xlim(0, t_max)
     ax.set_ylim(pos[0] - plot_spacing * 0.5, pos[-1] + plot_spacing * 0.5)
-    ax.legend(loc="lower right", bbox_to_anchor=(1.0, 1.02),
-              ncol=2, frameon=False, fontsize=FS_SM, borderaxespad=0)
     return ax
 
 
@@ -217,11 +227,12 @@ def _panel_block_waterfall(gs_cell, fig, blk: dict | None,
 
 def _panel_collision_waterfall(gs_cell, fig, coll: dict | None,
                                v_rest: float = V_REST,
-                               stride: int = 2) -> plt.Axes:
+                               stride: int = 2, color: str = C_PF) -> plt.Axes:
     """Node-vs-time waterfall: APs launched from both ends propagate inward and
     annihilate at the middle (they do not cross).  Single representative
     diameter."""
     ax = fig.add_subplot(gs_cell)
+    cj = _lighten(color)
     wf = (coll or {}).get("waterfall")
     if wf is None:
         ax.text(0.5, 0.5, "data missing", ha="center", va="center",
@@ -243,10 +254,10 @@ def _panel_collision_waterfall(gs_cell, fig, coll: dict | None,
 
     for i in plot_idx:
         y_off = pos[i]
-        ax.plot(t_pf,  y_off + (vm_pf[:,  i] - v_rest) * y_scale, color=C_PF,
-                lw=0.6, alpha=0.9, label="PyFibers" if i == 0 else None)
-        ax.plot(t_jax, y_off + (vm_jax[:, i] - v_rest) * y_scale, color=C_JAX,
-                lw=0.6, ls="--", alpha=0.9, label="JAXON" if i == 0 else None)
+        ax.plot(t_pf,  y_off + (vm_pf[:,  i] - v_rest) * y_scale, color=color,
+                lw=0.6, alpha=0.9)
+        ax.plot(t_jax, y_off + (vm_jax[:, i] - v_rest) * y_scale, color=cj,
+                lw=0.6, ls="--", alpha=0.9)
 
     # Init arrows at both ends (APs launched inward).
     stim_t = float(coll.get("delay_ms", 0.1))
@@ -259,8 +270,6 @@ def _panel_collision_waterfall(gs_cell, fig, coll: dict | None,
     ax.set_ylabel("position (mm)")
     ax.set_xlim(0, t_max)
     ax.set_ylim(pos[0] - plot_spacing * 0.5, pos[-1] + plot_spacing * 0.5)
-    ax.legend(loc="lower right", bbox_to_anchor=(1.0, 1.02),
-              ncol=2, frameon=False, fontsize=FS_SM, borderaxespad=0)
     return ax
 
 
@@ -448,6 +457,7 @@ def main() -> int:
 
     for i, m in enumerate(MODELS):
         r, c = _GRID_POS[i]
+        col = MODEL_COLORS[m["key"]]
         dc_data, blk_data, coll_data = _load_model(m["suffix"])
 
         inner = gridspec.GridSpecFromSubplotSpec(
@@ -455,11 +465,11 @@ def main() -> int:
             width_ratios=[1.0, 1.0, 1.0], wspace=0.40,
         )
         _panel_a(inner[0, 0], fig, dc_data,
-                 v_rest=m["v_rest"], t_max=m["t_max"], stride=m["stride"])
+                 v_rest=m["v_rest"], t_max=m["t_max"], stride=m["stride"], color=col)
         _panel_block_waterfall(inner[0, 1], fig, blk_data,
-                               v_rest=m["v_rest"], stride=m["stride"])
+                               v_rest=m["v_rest"], stride=m["stride"], color=col)
         _panel_collision_waterfall(inner[0, 2], fig, coll_data,
-                                   v_rest=m["v_rest"], stride=m["stride"])
+                                   v_rest=m["v_rest"], stride=m["stride"], color=col)
 
         # Per-phenomenon headings, positioned from each sub-cell.
         for j, (lett, title) in enumerate([
@@ -470,12 +480,19 @@ def main() -> int:
             bb = inner[0, j].get_position(fig)
             _sub_heading(fig, bb.x0 - 0.010, bb.y1 + 0.006, lett, title)
 
-        # Model name centred above the quadrant.
+        # Model name centred above the quadrant, in the model colour.
         bbq = outer[r, c].get_position(fig)
         fig.text((bbq.x0 + bbq.x1) / 2, bbq.y1 + 0.040,
                  f"{m['key']}  ({m['ftype']})",
                  transform=fig.transFigure, ha="center", va="bottom",
-                 fontsize=12, fontweight="bold", color=C_REST)
+                 fontsize=12, fontweight="bold", color=col)
+
+    # Single shared method legend (colour = model; line style = method).
+    fig.legend(handles=[
+        Line2D([0], [0], color="#444444", lw=1.5, ls="-",  label="PyFibers"),
+        Line2D([0], [0], color="#888888", lw=1.5, ls="--", label="JAXON"),
+    ], loc="upper right", bbox_to_anchor=(0.99, 0.995), ncol=2,
+        frameon=False, fontsize=FS)
 
     for ext in (".png", ".svg"):
         p = OUT_DIR / f"fig2_phenomena{ext}"

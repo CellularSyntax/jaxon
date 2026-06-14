@@ -14,15 +14,16 @@ configurations within $1\,\%$ threshold error}) and reaching a
 \textbf{geometric-mean $\sim\!820\times$ speedup} at $N = 100{,}000$
 fibers on one NVIDIA A100, fast enough to optimize and re-score
 whole-nerve populations.  Using FEM-derived fields over a 12-contact
-cuff on 29 microCT-segmented vagus nerves (18 swine, 11 human; SPARC),
+cuff on 29 microCT-segmented vagus nerves (18 swine, 11 human),
 we find that configurations optimized on sparsely-sampled fibers lose
 substantial selectivity when deployed on the full population --- a
 \emph{deployment penalty} invisible to reduced-order models.  The
-penalty is small in swine (median $0.03$) but large in human ($0.27$)
-and scales with the number of fibers per target fascicle (Spearman
-$r = +0.72$), which differs systematically between species; it
-manifests as failure to recruit the large human target fascicle rather
-than off-target spill.  Reduced-order fascicular sampling therefore
+penalty is small in swine (median $0.03$) but large in human
+($0.27$; Mann--Whitney $p = 10^{-4}$) and scales with the number of
+fibers per target fascicle (Spearman $r = +0.72$, $p < 0.001$), which
+differs systematically between species; it manifests as failure to
+recruit the large human target fascicle ($p = 0.02$) rather than
+off-target spill (n.s.).  Reduced-order fascicular sampling therefore
 overstates the selectivity that will actually be delivered, most
 severely on the human vagus geometry most relevant to clinical
 translation.  jaxon is open-source and slots into existing pipelines as

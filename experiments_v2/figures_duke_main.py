@@ -211,6 +211,10 @@ def _load_contact_amplitudes() -> list[dict]:
             except Exception:
                 continue
             rect = raw.get("rect") or {}
+            # Same dense-validity filter as panels b/d: skip non-converged seeds.
+            _dsi = float(rect.get("achievable_si", abs(rect.get("final_si", float("nan")))))
+            if not np.isfinite(_dsi) or _dsi < _DENSE_MIN:
+                continue
             amps = np.asarray(rect.get("amps_mA", []), dtype=float)
             cluster = raw.get("cluster") or {}
             tc = ((float(cluster.get("window_start_deg", 0.0)) +
@@ -220,6 +224,7 @@ def _load_contact_amplitudes() -> list[dict]:
                     break
                 rows.append(dict(
                     species=species,
+                    sample=sample,
                     phi_bin=_phi_bin(float(p["phi"]), tc),
                     z_row=_z_row(float(p["z"])),
                     amp=float(amps[k]),
@@ -484,68 +489,85 @@ def _whisker_top(data: np.ndarray) -> float:
 
 # ── Panel c: amplitude distributions by phi_bin and z_row ────────────────────
 def _panel_c(gs, fig, crows: list[dict]) -> plt.Axes:
+    """Emergent stimulation strategy:
+    left  — cathodes steer toward the target (circumferential);
+    right — longitudinal center-surround current focusing.
+    """
     gs_inner = gridspec.GridSpecFromSubplotSpec(
-        1, 2, subplot_spec=gs, wspace=0.24,
+        1, 2, subplot_spec=gs, wspace=0.46,
     )
     ax_phi = fig.add_subplot(gs_inner[0])
     ax_z   = fig.add_subplot(gs_inner[1])
-
-    PHI_LABELS  = ["N", "E", "S", "W"]   # target-normalised: N = toward target
-    Z_LABELS    = ["top\n(+z)", "mid", "bot\n(−z)"]
-    PHI_ICONS   = ["config_N.png", "config_E.png", "config_S.png", "config_W.png"]
-    Z_ICONS     = ["config_top.png", "config_mid.png", "config_bot.png"]
-    ACTIVE_THR  = 0.01
     rng = np.random.default_rng(2)
 
-    # upper[ax] maps xi → max upper-whisker across both species at that x-bin
-    upper: dict[plt.Axes, dict[int, float]] = {ax_phi: {}, ax_z: {}}
+    samples = sorted({r["sample"] for r in crows})
 
-    for ax, key, n_bins, tick_labels in [
-        (ax_phi, "phi_bin", 4, PHI_LABELS),
-        (ax_z,   "z_row",   3, Z_LABELS),
-    ]:
-        for xi in range(n_bins):
-            for sp, xoff in [("swine", -0.22), ("human", 0.22)]:
-                all_v  = np.array([r["amp"] for r in crows
-                                   if r["species"] == sp and r[key] == xi])
-                active = np.abs(all_v[np.abs(all_v) > ACTIVE_THR])
-                if active.size < 3:
-                    continue
-                col  = PALETTE[sp]
-                xpos = xi + xoff
-                ax.boxplot(
-                    [active], positions=[xpos], widths=0.32,
-                    patch_artist=True, showfliers=False,
-                    medianprops=dict(color="black", linewidth=1.4),
-                    boxprops=dict(facecolor=col, alpha=0.35,
-                                  edgecolor=col, linewidth=0.5),
-                    whiskerprops=dict(color=col, linewidth=0.6),
-                    capprops=dict(color=col, linewidth=0.6),
-                )
-                jit = rng.uniform(-0.07, 0.07, active.size)
-                ax.scatter(xpos + jit, active, s=3, color=col,
-                           alpha=0.38, edgecolors="none", zorder=3)
-                # track max Q3 (top of box) across species for this x-bin
-                q3 = float(np.percentile(active, 75))
-                upper[ax][xi] = max(upper[ax].get(xi, 0.0), q3)
+    # ── left: cathodic-contact fraction by target-relative direction ──
+    # collapse E + W (both ~90 deg from target) into a single "side" group.
+    GROUPS = [("toward", (0,)), ("side", (1, 3)), ("away", (2,))]
+    for xi, (_, bins) in enumerate(GROUPS):
+        for sp, xoff in [("swine", -0.19), ("human", 0.19)]:
+            # per-nerve cathodic fraction in this direction group
+            fr = []
+            for s in samples:
+                a = np.array([r["amp"] for r in crows
+                              if r["sample"] == s and r["species"] == sp
+                              and r["phi_bin"] in bins])
+                if a.size:
+                    fr.append(float(np.mean(a < 0)))
+            if not fr:
+                continue
+            fr = np.array(fr)
+            col, xpos = PALETTE[sp], xi + xoff
+            med = float(np.median(fr))
+            q25, q75 = (float(q) for q in np.quantile(fr, [0.25, 0.75]))
+            ax_phi.bar(xpos, med, width=0.34, color=col, alpha=0.38,
+                       edgecolor="none", zorder=2)
+            ax_phi.errorbar(xpos, med,
+                            yerr=[[med - q25], [q75 - med]], fmt="none",
+                            ecolor=PALETTE["dgrey"], elinewidth=1.1,
+                            capsize=3.0, capthick=1.0, zorder=5)
+            jit = rng.uniform(-0.09, 0.09, fr.size)
+            ax_phi.scatter(xpos + jit, fr, s=8, color=col, marker=SP_MARKER[sp],
+                           edgecolors="white", linewidth=0.3, alpha=0.85, zorder=4)
+    ax_phi.set_xticks(range(len(GROUPS)))
+    ax_phi.set_xticklabels([g for g, _ in GROUPS], fontsize=FS_SM)
+    ax_phi.set_ylabel("fraction of contacts cathodic", fontsize=FS_SM)
+    ax_phi.set_xlabel("direction (rel. target)", fontsize=FS_SM)
+    ax_phi.set_xlim(-0.55, len(GROUPS) - 0.45)
+    ax_phi.set_ylim(0, 0.55)
+    ax_phi.tick_params(labelsize=FS_SM)
 
-        ax.set_ylim(bottom=0)
-        ax.set_xticks(range(n_bins))
-        ax.set_xticklabels(tick_labels, fontsize=FS_SM)
-        ax.set_ylabel("|amplitude| (mA)", fontsize=FS_SM)
-        ax.set_xlim(-0.55, n_bins - 0.45)
-
-    ax_phi.set_xlabel("contact position (N = toward target)", fontsize=FS_SM)
+    # ── right: longitudinal center-surround (signed mean current vs z) ──
+    Z_LABELS = ["top", "mid", "bot"]
+    for sp in ("swine", "human"):
+        m, e = [], []
+        for z in range(3):
+            pn = []  # per-nerve mean signed current at this z-level
+            for s in samples:
+                a = np.array([r["amp"] for r in crows
+                              if r["sample"] == s and r["species"] == sp
+                              and r["z_row"] == z])
+                if a.size:
+                    pn.append(float(a.mean()))
+            pn = np.array(pn)
+            m.append(pn.mean())
+            e.append(pn.std(ddof=1) / np.sqrt(pn.size) if pn.size > 1 else 0.0)
+        ax_z.errorbar(range(3), m, yerr=e, marker=SP_MARKER[sp], ms=4.5,
+                      color=PALETTE[sp], capsize=3.0, capthick=1.0, lw=1.4,
+                      zorder=4, label=sp)
+    ax_z.axhline(0, color=PALETTE["lgrey"], lw=0.8, zorder=1)
+    ax_z.set_xticks(range(3))
+    ax_z.set_xticklabels(Z_LABELS, fontsize=FS_SM)
+    ax_z.set_ylabel("mean current (mA)\n(− cathodic / + anodic)", fontsize=FS_SM)
+    ax_z.set_xlabel("longitudinal position", fontsize=FS_SM)
+    ax_z.set_xlim(-0.4, 2.4)
+    ax_z.tick_params(labelsize=FS_SM)
 
     leg = [mpatches.Patch(color=PALETTE["swine"], alpha=0.7, label="swine"),
            mpatches.Patch(color=PALETTE["human"], alpha=0.7, label="human")]
     ax_phi.legend(handles=leg, frameon=False, fontsize=FS_SM,
                   loc="upper right", handlelength=0.8)
-
-    _place_elec_icons_at_whisker(ax_phi,
-        [(xi, PHI_ICONS[xi], upper[ax_phi].get(xi, 0.0)) for xi in range(4)], zoom=0.05)
-    _place_elec_icons_at_whisker(ax_z,
-        [(xi, Z_ICONS[xi],   upper[ax_z].get(xi,  0.0)) for xi in range(3)], zoom=0.05)
     return ax_phi
 
 
@@ -841,7 +863,7 @@ def main() -> int:
 
     _panel_heading(ax_a_ref, "a", "Fiber activation maps",            dx=-0.11)
     _panel_heading(ax_b_ref, "b", "Selectivity performance",         dx=-0.16)
-    _panel_heading(ax_c_ref, "c", "Stimulus amplitude by contact position",
+    _panel_heading(ax_c_ref, "c", "Emergent stimulation strategy",
                    dx=-0.14, dy=1.08)
     _panel_heading(ax_d_ref, "d", "Sparse fiber-sampling analysis",  dx=-0.14, dy=1.34)
 

@@ -679,7 +679,7 @@ def _panel_d(gs, fig, sparse_rows: list[dict]) -> plt.Axes:
     raw = []
     for sp, xi in cells:
         pen = _ps_mean(sparse_rows, sp, _pen(xi))
-        raw.append(stats.wilcoxon(pen, alternative="greater").pvalue
+        raw.append(stats.wilcoxon(pen, alternative="two-sided").pvalue
                    if pen.size >= 6 else np.nan)
     padj = {c: a for c, a in zip(cells, _holm(raw))}
 

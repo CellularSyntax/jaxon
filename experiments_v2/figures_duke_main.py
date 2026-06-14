@@ -58,6 +58,11 @@ PALETTE = {
 }
 SP_MARKER = {"swine": "s", "human": "o"}
 
+# Validity filter shared by panels b and d: seeds whose dense optimisation failed
+# to converge (dense SI below this) are excluded — they are neither a fair
+# performance sample (panel b) nor a valid ceiling for the transfer penalty (d).
+_DENSE_MIN = 0.5
+
 FS    = 8
 FS_SM = 7
 
@@ -414,6 +419,10 @@ def _metric_bar(ax: plt.Axes, rows: list[dict], field: str, ylabel: str,
 
 
 def _panel_b(gs, fig, rows: list[dict]) -> plt.Axes:
+    # Same validity filter as panel d: drop dense seeds that did not converge
+    # (dense SI < _DENSE_MIN) so the two panels can't drift.
+    rows = [r for r in rows
+            if np.isfinite(r.get("si", np.nan)) and r["si"] >= _DENSE_MIN]
     gs_inner = gridspec.GridSpecFromSubplotSpec(
         2, 2, subplot_spec=gs, wspace=0.42, hspace=0.48,
     )
@@ -661,9 +670,6 @@ def _pfmt(p):
     if not np.isfinite(p):
         return ""
     return "p<0.001" if p < 1e-3 else f"p={p:.3f}"
-
-
-_DENSE_MIN = 0.5   # seeds whose dense optimisation failed are not a valid ceiling
 
 
 def _mean_transfer(r) -> float:

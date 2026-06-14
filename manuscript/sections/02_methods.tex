@@ -36,164 +36,39 @@
 \subsection{Axon models}
 \label{sec:methods-models}
 
-jaxon implements four canonical peripheral nerve fiber models, all of
-which have been used extensively in the PNS modelling literature and
-can be cross-validated against published NEURON
-results~\cite{mcintyre2002,sundt2015,sweeney1987,rattay1989analysis}.
-Figure~\ref{fig:overview} summarises the differentiable
-forward-and-optimise pipeline, the anatomy-to-model FE construction,
-the fibre-model validation, and the selectivity optimisation on the
-microCT cohort.
+jaxon implements four canonical peripheral nerve fibre models: the
+myelinated McIntyre--Richardson--Grill (MRG) double-cable and Sweeney
+single-cable axons, and the unmyelinated Sundt and Rattay
+C-fibres~\cite{mcintyre2002,sweeney1987,sundt2015,rattay1989analysis}.
+Each carries its published channel set and diameter-dependent geometry
+(resting potentials $-80$\,mV for MRG/Sweeney, $-60$\,mV Sundt,
+$-70$\,mV Rattay); the MRG model is a coupled $(V_i, V_{\mathrm{px}})$
+double cable, the others single cables.  The governing equations and
+all constants are given in
+Appendix~\ref{sec:app-equations}--\ref{sec:app-models}; all four share
+a common compartment-level interface (\texttt{FiberStatics},
+\texttt{batch\_integrate\_m\_max}), so the library extends to further
+models without solver changes.  Figure~\ref{fig:overview} summarises
+the forward-and-optimise pipeline, FE construction, validation and
+cohort optimisation.
 
-\paragraph{MRG double-cable (myelinated).}
-The McIntyre--Richardson--Grill model~\cite{mcintyre2002} represents
-each myelinated axon as a sequence of compartments alternating
-between nodes of Ranvier (which carry the active Na$^+$, slow K$^+$,
-persistent Na$^+$ and leak conductances) and ten passive internodal
-compartments (MYSA, FLUT and three STIN compartments per side)
-arranged as a double cable with both intracellular ($V_i$) and
-periaxonal ($V_{\mathrm{px}}$) potentials.  Coupling between the two
-cables proceeds through the periaxonal resistance and the myelin
-shunt.  Fiber diameter $D$ is the single shape parameter; all
-geometric quantities (node length, internode length, MYSA/FLUT
-diameters, myelin layer count) follow McIntyre's published
-diameter-dependent fits.
-
-Letting $\mathbf{V}_i \in \mathbb{R}^{n_{\mathrm{comp}}}$ and
-$\mathbf{V}_{\mathrm{px}} \in \mathbb{R}^{n_{\mathrm{comp}}}$ denote
-the per-compartment intracellular and periaxonal potentials, the
-discretised cable equations take the form
-\begin{equation}
-  C_m \frac{d\mathbf{V}_i}{dt} = \mathbf{A}_{ii} \mathbf{V}_i +
-  \mathbf{A}_{ip} \mathbf{V}_{\mathrm{px}} - \mathbf{I}_{\mathrm{ion}}(\mathbf{V}_i, \mathbf{m}) -
-  \mathbf{I}_{\mathrm{stim}}(t),
-  \label{eq:cable-vi}
-\end{equation}
-\begin{equation}
-  0 = \mathbf{A}_{pi} \mathbf{V}_i + \mathbf{A}_{pp} \mathbf{V}_{\mathrm{px}} + V_e(t,\mathbf{x}),
-  \label{eq:cable-vpx}
-\end{equation}
-where $\mathbf{A}_{**}$ are tridiagonal coupling matrices derived from
-the per-compartment axial resistances, $\mathbf{I}_{\mathrm{ion}}$
-collects the four active currents (only at nodes), and $V_e$ is the
-externally imposed extracellular field.  jaxon integrates
-Eqs.~(\ref{eq:cable-vi})--(\ref{eq:cable-vpx}) jointly using a
-backward-Euler scheme with the periaxonal equation solved analytically
-at each step; see Section~\ref{sec:methods-solver} for details.
-
-\paragraph{Sundt (unmyelinated, single-cable).}
-The Sundt C-fiber model~\cite{sundt2015} represents each axon as a
-uniform unmyelinated single cable with a
-transient Hodgkin--Huxley-style sodium current
-$I_{\mathrm{Na}}$ (NaV1.7/1.8 calibration via voltage shifts
-$\Delta_m = -6$\,mV, $\Delta_h = +6$\,mV at the m- and h-gates), a
-Borg-Graham delayed-rectifier potassium current
-$I_{\mathrm{Kdr}}$, and a passive leak $I_L$:
-\begin{equation}
-  C_m \frac{dV}{dt} = \mathbf{A}_{\mathrm{ax}}\mathbf{V} - I_{\mathrm{Na}}
-  - I_{\mathrm{Kdr}} - I_L - I_{\mathrm{stim}}.
-  \label{eq:cable-sundt}
-\end{equation}
-Resting potential $V_{\mathrm{rest}} = -60$\,mV, specific membrane
-capacitance $C_m = 1\,\mu$F\,cm$^{-2}$, axial resistivity
-$\rho_a = 100\,\Omega\,$cm; channel densities and gating kinetics in
-Appendix~\ref{sec:app-models}, Table~\ref{tab:app-sundt}.
-
-\paragraph{Sweeney (myelinated, single-cable).}
-The Sweeney model~\cite{sweeney1987} represents a myelinated motor
-axon by a single-cable equation at the node of Ranvier, with the
-internode treated as a passive insulating sleeve.  The nodal current
-consists of a single fast sodium current with $m^2 h$ kinetics and a
-leak~\cite{musselman2023}:
-\begin{equation}
-  C_m^{\mathrm{node}} \frac{dV}{dt} = \mathbf{A}_{\mathrm{ax}}\mathbf{V}
-  - g_{\mathrm{Na}}\, m^2 h\, (V - E_{\mathrm{Na}}) - g_L\,(V - E_L)
-  - I_{\mathrm{stim}}.
-  \label{eq:cable-sweeney}
-\end{equation}
-The model is calibrated for $T = 37$\,$^\circ$C (no Q$_{10}$
-correction) and assumes a fixed inner-to-outer diameter ratio
-$d_i = 0.6\,d$.  Resting potential $V_{\mathrm{rest}} = -80$\,mV,
-nodal capacitance $C_m^{\mathrm{node}} = 2.5\,\mu$F\,cm$^{-2}$,
-axial resistivity $\rho_a = 54.7\,\Omega\,$cm; constants in
-Table~\ref{tab:app-sweeney}.
-
-\paragraph{Rattay (unmyelinated, generic HH).}
-The Rattay model~\cite{rattay1989analysis} uses a textbook
-Hodgkin--Huxley parameterisation as a generic baseline for
-unmyelinated fibres.  The single compartment carries a fast sodium
-current $g_{\mathrm{Na}} m^3 h$, a delayed-rectifier potassium
-current $g_K n^4$, and a leak:
-\begin{equation}
-  C_m \frac{dV}{dt} = \mathbf{A}_{\mathrm{ax}}\mathbf{V}
-  - g_{\mathrm{Na}}\, m^3 h\, (V - E_{\mathrm{Na}})
-  - g_K\, n^4\, (V - E_K) - g_L\,(V - E_L) - I_{\mathrm{stim}}.
-  \label{eq:cable-rattay}
-\end{equation}
-The gate rate constants are the canonical squid-axon-derived
-expressions of~\cite{rattay1989analysis}, temperature-corrected via
-$Q_{10} = 2.247^{(T - 6.3)/10}$ for $T = 37$\,$^\circ$C.  Resting
-potential $V_{\mathrm{rest}} = -70$\,mV, capacitance
-$C_m = 1\,\mu$F\,cm$^{-2}$, axial resistivity $\rho_a = 100\,\Omega\,$cm;
-constants in Table~\ref{tab:app-rattay}.  All four models share the
-same compartment-level interface in jaxon (\texttt{FiberStatics}
-struct, \texttt{batch\_integrate\_m\_max} solver entry point), making
-it straightforward to extend the library with additional models.
-
-\subsection{Coupled backward-Euler solver}
-\label{sec:methods-solver}
-
-The MRG double-cable model presents the only non-trivial solver
-question.  Because the periaxonal equation~(\ref{eq:cable-vpx}) has no
-capacitive term it is algebraic at every time step, so we eliminate
-$\mathbf{V}_{\mathrm{px}}$ by back-substitution before stepping
-$\mathbf{V}_i$.  Concretely, at each step $n$ we form the combined
-tridiagonal system
-\begin{equation}
-  \left(C_m / \Delta t \cdot I - \mathbf{A}_{ii}^{\mathrm{eff}}\right)\mathbf{V}_i^{(n+1)} =
-  C_m / \Delta t \cdot \mathbf{V}_i^{(n)} - \mathbf{I}_{\mathrm{ion}}^{(n)}(\mathbf{V}_i, \mathbf{m})
-  - \mathbf{I}_{\mathrm{stim}}^{(n)} - \mathbf{b}_e^{(n)},
-  \label{eq:beuler-vi}
-\end{equation}
-where $\mathbf{A}_{ii}^{\mathrm{eff}} = \mathbf{A}_{ii} -
-\mathbf{A}_{ip} \mathbf{A}_{pp}^{-1} \mathbf{A}_{pi}$ is the
-Schur complement of the periaxonal cable and $\mathbf{b}_e^{(n)} =
-- \mathbf{A}_{ip} \mathbf{A}_{pp}^{-1} \mathbf{V}_e^{(n)}$ collects
-the extracellular forcing.  Eq.~(\ref{eq:beuler-vi}) is solved by a
-JAX-compatible Thomas-algorithm tridiagonal sweep.  Gating variables
-$\mathbf{m}$ are advanced semi-implicitly using the standard
-$\tau_\infty$ rate-equation update.
-
-The full forward pass for one fiber is wrapped in
-\texttt{jax.lax.scan} over time steps, returning either the full
-$(T, n_{\mathrm{comp}})$ voltage trace or---when only the activation
-proxy is needed for selectivity optimisation---only the per-compartment
-maximum of $\mathbf{m}_{\mathrm{Na}}$ (i.e.\ the peak Na$^+$ activation
-gate at each node), which suffices to detect fiber recruitment with
-$\ge\!2$ orders of magnitude lower memory cost.
-
-Validation against NEURON used the following exact parameters: time
-step $\Delta t = 5\,\mu\mathrm{s}$, simulation length 3\,ms,
-default activation threshold for proxy comparison was the 0.5
-crossing of $\max_t \mathbf{m}_{\mathrm{Na}}$ at the terminal node.
-Across all 432 MRG test configurations the resulting threshold
-agreement with NEURON has median $0.04\%$ and peak $0.39\%$ relative
-error, with $100\%$ of tested configurations under the $1\%$ acceptance
-criterion (see Table~\ref{tab:validation-sd}).
-
-\subsection{Batched parallel-fiber forward pass}
-\label{sec:methods-batched}
-
-For $N$ fibers stimulated by the same multi-contact electrode, jaxon
-constructs a \emph{batched} static-parameter struct (\texttt{FiberStatics})
-in which all per-fiber arrays are stacked along a leading fiber axis.
-A single call to \texttt{jax.vmap(integrate\_one\_fiber)} over this
-axis produces an $N$-way parallel scan; on the GPU, JAX compiles this
-into a single XLA kernel that interleaves the fiber states across
-threads.  This eliminates the per-fiber Python overhead that
-dominates NEURON-based pipelines and is the proximal cause of the
-throughput improvement reported in
-Section~\ref{sec:results-scaling}.
+\paragraph{Coupled solver and batched forward pass.}
+The MRG double cable is integrated by a backward-Euler scheme in which
+the capacitance-free periaxonal equation is eliminated by a Schur
+complement and the resulting tridiagonal system solved by a
+JAX-compatible Thomas sweep (Appendix~\ref{sec:app-equations}).  The
+forward pass for one fibre is wrapped in \texttt{jax.lax.scan} over
+time steps and returns, for optimisation, only the per-compartment
+maximum of the Na$^+$ activation gate $\mathbf{m}_{\mathrm{Na}}$ --- a
+differentiable recruitment proxy --- at $\ge\!2$ orders of magnitude
+lower memory than the full trace.  For $N$ fibres under the same
+electrode, the per-fibre static parameters are stacked and a single
+\texttt{jax.vmap} call compiles to one $N$-way XLA kernel, eliminating
+the per-fibre Python overhead that dominates NEURON pipelines and
+driving the throughput gain (Section~\ref{sec:results-scaling}).  At
+$\Delta t = 5\,\mu\mathrm{s}$ the MRG threshold agreement with NEURON
+has median $0.04\,\%$ and peak $0.39\,\%$ relative error over all 432
+configurations (Table~\ref{tab:validation-sd}).
 
 \subsection{Selectivity optimisation}
 \label{sec:methods-opt}
@@ -219,93 +94,27 @@ The activation proxy can be optionally softened with a per-node
 sigmoid of temperature $\tau$ to widen the gradient-informative
 window at saturation.
 
-\paragraph{Rectangular-pulse amplitude optimisation.}
-For rectangular biphasic pulses with $K$ contacts and shared
-pulse-width, the design variable is the per-contact amplitude vector
-$\mathbf{I} \in \mathbb{R}^K$.  jaxon supports two optimisers:
-(i) Adam~\cite{kingma2015adam} with finite-difference gradients
-(\texttt{adam\_fd}), which re-uses the forward kernel for the $K$
-amplitude probes and avoids autodiff entirely; and (ii) multi-start
-L-BFGS~\cite{liu1989lbfgs} with zoom line search
-(\texttt{optax.lbfgs}), which uses autodiff backward through the
-\texttt{lax.scan} ODE integration and---thanks to \texttt{jax.checkpoint}
-on the inner-loop fiber integrator---fits within the memory budget of
-a 40\,GB A100 GPU at $N=200$.  Both optimisers use the bipolar
-Ve-weighted initialisation $\mathbf{I}_0 = (2 \tilde{V}_e - 1) \cdot
-|I_{\mathrm{init}}| \cdot \mathrm{sign}(I_{\mathrm{init}})$, where
-$\tilde{V}_e \in [0,1]$ is the normalised baseline extracellular field
-amplitude at each contact; this places the deterministic restart at a
-plausible cathodic/anodic split rather than at a single-polarity
-saturation.
-
-The hyperparameters $|I_{\mathrm{init}}|$, the amplitude clamp range,
-the Adam step size and the finite-difference probe magnitude are all
-scaled per fibre model so the optimiser starts in the
-gradient-informative regime regardless of the activation threshold's
-absolute scale.  At our 1.5\,mm cuff-to-fibre distance, single-contact
-extracellular activation thresholds span two orders of magnitude
-across the four supported models (Table~\ref{tab:opt-hparams}):
-$\sim 0.3\,\mathrm{mA}$ for MRG, $\sim 0.2\,\mathrm{mA}$ for Sweeney,
-$\sim 30\,\mathrm{mA}$ for Rattay, and $\sim 50\,\mathrm{mA}$ for
-Sundt (read off the single-fibre extracellular validation traces, see
-Section~\ref{sec:results-validation}).  The defaults below place
-$|I_{\mathrm{init}}|$ at $\sim 2\times$ the single-contact threshold,
-the clamp at $\sim 5\times$, Adam step size such that 30 iterations
-can traverse the clamp range, and the FD probe at a few percent of
-the threshold magnitude.
-
-\begin{table}[h]
-  \centering
-  \caption{Per-model rectangular-pulse optimiser defaults.  All four
-    knobs scale together with the single-contact extracellular
-    activation threshold of each model.  Users can override any of
-    these via the \texttt{AMP\_INIT\_MA}, \texttt{AMP\_CLIP\_LO},
-    \texttt{AMP\_CLIP\_HI}, \texttt{ADAM\_LR\_MA} and
-    \texttt{FD\_EPS\_MA} environment variables.}
-  \label{tab:opt-hparams}
-  \begin{tabular}{lrrrr}
-    \toprule
-    Model    & $|I_{\mathrm{init}}|$ (mA) & amp clip (mA) & Adam $\eta$ (mA/step) & FD $\epsilon$ (mA) \\
-    \midrule
-    MRG     &  1.5 & $\pm 3$   & 0.08 & 0.05 \\
-    Sweeney &  1.5 & $\pm 3$   & 0.08 & 0.05 \\
-    Rattay  & 50.0 & $\pm 150$ & 3.0  & 1.0  \\
-    Sundt   & 80.0 & $\pm 200$ & 5.0  & 2.0  \\
-    \bottomrule
-  \end{tabular}
-\end{table}
-
-Both rectangular optimisers also use an early-stop pair: the loop
-terminates as soon as the hard selectivity index reaches the target
-($\mathrm{SI}\ge 1.0$ by default) \emph{or} the best loss has not
-improved by at least $10^{-5}$ for 20 consecutive iterations.  This
-stops easy seeds at $\sim 15$--$30$ Adam iterations instead of the
-full 90 iterations budgeted, cutting per-seed wall time on the
-sweep by an order of magnitude on the easy-seed majority.
-
-\paragraph{Probe-based smart initialisation.}
-On the microCT cohort (Section~\ref{sec:methods-duke}) the Adam-FD
-trajectory is warm-started from a discrete probe of physically
-meaningful spatial patterns rather than a single bipolar guess.  A
-fixed bipolar pattern (per-contact target-vs-off-target $|V_e|$
-contrast) and four single-column tripolar patterns --- one per angular
-column (N/E/S/W), cathode at the column's $z$-middle contact with two
-charge-balancing anodes at $z$-top and $z$-bottom --- are each
-evaluated at eight signed magnitudes spanning $\pm 0.02$ to
-$\pm 1.5\,\mathrm{mA}$, i.e.\ 80 forward passes per seed.  The
-highest-scoring (pattern, magnitude) pair initialises a single Adam-FD
-trajectory.  Contacts that the winning probe pattern left at exactly
-zero are hard-frozen during Adam-FD by a gradient mask, which
-preserves the focal sparsity of the probe pattern; without the mask
-the per-iteration updates accumulate unbalanced net drive at the
-previously-zero contacts and the focal field is destroyed within a few
-iterations.
-
-The same forward kernel also exposes reverse-mode gradients with
-respect to per-contact \emph{arbitrary waveforms}
-$u_k(t) \in \mathbb{R}^{K \times T}$, enabling waveform-shape
-optimisation; we report rectangular-pulse results only here and leave
-waveform shaping to future work (Section~\ref{sec:discussion}).
+\paragraph{Amplitude optimisation.}
+For rectangular biphasic pulses the design variable is the per-contact
+amplitude vector $\mathbf{I} \in \mathbb{R}^K$.  jaxon supports Adam
+with finite-difference gradients~\cite{kingma2015adam} (reusing the
+forward kernel over the $K$ probes) and autodiff multi-start
+L-BFGS~\cite{liu1989lbfgs}; both start from a bipolar $V_e$-weighted
+initialisation and use per-model amplitude scales that track the
+single-contact activation thresholds, which span two orders of
+magnitude across models ($\sim 0.3$ MRG, $\sim 0.2$ Sweeney,
+$\sim 30$ Rattay, $\sim 50\,\mathrm{mA}$ Sundt; defaults in
+Appendix Table~\ref{tab:opt-hparams}).  The loop early-stops when the
+hard SI reaches target or the loss stalls for $20$ iterations.  On the
+microCT cohort the trajectory is warm-started by a discrete probe of
+physically meaningful spatial patterns --- one bipolar and four
+single-column tripolar (one per angular column, cathode at the
+column's $z$-middle contact with charge-balancing anodes) --- each
+scored at eight magnitudes ($80$ forward passes per seed); the best
+initialises the trajectory, with the probe's zero contacts frozen by a
+gradient mask to preserve focal sparsity.  The same kernel exposes
+gradients with respect to arbitrary per-contact waveforms $u_k(t)$,
+enabling waveform-shape optimisation, which we leave to future work.
 
 \subsection{Subject-specific Duke FEM cohort}
 \label{sec:methods-duke}
@@ -320,43 +129,16 @@ segmented epineurium and per-fascicle endoneurium boundaries; the
 human dataset additionally includes anti-claudin-1 staining that
 resolves the perineurium thickness directly~\cite{pelot2023humanvagus}.
 
-\paragraph{Per-sample FE model.}
-For each sample, an automated pipeline (Golgi~\cite{haberbusch2026golgi})
-converts the segmented cross-section into a watertight 3-D multi-domain
-nerve-and-cuff FE model and computes the per-contact extracellular
-lead field.  Briefly: (i) the segmentation is cleaned morphologically
-and Ramer--Douglas--Peucker-simplified, then area-preserving
-circularised to remove segmentation-specific shape bias while
-conserving fascicle areas; (ii) the resulting cross-section is
-extruded axially and embedded in a concentric cuff (12 platinum
-contacts arranged in 3 axial rows $\times$ 4 angular columns, on a
-$1.0\,\mathrm{mm}$ silicone wall, $5.4\,\mathrm{mm}$ long), a thin
-saline film ($150\,\mu\mathrm{m}$ radial clearance), and a surrounding
-muscle bath; (iii) the assembly is tetrahedralised with Gmsh/OpenCASCADE
-and Netgen, with a size field that refines the mesh to
-${\approx}100\,\mu\mathrm{m}$ near the cuff and coarsens to
-${\approx}1.5\,\mathrm{mm}$ in the muscle bulk; (iv) the
-electro-quasistatic problem $\nabla \cdot (\sigma \nabla V) = 0$ is
-solved in FEniCSx/DOLFINx with $P_1$ Lagrange elements, anisotropic
-endoneurium ($\sigma_{\perp} = 1/6.0$, $\sigma_{\parallel} = 1/1.75$
-S/m along the nerve axis) and muscle (0.086 transverse,
-$0.35$ longitudinal S/m), isotropic epineurium and encapsulation
-($1/6.3$ S/m), saline ($1.76$ S/m), silicone ($10^{-12}$ S/m), and
-platinum contacts ($9.43 \times 10^{6}$
-S/m)~\cite{pelot2020perineurium,grill1994stimulus,gielen1984incorporation,horch2017neuroprosthetics};
-(v) the perineurium is modelled as a zero-thickness contact-impedance
-sheet at the endoneurium--epineurium interface with sheet resistance
-$R_s = d_{\mathrm{peri}} / \sigma_{\mathrm{peri}}$ ($\sigma_{\mathrm{peri}}
-= 1/1149$\,S/m~\cite{pelot2020perineurium}), with $d_{\mathrm{peri}}$
-taken per fascicle from the diameter-dependent
-relation~\cite{pelot2020perineurium}
-($d_{\mathrm{peri}} = 0.02547\,d_{\mathrm{fasc}} + 3.44\,\mu\mathrm{m}$
-for swine; measured directly from the anti-claudin-1 inner/outer
-masks for human).  Because the problem is linear, the assembled
-block matrix is LU-factorised once with MUMPS and one unit-current
-($1\,\mathrm{A}$) solve is performed per contact with the muscle
-boundary as return, yielding a lead field $V_e^{(k)}$ in $\mathrm{V/A}$
-for each of the 12 contacts.
+An automated pipeline (Golgi~\cite{haberbusch2026golgi}) converts each
+segmented cross-section into a watertight 3-D multi-domain nerve-and-cuff
+FE model --- nerve embedded in a concentric 12-contact cuff (3 axial
+rows $\times$ 4 angular columns), saline film and muscle bath --- and
+solves the linear electro-quasistatic problem
+$\nabla \cdot (\sigma \nabla V) = 0$ in FEniCSx with literature
+conductivities and a zero-thickness perineurium contact impedance,
+giving a per-contact extracellular lead field $V_e^{(k)}$
+(full construction, conductivities and the optimiser defaults in
+Appendix~\ref{sec:app-details}).
 
 \paragraph{Fibre sampling.}
 $1\,000$ straight axial fibre trajectories per nerve are seeded by
@@ -399,7 +181,7 @@ meaningful peripheral cluster.
 
 \paragraph{Cohort composition and FEM-quality gating.}
 Of the $N_{\mathrm{raw}} = 36$ SPARC bundles processed by the pipeline,
-$N_{\mathrm{cohort}} = 27$ nerves (18 swine, 9 human; 103
+$N_{\mathrm{cohort}} = 29$ nerves (18 swine, 11 human; 116
 target-cluster seeds in total) entered the selectivity study after two
 pre-flight filters: \textbf{(i)} samples with fewer than three
 fascicles were rejected (degenerate target-cluster selector, above);

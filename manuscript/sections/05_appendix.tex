@@ -3,6 +3,105 @@
 % ====================================================================
 \appendix
 
+\section{Fibre-model equations and coupled solver}
+\label{sec:app-equations}
+
+This appendix gives the governing equations of the four implemented
+fibre models and the coupled backward-Euler solver, summarised in
+Section~\ref{sec:methods-models}.
+
+\paragraph{MRG double-cable (myelinated).}
+The McIntyre--Richardson--Grill model~\cite{mcintyre2002} represents
+each myelinated axon as nodes of Ranvier (carrying the active Na$^+$,
+slow K$^+$, persistent Na$^+$ and leak conductances) alternating with
+ten passive internodal compartments (MYSA, FLUT and three STIN per
+side), arranged as a double cable with intracellular ($V_i$) and
+periaxonal ($V_{\mathrm{px}}$) potentials coupled through the
+periaxonal resistance and myelin shunt.  Fibre diameter $D$ is the
+single shape parameter; geometric quantities follow McIntyre's
+diameter-dependent fits.  With
+$\mathbf{V}_i, \mathbf{V}_{\mathrm{px}} \in \mathbb{R}^{n_{\mathrm{comp}}}$,
+\begin{equation}
+  C_m \frac{d\mathbf{V}_i}{dt} = \mathbf{A}_{ii} \mathbf{V}_i +
+  \mathbf{A}_{ip} \mathbf{V}_{\mathrm{px}} - \mathbf{I}_{\mathrm{ion}}(\mathbf{V}_i, \mathbf{m}) -
+  \mathbf{I}_{\mathrm{stim}}(t),
+  \label{eq:cable-vi}
+\end{equation}
+\begin{equation}
+  0 = \mathbf{A}_{pi} \mathbf{V}_i + \mathbf{A}_{pp} \mathbf{V}_{\mathrm{px}} + V_e(t,\mathbf{x}),
+  \label{eq:cable-vpx}
+\end{equation}
+where $\mathbf{A}_{**}$ are tridiagonal coupling matrices from the
+per-compartment axial resistances, $\mathbf{I}_{\mathrm{ion}}$ collects
+the four active currents (nodes only), and $V_e$ is the imposed
+extracellular field.
+
+\paragraph{Sundt (unmyelinated, single-cable).}
+The Sundt C-fibre~\cite{sundt2015} is a uniform unmyelinated cable with
+a transient HH-style sodium current $I_{\mathrm{Na}}$ (NaV1.7/1.8
+calibration via voltage shifts $\Delta_m = -6$\,mV, $\Delta_h = +6$\,mV),
+a Borg--Graham delayed-rectifier $I_{\mathrm{Kdr}}$ and leak $I_L$:
+\begin{equation}
+  C_m \frac{dV}{dt} = \mathbf{A}_{\mathrm{ax}}\mathbf{V} - I_{\mathrm{Na}}
+  - I_{\mathrm{Kdr}} - I_L - I_{\mathrm{stim}}.
+  \label{eq:cable-sundt}
+\end{equation}
+$V_{\mathrm{rest}} = -60$\,mV, $C_m = 1\,\mu$F\,cm$^{-2}$,
+$\rho_a = 100\,\Omega\,$cm; densities and kinetics in
+Table~\ref{tab:app-sundt}.
+
+\paragraph{Sweeney (myelinated, single-cable).}
+The Sweeney motor axon~\cite{sweeney1987} is a single-cable nodal
+equation with the internode a passive sleeve, nodal current a fast
+$m^2 h$ sodium plus leak~\cite{musselman2023}:
+\begin{equation}
+  C_m^{\mathrm{node}} \frac{dV}{dt} = \mathbf{A}_{\mathrm{ax}}\mathbf{V}
+  - g_{\mathrm{Na}}\, m^2 h\, (V - E_{\mathrm{Na}}) - g_L\,(V - E_L)
+  - I_{\mathrm{stim}}.
+  \label{eq:cable-sweeney}
+\end{equation}
+Calibrated for $T = 37\,^\circ$C ($d_i = 0.6\,d$),
+$V_{\mathrm{rest}} = -80$\,mV,
+$C_m^{\mathrm{node}} = 2.5\,\mu$F\,cm$^{-2}$,
+$\rho_a = 54.7\,\Omega\,$cm; constants in Table~\ref{tab:app-sweeney}.
+
+\paragraph{Rattay (unmyelinated, generic HH).}
+The Rattay model~\cite{rattay1989analysis} is a textbook HH baseline
+for unmyelinated fibres with $g_{\mathrm{Na}} m^3 h$,
+$g_K n^4$ and leak:
+\begin{equation}
+  C_m \frac{dV}{dt} = \mathbf{A}_{\mathrm{ax}}\mathbf{V}
+  - g_{\mathrm{Na}}\, m^3 h\, (V - E_{\mathrm{Na}})
+  - g_K\, n^4\, (V - E_K) - g_L\,(V - E_L) - I_{\mathrm{stim}}.
+  \label{eq:cable-rattay}
+\end{equation}
+Squid-axon rate constants temperature-corrected via
+$Q_{10} = 2.247^{(T - 6.3)/10}$ at $T = 37\,^\circ$C;
+$V_{\mathrm{rest}} = -70$\,mV, $C_m = 1\,\mu$F\,cm$^{-2}$,
+$\rho_a = 100\,\Omega\,$cm; constants in Table~\ref{tab:app-rattay}.
+
+\paragraph{Coupled backward-Euler solver.}
+The MRG double cable is the only non-trivial solver case.  Because the
+periaxonal equation~(\ref{eq:cable-vpx}) has no capacitive term it is
+algebraic, so $\mathbf{V}_{\mathrm{px}}$ is eliminated by
+back-substitution before stepping $\mathbf{V}_i$.  At step $n$,
+\begin{equation}
+  \left(C_m / \Delta t \cdot I - \mathbf{A}_{ii}^{\mathrm{eff}}\right)\mathbf{V}_i^{(n+1)} =
+  C_m / \Delta t \cdot \mathbf{V}_i^{(n)} - \mathbf{I}_{\mathrm{ion}}^{(n)}(\mathbf{V}_i, \mathbf{m})
+  - \mathbf{I}_{\mathrm{stim}}^{(n)} - \mathbf{b}_e^{(n)},
+  \label{eq:beuler-vi}
+\end{equation}
+with $\mathbf{A}_{ii}^{\mathrm{eff}} = \mathbf{A}_{ii} -
+\mathbf{A}_{ip} \mathbf{A}_{pp}^{-1} \mathbf{A}_{pi}$ the Schur
+complement of the periaxonal cable and $\mathbf{b}_e^{(n)} =
+- \mathbf{A}_{ip} \mathbf{A}_{pp}^{-1} \mathbf{V}_e^{(n)}$ the
+extracellular forcing.  Eq.~(\ref{eq:beuler-vi}) is solved by a
+JAX-compatible Thomas tridiagonal sweep; gating variables advance
+semi-implicitly.  The forward pass is wrapped in \texttt{jax.lax.scan}
+over time steps, returning either the full voltage trace or only the
+per-compartment maximum of $\mathbf{m}_{\mathrm{Na}}$ (the activation
+proxy) at $\ge\!2$ orders of magnitude lower memory cost.
+
 \section{Fibre-model parameter tables}
 \label{sec:app-models}
 
@@ -187,3 +286,58 @@ as packaged in \texttt{pyfibers}.
     \bottomrule
   \end{tabular}
 \end{table}
+
+\section{Optimiser defaults and FE-model construction}
+\label{sec:app-details}
+
+\begin{table}[h]
+  \centering
+  \caption{Per-model rectangular-pulse optimiser defaults
+    (Section~\ref{sec:methods-opt}).  All four knobs scale together
+    with the single-contact extracellular activation threshold of each
+    model and are overridable via the \texttt{AMP\_INIT\_MA},
+    \texttt{AMP\_CLIP\_\{LO,HI\}}, \texttt{ADAM\_LR\_MA} and
+    \texttt{FD\_EPS\_MA} environment variables.}
+  \label{tab:opt-hparams}
+  \begin{tabular}{lrrrr}
+    \toprule
+    Model    & $|I_{\mathrm{init}}|$ (mA) & amp clip (mA) & Adam $\eta$ (mA/step) & FD $\epsilon$ (mA) \\
+    \midrule
+    MRG     &  1.5 & $\pm 3$   & 0.08 & 0.05 \\
+    Sweeney &  1.5 & $\pm 3$   & 0.08 & 0.05 \\
+    Rattay  & 50.0 & $\pm 150$ & 3.0  & 1.0  \\
+    Sundt   & 80.0 & $\pm 200$ & 5.0  & 2.0  \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\paragraph{Per-sample FE model.}
+For each sample, an automated pipeline (Golgi~\cite{haberbusch2026golgi})
+converts the segmented cross-section into a watertight 3-D multi-domain
+nerve-and-cuff FE model and computes the per-contact extracellular
+lead field.  Briefly: (i) the segmentation is cleaned morphologically
+and Ramer--Douglas--Peucker-simplified, then area-preserving
+circularised to remove segmentation-specific shape bias while
+conserving fascicle areas; (ii) the cross-section is extruded axially
+and embedded in a concentric cuff (12 platinum contacts in 3 axial
+rows $\times$ 4 angular columns, on a $1.0\,\mathrm{mm}$ silicone wall,
+$5.4\,\mathrm{mm}$ long), a thin saline film ($150\,\mu\mathrm{m}$
+clearance) and a muscle bath; (iii) the assembly is tetrahedralised
+with Gmsh/OpenCASCADE and Netgen, refining to
+${\approx}100\,\mu\mathrm{m}$ near the cuff and coarsening to
+${\approx}1.5\,\mathrm{mm}$ in the bulk; (iv) the electro-quasistatic
+problem $\nabla \cdot (\sigma \nabla V) = 0$ is solved in
+FEniCSx/DOLFINx with $P_1$ elements, anisotropic endoneurium
+($\sigma_{\perp} = 1/6.0$, $\sigma_{\parallel} = 1/1.75$\,S/m) and
+muscle ($0.086$ transverse, $0.35$ longitudinal\,S/m), isotropic
+epineurium/encapsulation ($1/6.3$\,S/m), saline ($1.76$\,S/m),
+silicone ($10^{-12}$\,S/m) and platinum contacts
+($9.43 \times 10^{6}$\,S/m)~\cite{pelot2020perineurium,grill1994stimulus,gielen1984incorporation,horch2017neuroprosthetics};
+(v) the perineurium is a zero-thickness contact-impedance sheet with
+sheet resistance $R_s = d_{\mathrm{peri}} / \sigma_{\mathrm{peri}}$
+($\sigma_{\mathrm{peri}} = 1/1149$\,S/m~\cite{pelot2020perineurium}),
+$d_{\mathrm{peri}}$ taken per fascicle from the diameter-dependent
+relation~\cite{pelot2020perineurium} (swine) or the anti-claudin-1
+masks (human).  Because the problem is linear, the block matrix is
+LU-factorised once with MUMPS and one $1\,\mathrm{A}$ solve per contact
+yields the lead field $V_e^{(k)}$ in V/A for each of the 12 contacts.

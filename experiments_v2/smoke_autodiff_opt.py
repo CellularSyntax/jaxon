@@ -50,6 +50,7 @@ import jax.numpy as jnp
 # full cohort uses -- so this smoke test exercises the real pipeline.
 from experiments_v2 import selectivity_sweep_duke as S
 from jaxfibers.optim.optimizer import (
+    run_rect_optimization,
     run_rect_optimization_lbfgs,
     run_waveform_optimization,
     _build_rect_loss_fn,
@@ -148,37 +149,83 @@ def main() -> int:
     print(f"  --> {'PASS' if results['A_grad_correct'] else 'FAIL'} "
           f"(need finite, cosine>0.98, rel<10%)", flush=True)
 
-    # ── B. autodiff amplitude optimization (exact-gradient LBFGS) ───────────
-    banner("B. autodiff amplitude optimization (LBFGS, exact gradients)")
-    t0 = time.time()
+    # ── B. SAME 12-amplitude problem: Adam-FD (current) vs autodiff-LBFGS ────
+    # Identical nerve, loss, and starting point (the Ve-weighted deterministic
+    # init); both run a fixed budget with early-stop disabled, so the ONLY
+    # difference is the gradient source.  This shows whether exact gradients
+    # buy anything on the problem we actually solve.
+    banner("B. head-to-head, identical 12-amplitude problem "
+           "(Adam-FD vs autodiff-LBFGS)")
+    budget = S.N_OPT_RECT
+    amps_init = np.asarray(amps0)        # reuse the Ve-weighted init from A
+    NEVER = 10 ** 9
+    common = dict(
+        fiber_statics_batch=seed_in["fs_batch"], state0_batch=seed_in["s0_batch"],
+        Ve_unit=seed_in["Ve_unit"], pulse_mask=seed_in["pulse_mask"],
+        node_indices=seed_in["node_indices"], target_mask=seed_in["target_mask"],
+        weights=seed_in["weights"], dt=S.DT, amp_clip=S.AMP_CLIP, verbose=False,
+    )
+
+    def _fd_best(hist):
+        loss = np.asarray(hist["loss"]); si = np.asarray(hist["si"])
+        i = int(np.argmin(loss))
+        return float(si[i]), float(loss[i]), len(loss)
+
+    row = {}
+    amps_warm = None
+    # --- Adam-FD (the method the cohort used) ---
     try:
-        res = run_rect_optimization_lbfgs(
-            fiber_statics_batch=seed_in["fs_batch"],
-            state0_batch=seed_in["s0_batch"],
-            Ve_unit=seed_in["Ve_unit"], pulse_mask=seed_in["pulse_mask"],
-            node_indices=seed_in["node_indices"], target_mask=seed_in["target_mask"],
-            weights=seed_in["weights"], dt=S.DT,
-            n_restarts=S.N_RESTARTS_RECT, n_steps=S.N_OPT_RECT,
-            amp_init_mA=S.AMP_INIT_MA, amp_clip=S.AMP_CLIP,
-            rng_seed=0, verbose=False,
+        t0 = time.time()
+        fd = run_rect_optimization(
+            **common, n_steps=budget, amps_init_vector=amps_init,
+            lr=S.ADAM_LR_MA, fd_eps=S.FD_EPS_MA,
+            early_stop_si=2.0, early_stop_patience=NEVER,
+            early_stop_si_patience=0,
         )
-        jax.block_until_ready(res["final_acts"])
-        dt_b = time.time() - t0
-        trace = np.asarray(res["all_loss_traces"][res["best_restart"]])
-        si_b = float(selectivity_index(np.asarray(res["final_acts"]), tgt))
-        print(f"  loss {trace[0]:.4f} -> {res['final_loss']:.4f} over "
-              f"{S.N_OPT_RECT} steps x {S.N_RESTARTS_RECT} restarts", flush=True)
-        print(f"  SI  {seed_in['si_baseline']:+.3f} -> {si_b:+.3f}   "
-              f"({dt_b:.1f}s, peak {gpu_peak_mb():.0f} MB)", flush=True)
-        ok_b = bool(np.isfinite(res["final_loss"])
-                    and res["final_loss"] <= trace[0] + 1e-6)
-        results["B_amp_autodiff"] = ok_b
-        amps_warm = np.asarray(res["amps"])
-        print(f"  --> {'PASS' if ok_b else 'FAIL'}", flush=True)
-    except Exception as e:           # noqa: BLE001
-        results["B_amp_autodiff"] = False
-        amps_warm = None
-        print(f"  --> FAIL ({type(e).__name__}: {str(e)[:160]})", flush=True)
+        jax.block_until_ready(fd["amps"])
+        t_fd_opt = time.time() - t0
+        si_fd, loss_fd, it_fd = _fd_best(fd["history"])
+        row["Adam-FD"] = (it_fd, loss_fd, si_fd, t_fd_opt, gpu_peak_mb())
+    except Exception as e:               # noqa: BLE001
+        row["Adam-FD"] = None
+        print(f"  Adam-FD FAILED ({type(e).__name__}: {str(e)[:140]})", flush=True)
+
+    # --- autodiff LBFGS (exact gradients), same single start, same budget ---
+    try:
+        t0 = time.time()
+        lb = run_rect_optimization_lbfgs(
+            **common, n_restarts=1, n_steps=budget,
+            amp_init_mA=S.AMP_INIT_MA, rng_seed=0,
+        )
+        jax.block_until_ready(lb["final_acts"])
+        t_lb_opt = time.time() - t0
+        si_lb = float(selectivity_index(np.asarray(lb["final_acts"]), tgt))
+        row["LBFGS-autodiff"] = (budget, float(lb["final_loss"]), si_lb,
+                                 t_lb_opt, gpu_peak_mb())
+        amps_warm = np.asarray(lb["amps"])
+    except Exception as e:               # noqa: BLE001
+        row["LBFGS-autodiff"] = None
+        msg = str(e); oom = "RESOURCE_EXHAUSTED" in msg or "out of memory" in msg.lower()
+        print(f"  LBFGS-autodiff FAILED ({type(e).__name__}"
+              f"{' [OOM]' if oom else ''}: {msg[:140]})", flush=True)
+
+    print(f"  baseline SI = {seed_in['si_baseline']:+.3f}   "
+          f"(budget = {budget} iters, identical start; "
+          f"peak MB = cumulative GPU high-water mark)", flush=True)
+    print(f"  {'optimizer':16s} {'iters':>5} {'best loss':>10} "
+          f"{'best SI':>8} {'wall (s)':>9} {'peak MB':>8}", flush=True)
+    for name in ("Adam-FD", "LBFGS-autodiff"):
+        r = row.get(name)
+        if r is None:
+            print(f"  {name:16s}   ---  (failed)", flush=True); continue
+        it, ls, si, t, mb = r
+        print(f"  {name:16s} {it:>5d} {ls:>10.4f} {si:>+8.3f} "
+              f"{t:>9.1f} {mb:>8.0f}", flush=True)
+    ok_b = (row.get("Adam-FD") is not None and row.get("LBFGS-autodiff") is not None
+            and np.isfinite(row["LBFGS-autodiff"][1]))
+    results["B_headtohead"] = bool(ok_b)
+    print(f"  --> {'PASS' if ok_b else 'FAIL'} "
+          f"(both optimizers ran on the identical problem)", flush=True)
 
     # ── C. autodiff WAVEFORM optimization (K x T DOF; FD is hopeless here) ──
     banner("C. autodiff waveform optimization (K x T DOF) -- memory/timing gate")

@@ -88,26 +88,23 @@ second term is an optional amplitude-energy regularizer; we set
 $\lambda = 0$ for all results reported here.
 
 \paragraph{Amplitude optimization.}
-For rectangular biphasic pulses the design variable is the per-contact
-amplitude vector $\mathbf{I} \in \mathbb{R}^K$.  jaxon supports Adam
-with finite-difference gradients~\cite{kingma2015adam} (reusing the
-forward kernel over the $K$ probes) and autodiff multi-start
-L-BFGS~\cite{liu1989lbfgs}; both start from a bipolar $V_e$-weighted
-initialization and use per-model amplitude scales that track the
-single-contact activation thresholds, which span two orders of
-magnitude across models ($\sim 0.3$ MRG, $\sim 0.2$ Sweeney,
-$\sim 30$ Rattay, $\sim 50\,\mathrm{mA}$ Sundt; defaults in
-Supplementary Table~\ref{tab:opt-hparams}).  The loop early-stops when the
-hard SI reaches target or the loss stalls for $20$ iterations.  On the
-microCT cohort the trajectory is warm-started by a discrete probe of
-physically meaningful spatial patterns --- one bipolar and four
-single-column tripolar (one per angular column, cathode at the
-column's $z$-middle contact with charge-balancing anodes) --- each
-scored at eight magnitudes ($80$ forward passes per seed); the best
-initializes the trajectory, with the probe's zero contacts frozen by a
-gradient mask to preserve focal sparsity.  The same kernel exposes
-gradients with respect to arbitrary per-contact waveforms $u_k(t)$,
-enabling waveform-shape optimization, which we leave to future work.
+The design variable is the per-contact rectangular-pulse amplitude
+vector $\mathbf{I} \in \mathbb{R}^K$ ($K=12$).  All selectivity results
+use Adam~\cite{kingma2015adam} with finite-difference gradients: each
+step needs only $K{+}1$ forward passes and avoids back-propagating
+through the long integration, so it runs on the full
+${\sim}1000$-fiber population --- the regime prior NEURON pipelines
+could not afford.  Amplitude scales track each model's
+single-contact activation threshold (defaults in Supplementary
+Table~\ref{tab:opt-hparams}), and the loop early-stops when the hard SI
+reaches target or the loss stalls for $20$ iterations.  On the microCT
+cohort the trajectory is warm-started by a discrete probe of physically
+meaningful spatial patterns --- one bipolar and four single-column
+tripolar (cathode at each column's $z$-middle contact with
+charge-balancing anodes) --- scored at eight magnitudes ($80$ forward
+passes per seed); the best initializes the trajectory, the probe's
+zero contacts frozen to preserve sparsity.  (jaxon also exposes exact
+autodiff gradients, used for waveform-shape optimization; future work.)
 
 \subsection{Subject-specific Duke FEM cohort}
 \label{sec:methods-duke}

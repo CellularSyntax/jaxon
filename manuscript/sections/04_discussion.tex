@@ -14,19 +14,21 @@ simulate the fibers the bias acts on.  Mechanistically the penalty is
 a failure to recruit the large human target fascicle from a field
 tuned to a few sampled fibers, not off-target spill or reduced drive.
 This was measurable only because jaxon simulates the full
-${\sim}1000$-fiber population: a fully differentiable, GPU-native
+${\sim}1000$-fiber population: a GPU-native, fully differentiable
 reimplementation of the canonical MRG, Sweeney, Sundt and Rattay axon
 models that reproduces NEURON ($99.6\,\%$ of $943$ configurations under
 the $1\,\%$ criterion) at a geometric-mean $\sim\!820\times$ throughput
-gain (peak $1\,377\times$) on a single A100, and exposes end-to-end
-gradients over per-contact stimulus amplitudes.  Those gradients are
-the enabling capability: previous PNS pipelines have been
-gradient-free, restricting selectivity search to grid sweeps or
-evolutionary methods, whereas jaxon recovers selective configurations
-directly on subject-specific microCT vagus anatomies
-(Section~\ref{sec:results-duke}) --- and, crucially, can re-score them
-on the full population to expose the penalty
-(Section~\ref{sec:results-sparse}).
+gain (peak $1\,377\times$) on a single A100.  Throughput is the
+enabling capability here: prior NEURON pipelines are slow enough that
+full-population optimization is impractical, forcing the per-fascicle
+centroid reduction, whereas jaxon's fast forward pass makes
+gradient-based optimization (finite-difference over the contacts)
+tractable directly on the full population --- and re-scoring on that
+population is what exposes the penalty
+(Sections~\ref{sec:results-duke}--\ref{sec:results-sparse}).  The
+exact end-to-end gradients jaxon also exposes --- which NEURON-wrapped
+pipelines cannot --- enable the high-dimensional waveform design left
+to future work.
 
 \subsection{Comparison with prior work}
 

@@ -94,13 +94,14 @@ contributions are:
         $N=100{,}000$ fibers on a single A100 --- fast enough to
         optimize and re-score whole-nerve populations
         (Sections~\ref{sec:results-validation}--\ref{sec:results-scaling}).
-  \item \textbf{The pipeline.}  An end-to-end differentiable
-        selectivity-optimization method over per-contact stimulus
-        amplitudes, exposing exact gradients that gradient-free PNS
-        pipelines lack, demonstrated on 29 microCT-derived vagus
-        anatomies with FEM-computed extracellular fields --- to our
-        knowledge the first cross-species gradient-based selectivity
-        optimization on real microCT nerve geometry
+  \item \textbf{The pipeline.}  A selectivity-optimization pipeline
+        over per-contact amplitudes whose GPU-fast forward pass makes
+        gradient-based optimization tractable on full fiber populations
+        --- not the per-fascicle centroids prior pipelines are limited
+        to --- demonstrated on 29 microCT-derived vagus anatomies (to
+        our knowledge the first cross-species gradient-based selectivity
+        optimization on real microCT geometry); jaxon further exposes
+        exact gradients that NEURON-wrapped pipelines cannot
         (Section~\ref{sec:results-duke}).
 \end{enumerate}
 

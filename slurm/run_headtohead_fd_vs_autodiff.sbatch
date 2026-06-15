@@ -7,7 +7,7 @@
 #SBATCH --gres=gpu:a100:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=96G
-#SBATCH -t 03:00:00
+#SBATCH -t 06:00:00
 #SBATCH -o logs/%x-%j.out
 #SBATCH -e logs/%x-%j.err
 
@@ -25,7 +25,8 @@
 # Each task writes outputs/headtohead_fd_vs_autodiff/<nerve>.json.  Then:
 #   HEADTOHEAD_AGGREGATE=1 python -m experiments_v2.headtohead_fd_vs_autodiff
 #
-# Full population instead of the 300-fiber default:  MAX_FIBERS=0 ...
+# Default = full population (~1000 fibres), matching the cohort.  For a quick
+# check cap it:  MAX_FIBERS=300 bash slurm/submit_headtohead.sh
 
 set -euo pipefail
 
@@ -62,7 +63,7 @@ fi
 N_SHARDS="${N_SHARDS:-1}"
 SHARD_INDEX="${SHARD_INDEX:-${SLURM_ARRAY_TASK_ID:-0}}"
 echo "Head-to-head: ${#SAMPLES[@]} nerves, shard ${SHARD_INDEX} of ${N_SHARDS}"
-echo "DUKE_VES_ROOT=${DUKE_VES_ROOT}  MAX_FIBERS=${MAX_FIBERS:-300}"
+echo "DUKE_VES_ROOT=${DUKE_VES_ROOT}  MAX_FIBERS=${MAX_FIBERS:-0 (full)}"
 
 for i in "${!SAMPLES[@]}"; do
   if [ $(( i % N_SHARDS )) -ne "${SHARD_INDEX}" ]; then continue; fi
@@ -86,7 +87,7 @@ export DUKE_SAMPLE_DIR=\"${SAMPLE_DIR}\"
 export RECT_OPTIMIZER=lbfgs
 export N_RESTARTS_RECT=1
 export HEADTOHEAD_STEPS=\"${HEADTOHEAD_STEPS:-15}\"
-export MAX_FIBERS=\"${MAX_FIBERS:-300}\"
+export MAX_FIBERS=\"${MAX_FIBERS:-0}\"
 export FIBER_DIAMETER_UM=\"${FIBER_DIAMETER_UM:-5.7}\"
 export N_NODES=\"${N_NODES:-21}\"
 export T_STOP=\"${T_STOP:-3.0}\"

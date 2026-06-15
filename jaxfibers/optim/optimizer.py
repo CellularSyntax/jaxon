@@ -493,8 +493,13 @@ def run_rect_optimization_lbfgs(
     lbfgs_memory: int = 10,
     linesearch_max_steps: int = 5,
     verbose: bool = True,
+    amps_init_vector: np.ndarray | None = None,
 ) -> dict:
     """LBFGS with M parallel random restarts (single seed).
+
+    If ``amps_init_vector`` is given it replaces restart 0's deterministic
+    Ve-weighted init -- use it to start from a specific (e.g. probe-selected,
+    firing) configuration, matching an Adam-FD run started from the same vector.
 
     Strategy
     --------
@@ -539,6 +544,9 @@ def run_rect_optimization_lbfgs(
         Ve_unit_j, tgt_j, amp_init_mA, amp_clip, n_restarts,
         jax.random.PRNGKey(rng_seed),
     )                                                                  # [M, K]
+    if amps_init_vector is not None:
+        init_amps = init_amps.at[0].set(
+            jnp.asarray(amps_init_vector, dtype=jnp.float64))
 
     optimizer = optax.lbfgs(
         memory_size=lbfgs_memory,

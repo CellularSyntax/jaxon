@@ -111,25 +111,41 @@ def main() -> int:
         tgt_j, jnp.asarray(w, jnp.float64), S.DT,
     )
 
-    def amps_at_mag(mag):
-        return np.asarray(_initial_amps_for_seed(
-            Ve_j, tgt_j, mag, S.AMP_CLIP, 1, jax.random.PRNGKey(0))[0])
-
-    # ── 0. magnitude probe: find a FIRING start (otherwise gradient ~ 0) ─────
-    banner("0. magnitude probe -- find a firing start")
-    mags = [m for m in PROBE_MAGS if S.AMP_CLIP[0] <= m <= S.AMP_CLIP[1]]
-    probe = [(m, float(loss_fn(amps_at_mag(m)))) for m in mags]
-    for m, L in probe:
-        print(f"  mag={m:+.2f} mA   loss={L:.4f}", flush=True)
-    best_mag, best_L = min(probe, key=lambda t: t[1])
-    amps_start = amps_at_mag(best_mag)
-    firing = best_L < 0.49
-    print(f"  chosen start: mag={best_mag:+.2f} mA  loss={best_L:.4f}  "
+    # ── 0. smart-init probe: focal (bipolar + tripolar) firing start ────────
+    # The cohort's smart init: a target/off-target Ve-contrast bipolar pattern
+    # plus one single-column tripolar per angular column, each probed over
+    # PROBE_MAGS_MA; the firing winner is the start.  (A naively scaled
+    # Ve-weighted bipolar is charge-balanced and self-cancels at the fibers --
+    # it never fires even at -2 mA -- so we use the real focal patterns.)
+    banner("0. smart-init probe -- focal firing start (cohort init)")
+    spatial_bipolar = S._smart_spatial_pattern(
+        seed_in["Ve_unit"], seed_in["target_mask"], verbose=False, label="[smoke]")
+    tripolar = S._sparse_tripolar_patterns_per_column(
+        spatial_bipolar, seed_in["contact_xyz_um"], verbose=False, label="[smoke]")
+    patterns = {"bipolar": spatial_bipolar}
+    patterns.update(tripolar)
+    (amps_start, best_mag, best_score, probe_acts, _hist,
+     best_pattern) = S._magnitude_probe(
+        patterns, S.PROBE_MAGS_MA, seed_in["target_mask"],
+        seed_in["fs_batch"], seed_in["s0_batch"],
+        jnp.asarray(seed_in["Ve_unit"], jnp.float64),
+        jnp.asarray(seed_in["pulse_mask"], jnp.float64),
+        jnp.asarray(seed_in["node_indices"], jnp.int32),
+        S.DT, label="[smoke]", verbose=False,
+    )
+    amps_start = np.asarray(amps_start)
+    start_si = float(selectivity_index(np.asarray(probe_acts), tgt))
+    L_start = float(loss_fn(jnp.asarray(amps_start, jnp.float64)))
+    firing = (start_si > 0.0) or (L_start < 0.49)
+    print(f"  winner: pattern='{best_pattern}'  mag={best_mag:+.2f} mA  "
+          f"start_SI={start_si:+.3f}  loss={L_start:.4f}  "
           f"{'(firing)' if firing else '(STILL SUB-THRESHOLD!)'}", flush=True)
+    amps_str = "  ".join(f"{a:+.2f}" for a in amps_start)
+    print(f"  start amps (mA): [{amps_str}]", flush=True)
     if not firing:
-        print("  WARN: no firing start found in the probe range -- the checks "
-              "below will be uninformative.  Try another nerve/seed, drop "
-              "MAX_FIBERS, or widen AMP_CLIP.", flush=True)
+        print("  WARN: probe found no firing config -- checks below "
+              "uninformative.  Try another nerve/seed or drop MAX_FIBERS.",
+              flush=True)
 
     # ── A. gradient correctness at the firing start ─────────────────────────
     banner("A. gradient correctness (autodiff vs finite difference)")
@@ -180,18 +196,18 @@ def main() -> int:
         hl = np.asarray(fd["history"]["loss"]); hs = np.asarray(fd["history"]["si"])
         i = int(np.argmin(hl))
         row["Adam-FD"] = (len(hl), float(hl[i]), float(hs[i]), t_fd_opt, gpu_peak_mb())
-        si0 = float(hs[0])
         if hl[i] < best_loss:
             best_loss = float(hl[i]); best_amps = np.asarray(fd["amps"])
     except Exception as e:               # noqa: BLE001
-        row["Adam-FD"] = None; si0 = float("nan")
+        row["Adam-FD"] = None
         print(f"  Adam-FD FAILED ({type(e).__name__}: {str(e)[:140]})", flush=True)
 
     try:
         t0 = time.time()
         lb = run_rect_optimization_lbfgs(
             **common, n_restarts=1, n_steps=budget,
-            amp_init_mA=best_mag, rng_seed=0,
+            amp_init_mA=S.AMP_INIT_MA, rng_seed=0,
+            amps_init_vector=amps_start,
         )
         jax.block_until_ready(lb["final_acts"]); t_lb_opt = time.time() - t0
         si_lb = float(selectivity_index(np.asarray(lb["final_acts"]), tgt))
@@ -205,8 +221,8 @@ def main() -> int:
         print(f"  LBFGS-autodiff FAILED ({type(e).__name__}"
               f"{' [OOM]' if oom else ''}: {msg[:140]})", flush=True)
 
-    print(f"  start SI = {si0:+.3f}   (budget = {budget} iters, identical firing "
-          f"start; wall-clock includes LBFGS line search; peak MB cumulative)",
+    print(f"  start SI = {start_si:+.3f}   (budget = {budget} iters, identical "
+          f"firing start; wall-clock includes LBFGS line search; peak MB cumulative)",
           flush=True)
     print(f"  {'optimizer':16s} {'iters':>5} {'best loss':>10} "
           f"{'best SI':>8} {'wall (s)':>9} {'peak MB':>8}", flush=True)
@@ -219,7 +235,8 @@ def main() -> int:
         print(f"  {name:16s} {it:>5d} {ls:>10.4f} {si:>+8.3f} {t:>9.1f} {mb:>8.0f}",
               flush=True)
     both = ("Adam-FD" in sis and "LBFGS-autodiff" in sis)
-    moved = both and (sis["Adam-FD"] > si0 + 0.02 or sis["LBFGS-autodiff"] > si0 + 0.02)
+    moved = both and (sis["Adam-FD"] > start_si + 0.02
+                      or sis["LBFGS-autodiff"] > start_si + 0.02)
     agree = both and abs(sis["Adam-FD"] - sis["LBFGS-autodiff"]) <= 0.10
     if both:
         print(f"  equivalence: |dSI| = {abs(sis['Adam-FD']-sis['LBFGS-autodiff']):.3f}"

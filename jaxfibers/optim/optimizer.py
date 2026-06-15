@@ -93,7 +93,21 @@ def selectivity_loss_from_mmax(m_max, node_idx, target_mask, weights, amps):
     """
     if _LOSS_MODE == "quotient":
         mass = _activation_mass_batch_impl(m_max, node_idx, end_nodes=_WQ_END_NODES)
-        return _quotient_loss_impl(mass, target_mask, weights=weights, scale=1.0)
+        sel = _quotient_loss_impl(mass, target_mask, weights=weights, scale=1.0)
+        # Amplitude-energy penalty.  The quotient is "self-regularising" only in
+        # that fire-everything is not a strict MINIMUM -- but it IS a flat
+        # plateau (off/on = area ratio, gradient ~0 once all m-gates saturate),
+        # and a COLD (0 mA) start whose near-zero gradient Adam normalises into
+        # full-size steps rockets straight onto it.  A small lambda*mean(amps^2)
+        # term gives the objective a real restoring force toward low amplitude
+        # so the optimiser explores the selective band before saturating, the
+        # way AxonML's strong (n_axons-scaled) weight decay does.  Off by
+        # default (JAXLEY_FIBERS_ENERGY_LAMBDA=0); previously this term was
+        # silently dropped on the quotient branch even when the env set it.
+        if _ENERGY_LAMBDA > 0.0 and amps is not None:
+            amps_j = jnp.asarray(amps, dtype=jnp.float64)
+            sel = sel + _ENERGY_LAMBDA * jnp.mean(amps_j ** 2)
+        return sel
     acts = activation_proxy_batch(m_max, node_idx)
     return wq_loss(acts, target_mask, weights=weights, amps=amps)
 

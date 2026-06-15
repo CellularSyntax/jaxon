@@ -8,24 +8,24 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=96G
 #SBATCH -t 03:00:00
-#SBATCH --array=0-11%4
-#SBATCH -o logs/%x-%A_%a.out
-#SBATCH -e logs/%x-%A_%a.err
+#SBATCH -o logs/%x-%j.out
+#SBATCH -e logs/%x-%j.err
 
 # Adam-FD vs autodiff-LBFGS head-to-head on the identical amplitude problem,
-# across 6 swine + 6 human nerves (one nerve per array task, <=4 concurrent for
-# the a100 QOS).  Each task writes outputs/headtohead_fd_vs_autodiff/<nerve>.json.
+# across 6 swine + 6 human nerves.  SHARDED (not an array) to stay within the
+# a100 QOS submit limit: each job owns one shard of the nerve list (nerve i if
+# i % N_SHARDS == SHARD_INDEX) and processes its nerves sequentially.
 #
-# After all tasks finish, build the table:
-#   srun --container-image=... bash -lc \
-#     'bash slurm/setup_env.sh; HEADTOHEAD_AGGREGATE=1 \
-#      python -m experiments_v2.headtohead_fd_vs_autodiff'
-# (or run that aggregate line anywhere the JSONs are visible).
+# Submit 4 shards = 4 a100 in parallel (within the submit limit):
+#   bash slurm/submit_headtohead.sh           # convenience wrapper, N_SHARDS=4
+# or manually:
+#   for s in 0 1 2 3; do SHARD_INDEX=$s N_SHARDS=4 \
+#     sbatch slurm/run_headtohead_fd_vs_autodiff.sbatch; done
 #
-# Submit:
-#   sbatch slurm/run_headtohead_fd_vs_autodiff.sbatch
-#   # full population instead of the 300-fiber default:
-#   MAX_FIBERS=0 sbatch slurm/run_headtohead_fd_vs_autodiff.sbatch
+# Each task writes outputs/headtohead_fd_vs_autodiff/<nerve>.json.  Then:
+#   HEADTOHEAD_AGGREGATE=1 python -m experiments_v2.headtohead_fd_vs_autodiff
+#
+# Full population instead of the 300-fiber default:  MAX_FIBERS=0 ...
 
 set -euo pipefail
 
@@ -44,8 +44,8 @@ else
   DUKE_VES_ROOT="${DUKE_VES_ROOT:-${PROJECT_ROOT}/duke_Ves}"
 fi
 
-# Build the nerve list: first 6 swine (no "human_" prefix) + first 6 human, each
-# with a valid paths_Ve.npz.  Override with HEADTOHEAD_SAMPLES="name1,name2,...".
+# Nerve list: first 6 swine (no "human_" prefix) + first 6 human with a valid
+# paths_Ve.npz.  Override with HEADTOHEAD_SAMPLES="name1,name2,...".
 if [ -n "${HEADTOHEAD_SAMPLES:-}" ]; then
   IFS=',' read -r -a SAMPLES <<< "${HEADTOHEAD_SAMPLES}"
 else
@@ -58,34 +58,35 @@ else
   SAMPLES=("${SWINE[@]}" "${HUMAN[@]}")
 fi
 
-echo "Head-to-head nerve list (${#SAMPLES[@]}):"
-for i in "${!SAMPLES[@]}"; do echo "  [$i] ${SAMPLES[$i]}"; done
+# Shard assignment (env-driven; SLURM_ARRAY_TASK_ID honoured if present).
+N_SHARDS="${N_SHARDS:-1}"
+SHARD_INDEX="${SHARD_INDEX:-${SLURM_ARRAY_TASK_ID:-0}}"
+echo "Head-to-head: ${#SAMPLES[@]} nerves, shard ${SHARD_INDEX} of ${N_SHARDS}"
+echo "DUKE_VES_ROOT=${DUKE_VES_ROOT}  MAX_FIBERS=${MAX_FIBERS:-300}"
 
-TASK="${SLURM_ARRAY_TASK_ID:-0}"
-if [ "${TASK}" -ge "${#SAMPLES[@]}" ]; then
-  echo "Task ${TASK} >= ${#SAMPLES[@]} nerves — nothing to do."; exit 0
-fi
-NERVE="${SAMPLES[$TASK]}"
-SAMPLE_DIR="${DUKE_VES_ROOT}/${NERVE}"
-echo "Task ${TASK}: ${NERVE}  (MAX_FIBERS=${MAX_FIBERS:-300})"
-
-srun \
-  --container-image="${CONTAINER_IMAGE}" \
-  --container-mounts="${PROJECT_ROOT}:${PROJECT_ROOT}" \
-  --container-workdir="${PROJECT_ROOT}" \
-  bash -lc "
+for i in "${!SAMPLES[@]}"; do
+  if [ $(( i % N_SHARDS )) -ne "${SHARD_INDEX}" ]; then continue; fi
+  NERVE="${SAMPLES[$i]}"
+  SAMPLE_DIR="${DUKE_VES_ROOT}/${NERVE}"
+  if [ ! -f "${SAMPLE_DIR}/paths_Ve.npz" ]; then
+    echo "[shard ${SHARD_INDEX}] skip ${NERVE} (no paths_Ve.npz)"; continue
+  fi
+  echo
+  echo "=== [shard ${SHARD_INDEX}] nerve ${i}: ${NERVE} ==="
+  if srun \
+    --container-image="${CONTAINER_IMAGE}" \
+    --container-mounts="${PROJECT_ROOT}:${PROJECT_ROOT}" \
+    --container-workdir="${PROJECT_ROOT}" \
+    bash -lc "
 set -euo pipefail
 export PROJECT_ROOT=\"${PROJECT_ROOT}\"
 export JAX_ENABLE_X64=1
 export SKIP_PYFIBERS_COMPILE=1
 export DUKE_SAMPLE_DIR=\"${SAMPLE_DIR}\"
-
 export RECT_OPTIMIZER=lbfgs
 export N_RESTARTS_RECT=1
 export HEADTOHEAD_STEPS=\"${HEADTOHEAD_STEPS:-15}\"
 export MAX_FIBERS=\"${MAX_FIBERS:-300}\"
-
-# match the cohort _build_seed pipeline
 export FIBER_DIAMETER_UM=\"${FIBER_DIAMETER_UM:-5.7}\"
 export N_NODES=\"${N_NODES:-21}\"
 export T_STOP=\"${T_STOP:-3.0}\"
@@ -109,8 +110,14 @@ export CLUSTER_N_MIN_TARGET=\"${CLUSTER_N_MIN_TARGET:-50}\"
 export CLUSTER_MIN_FASCICLES=\"${CLUSTER_MIN_FASCICLES:-3}\"
 export CLUSTER_N_POSITIONS=\"${CLUSTER_N_POSITIONS:-4}\"
 export CLUSTER_RNG_SEED=\"${CLUSTER_RNG_SEED:-0}\"
-
 bash \"${PROJECT_ROOT}/slurm/setup_env.sh\"
 python -u -m experiments_v2.headtohead_fd_vs_autodiff
-"
-echo "Task ${TASK} (${NERVE}) done."
+"; then
+    echo "[shard ${SHARD_INDEX}] ${NERVE}: OK"
+  else
+    echo "[shard ${SHARD_INDEX}] ${NERVE}: FAILED rc=$? — continuing"
+  fi
+done
+
+echo
+echo "Shard ${SHARD_INDEX}/${N_SHARDS} done."

@@ -130,6 +130,14 @@ os.environ.setdefault("JAXLEY_FIBERS_SOFT_TEMPERATURE", "0.15")
 os.environ.setdefault("JAXLEY_FIBERS_ENERGY_LAMBDA", "1e-3")
 # Sparse density for the transfer leg (paper's reduced-order = 1 fiber/fascicle).
 _N_PER_FASC = int(os.environ.get("FVR_N_PER_FASC", "1"))
+# Init for the RELAXED arm: 'warm' (probe-selected start, default) or 'zero'
+# (AxonML-style cold start, no probe).  The FROZEN arm is always warm -- there
+# is nothing to freeze in an all-zero pattern -- so INIT_MODE=zero turns this
+# into "warm+freeze headline vs fully cold AxonML-style relaxed optimiser".
+# Cold start needs a larger LR + more steps and the smooth quotient loss.
+_INIT_MODE  = os.environ.get("INIT_MODE", "warm").strip().lower()
+_ZERO_LR    = float(os.environ.get("ZERO_LR_MA", "0.1"))
+_ZERO_STEPS = int(os.environ.get("ZERO_STEPS", "120"))
 
 import numpy as np
 import jax
@@ -160,18 +168,31 @@ def _probe_init(seed_in):
 
 
 def _optimize(seed_in, relaxed: bool):
-    """Probe warm start, then Adam-FD with the zero contacts frozen (relaxed=False)
-    or all K contacts free (relaxed=True).  Returns (amps, in-sample SI, n_active)."""
-    amps_init, pattern, _mag = _probe_init(seed_in)
-    freeze = None if relaxed else (np.abs(amps_init) < 1e-9)
-    n_iters = max(int(os.environ.get("N_OPT_RECT", "15")) * 3, 30)
+    """Adam-FD selectivity optimization.
+
+    frozen (relaxed=False): probe warm start, zero contacts frozen.
+    relaxed (relaxed=True):
+        INIT_MODE=warm -> probe warm start, all K contacts free.
+        INIT_MODE=zero -> AxonML cold start (all 0 mA, no probe), larger LR +
+                          more steps to ramp from silence.
+    Returns (amps, in-sample SI, n_active, pattern)."""
+    cold = relaxed and _INIT_MODE == "zero"
+    if cold:
+        amps_init = None; pattern = "zero"; freeze = None
+        lr = _ZERO_LR; n_iters = _ZERO_STEPS; amp_init_mA = 0.0
+    else:
+        amps_init, pattern, _mag = _probe_init(seed_in)
+        freeze = None if relaxed else (np.abs(amps_init) < 1e-9)
+        lr = S.ADAM_LR_MA
+        n_iters = max(int(os.environ.get("N_OPT_RECT", "15")) * 3, 30)
+        amp_init_mA = S.AMP_INIT_MA
     res = run_rect_optimization(
         fiber_statics_batch=seed_in["fs_batch"], state0_batch=seed_in["s0_batch"],
         Ve_unit=seed_in["Ve_unit"], pulse_mask=seed_in["pulse_mask"],
         node_indices=seed_in["node_indices"], target_mask=seed_in["target_mask"],
         weights=seed_in["weights"], dt=S.DT, n_steps=n_iters,
-        amps_init_vector=amps_init, amp_clip=S.AMP_CLIP,
-        lr=S.ADAM_LR_MA, fd_eps=S.FD_EPS_SMART_MA,
+        amps_init_vector=amps_init, amp_init_mA=amp_init_mA, amp_clip=S.AMP_CLIP,
+        lr=lr, fd_eps=S.FD_EPS_SMART_MA,
         freeze_zero_mask=freeze, early_stop_si=S.EARLY_STOP_SI, verbose=False,
     )
     # Hard-best: pick the iterate with the highest SI, tiebroken by lowest loss
@@ -251,6 +272,8 @@ def main() -> int:
         rec.update(
             ok=True, n_fibers=N, K=int(dense["Ve_unit"].shape[0]),
             n_per_fascicle=_N_PER_FASC, pattern=patt,
+            init_mode=_INIT_MODE,
+            loss_mode=os.environ.get("JAXLEY_FIBERS_LOSS", "linear"),
             soft_temperature=float(os.environ["JAXLEY_FIBERS_SOFT_TEMPERATURE"]),
             energy_lambda=float(os.environ["JAXLEY_FIBERS_ENERGY_LAMBDA"]),
             dense_si_frozen=dsi_f, dense_si_relaxed=dsi_r,

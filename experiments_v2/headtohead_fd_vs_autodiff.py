@@ -113,6 +113,15 @@ os.environ.setdefault("N_RESTARTS_RECT", "1")
 os.environ.setdefault("JAXLEY_FIBERS_SOFT_TEMPERATURE", "0.15")
 # Which autodiff arm: 'adam' (clean A/B, default) or 'lbfgs' (fragile, for record).
 _AUTODIFF_OPT = os.environ.get("H2H_AUTODIFF_OPT", "adam").strip().lower()
+# Initialization: 'warm' (probe-selected focal start, default) or 'zero'
+# (AxonML-style cold start: all contacts at 0 mA, no probe).  Cold start needs
+# a larger LR and more steps to ramp from silence -- only viable with the
+# smooth quotient loss (JAXLEY_FIBERS_LOSS=quotient); with the linear loss a
+# cold start sits in a flat region, which is the point of the comparison.
+_INIT_MODE  = os.environ.get("INIT_MODE", "warm").strip().lower()
+_ZERO_LR    = float(os.environ.get("ZERO_LR_MA", "0.1"))
+_ZERO_STEPS = int(os.environ.get("ZERO_STEPS", "120"))
+_LOSS_MODE  = os.environ.get("JAXLEY_FIBERS_LOSS", "linear").strip().lower()
 
 import numpy as np
 import jax
@@ -187,12 +196,19 @@ def main() -> int:
         tgt = np.asarray(seed_in["target_mask"], bool)
         N = int(tgt.size); K = int(seed_in["Ve_unit"].shape[0])
         T = int(seed_in["N_STEPS"])
-        amps_start, start_si, best_mag, pattern = firing_start(seed_in)
-        print(f"  start: pattern={pattern} mag={best_mag:+.2f} mA SI={start_si:+.3f} "
-              f"(N={N}, targets={tgt.sum()})", flush=True)
-
-        budget = S.N_OPT_RECT
         NEVER = 10 ** 9
+        if _INIT_MODE == "zero":
+            # AxonML cold start: all contacts 0 mA, no probe; larger LR + more
+            # steps so the optimiser can ramp up from silence.
+            amps_start = None; start_si = 0.0; best_mag = 0.0; pattern = "zero"
+            steps = _ZERO_STEPS; lr = _ZERO_LR; amp_init = 0.0
+        else:
+            amps_start, start_si, best_mag, pattern = firing_start(seed_in)
+            steps = S.N_OPT_RECT; lr = S.ADAM_LR_MA; amp_init = S.AMP_INIT_MA
+        print(f"  init={_INIT_MODE} loss={_LOSS_MODE}  start pattern={pattern} "
+              f"mag={best_mag:+.2f} mA SI={start_si:+.3f}  "
+              f"(N={N}, targets={tgt.sum()}, steps={steps}, lr={lr:g})", flush=True)
+
         common = dict(
             fiber_statics_batch=seed_in["fs_batch"], state0_batch=seed_in["s0_batch"],
             Ve_unit=seed_in["Ve_unit"], pulse_mask=seed_in["pulse_mask"],
@@ -202,8 +218,8 @@ def main() -> int:
 
         t0 = time.time()
         fd = run_rect_optimization(
-            **common, n_steps=budget, amps_init_vector=amps_start,
-            lr=S.ADAM_LR_MA, fd_eps=S.FD_EPS_MA,
+            **common, n_steps=steps, amps_init_vector=amps_start, amp_init_mA=amp_init,
+            lr=lr, fd_eps=S.FD_EPS_MA,
             early_stop_si=2.0, early_stop_patience=NEVER, early_stop_si_patience=0,
         )
         jax.block_until_ready(fd["amps"]); fd_t = time.time() - t0
@@ -213,8 +229,8 @@ def main() -> int:
         t0 = time.time()
         if _AUTODIFF_OPT == "lbfgs":
             ad = run_rect_optimization_lbfgs(
-                **common, n_restarts=1, n_steps=budget,
-                amp_init_mA=S.AMP_INIT_MA, rng_seed=0, amps_init_vector=amps_start,
+                **common, n_restarts=1, n_steps=steps,
+                amp_init_mA=amp_init, rng_seed=0, amps_init_vector=amps_start,
             )
             jax.block_until_ready(ad["final_acts"]); lb_t = time.time() - t0
             lb_si = float(selectivity_index(np.asarray(ad["final_acts"]), tgt))
@@ -222,8 +238,8 @@ def main() -> int:
             ad_label = "LBFGS"
         else:
             ad = run_rect_optimization_autodiff(
-                **common, n_steps=budget, amps_init_vector=amps_start,
-                lr=S.ADAM_LR_MA,
+                **common, n_steps=steps, amps_init_vector=amps_start, amp_init_mA=amp_init,
+                lr=lr,
                 early_stop_si=2.0, early_stop_patience=NEVER, early_stop_si_patience=0,
             )
             jax.block_until_ready(ad["history"]["acts"][-1]); lb_t = time.time() - t0
@@ -233,7 +249,8 @@ def main() -> int:
 
         rec.update(
             ok=True, n_fibers=N, K=K, T=T, n_target=int(tgt.sum()),
-            start_si=start_si, best_mag=best_mag, pattern=pattern, budget=int(budget),
+            start_si=start_si, best_mag=best_mag, pattern=pattern, budget=int(steps),
+            init_mode=_INIT_MODE, loss_mode=_LOSS_MODE,
             autodiff_opt=_AUTODIFF_OPT, soft_temperature=float(
                 os.environ.get("JAXLEY_FIBERS_SOFT_TEMPERATURE", "0.0")),
             fd_si=fd_si, fd_loss=fd_loss, fd_time=fd_t,

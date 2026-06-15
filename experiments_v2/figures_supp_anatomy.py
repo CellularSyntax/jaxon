@@ -3,7 +3,7 @@
 Composites the per-nerve render components produced by the Golgi FE pipeline
 (stored in duke_Ves/<nerve>/) into a single A4-portrait multi-panel page:
 
-    a  uCT cross-section with segmentation overlay (+ scale bar)
+    a  histology slice with segmentation (+ scale bar below)
     b  area-preserving deformed cross-section used for the 3-D model (+ bar)
     c  3-D nerve + 12-contact cuff rendering (+ scale bar)  | component legend
     d  per-contact extracellular potential V_e
@@ -69,6 +69,33 @@ def _with_corner_bar(base_path: Path, bar_path: Path, margin_frac: float = 0.02)
     return base
 
 
+def _with_scalebar_below(base_path: Path, overlay_path: Path):
+    """Flatten the base on white and move the scale bar (baked into the
+    bottom-right of the full-size overlay) into a white strip BELOW the image,
+    keeping the same horizontal position so the bar length still reads to scale.
+    """
+    base = _load(base_path)
+    if base is None:
+        return None
+    base = Image.alpha_composite(
+        Image.new("RGBA", base.size, (255, 255, 255, 255)), base)
+    ov = _load(overlay_path)
+    if ov is None:
+        return base
+    a = np.asarray(ov)[:, :, 3]
+    ys, xs = np.where(a > 10)
+    if len(xs) == 0:
+        return base
+    x0, x1, y0, y1 = int(xs.min()), int(xs.max()) + 1, int(ys.min()), int(ys.max()) + 1
+    bar = ov.crop((x0, y0, x1, y1))
+    W, H = base.size
+    strip_h = max((y1 - y0) + int(0.025 * H), int(0.075 * H))
+    out = Image.new("RGBA", (W, H + strip_h), (255, 255, 255, 255))
+    out.paste(base, (0, 0))
+    out.alpha_composite(bar, (x0, H + (strip_h - bar.height) // 2))
+    return out
+
+
 def _panel(ax, img, label: str | None, title: str | None, col):
     ax.set_xticks([]); ax.set_yticks([])
     for s in ax.spines.values():
@@ -83,7 +110,7 @@ def _panel(ax, img, label: str | None, title: str | None, col):
         ax.set_title(title, fontsize=FS_SM, pad=3)
     if label:
         ax.text(-0.02, 1.02, label, transform=ax.transAxes, ha="right",
-                va="bottom", fontsize=FS + 1, fontweight="bold", color=col)
+                va="bottom", fontsize=FS + 1, fontweight="bold", color="black")
 
 
 def make_anatomy_page(nerve: str) -> bool:
@@ -94,10 +121,10 @@ def make_anatomy_page(nerve: str) -> bool:
     sp = _species(nerve)
     col = PALETTE[sp]
 
-    uct      = _with_overlay(d / "render_components_uct.png",
-                             d / "render_components_uct_scalebar.png")
-    deformed = _with_overlay(d / "render_components_deformed.png",
-                             d / "render_components_deformed_scalebar.png")
+    uct      = _with_scalebar_below(d / "render_components_uct.png",
+                                    d / "render_components_uct_scalebar.png")
+    deformed = _with_scalebar_below(d / "render_components_deformed.png",
+                                    d / "render_components_deformed_scalebar.png")
     render3d = _with_corner_bar(d / "render_components.png",
                                 d / "render_components_scalebar.png")
     legend   = _load(d / "render_components_legend.png")
@@ -112,17 +139,17 @@ def make_anatomy_page(nerve: str) -> bool:
     )
     sample_id = nerve.replace("human_", "").replace("human", "")
     fig.suptitle(f"{sp.capitalize()} ({sample_id}) — anatomy and FEM fields",
-                 fontsize=FS + 2, fontweight="bold", color=col, y=0.975)
+                 fontsize=FS + 2, fontweight="bold", color="black", y=0.975)
 
     # row 1: anatomy -> 3-D model
     _panel(fig.add_subplot(gs[0, 0]), uct, "a",
-           "µCT with segmentation", col)
+           "histology slice with segmentation", col)
     _panel(fig.add_subplot(gs[0, 1]), deformed, "b",
            "deformed cross-section (3-D model)", col)
     ax_c = fig.add_subplot(gs[0, 2])
     _panel(ax_c, render3d, "c", "3-D nerve + 12-contact cuff", col)
     if legend is not None:                            # scaled-down legend inset
-        axl = ax_c.inset_axes([0.0, 0.0, 0.30, 0.30])
+        axl = ax_c.inset_axes([0.0, 0.70, 0.30, 0.30])   # top-left (renders share viewport)
         axl.imshow(np.asarray(legend))
         axl.set_xticks([]); axl.set_yticks([])
         for s in axl.spines.values():

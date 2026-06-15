@@ -16,7 +16,7 @@
     is available end-to-end by reverse-mode autodiff (dashed loop).
     The solver is validated against \texttt{pyfibers}/NEURON on
     thresholds and conduction velocity.
-    \textbf{(b) Anatomy to model.}  A microCT vagus-nerve
+    \textbf{(b) Anatomy to model.}  A histological vagus-nerve
     cross-section is segmented and embedded in the 12-contact
     MultiContact cuff finite-element model, from which the per-contact
     extracellular lead fields $V_e^{(k)}$ are computed.
@@ -97,7 +97,7 @@ ${\sim}1000$-fiber population --- the regime prior NEURON pipelines
 could not afford.  Amplitude scales track each model's
 single-contact activation threshold (defaults in Supplementary
 Table~\ref{tab:opt-hparams}), and the loop early-stops when the hard SI
-reaches target or the loss stalls for $20$ iterations.  On the microCT
+reaches target or the loss stalls for $20$ iterations.  On the histology
 cohort the trajectory is warm-started by a discrete probe of physically
 meaningful spatial patterns --- one bipolar and four single-column
 tripolar (cathode at each column's $z$-middle contact with
@@ -166,7 +166,7 @@ repository.
 \subsection{Statistical analysis}
 \label{sec:methods-stats}
 
-Selectivity comparisons on the microCT cohort are paired by nerve
+Selectivity comparisons on the histology cohort are paired by nerve
 $\times$ target-cluster seed, so we test them with the two-sided
 Wilcoxon signed-rank test, which makes no Gaussian assumption on the
 heavy-tailed, ceiling-bounded SI distributions.  For the

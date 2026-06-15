@@ -59,6 +59,11 @@ _GRAD_MODE = os.environ.get("ZERO_GRAD_MODE", "fd").strip().lower()
 # answer, so such a target says nothing about cold-start selectivity.  Only
 # accept minority targets.
 _MAX_TGT_FRAC = float(os.environ.get("ZERO_MAX_TGT_FRAC", "0.5"))
+# Charge-balance (Kirchhoff) constraint: project the per-contact currents onto
+# sum=0 each step so the cuff has sources AND sinks.  Without it the optimiser
+# escapes into an all-same-sign monopolar field that fires the whole nerve.  ON
+# by default here -- this is the hypothesis under test.  Set ZERO_BALANCE=0 off.
+_BALANCE = os.environ.get("ZERO_BALANCE", "1").strip() not in ("0", "false", "")
 
 
 def main() -> int:
@@ -116,6 +121,7 @@ def main() -> int:
     init_desc = "ALL ZERO (0 mA)" if _JITTER <= 0 else f"~0 mA + N(0,{_JITTER}) jitter"
     print(f"  USING pos {pos}:  N={tgt.size}  targets={int(tgt.sum())} "
           f"({100*frac:.0f}%)  K={K} contacts  grad={_GRAD_MODE}  "
+          f"balance={'sum0' if _BALANCE else 'off'}  "
           f"init = {init_desc}, no probe, no freeze", flush=True)
 
     amps_init = (None if _JITTER <= 0 else
@@ -129,6 +135,7 @@ def main() -> int:
         amps_init_vector=amps_init, amp_init_mA=0.0, amp_clip=S.AMP_CLIP,
         lr=_LR, lr_mode="plateau", plateau_lr_decay=_DECAY,
         plateau_si_floor=_FLOOR, plateau_patience=_PATIENCE, weight_decay=_WD,
+        balance_currents=_BALANCE,
         # never early-stop: we want the whole trajectory.
         early_stop_si=2.0, early_stop_patience=10**9, early_stop_si_patience=0,
         verbose=True,

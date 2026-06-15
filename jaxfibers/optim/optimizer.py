@@ -167,6 +167,16 @@ def run_rect_optimization(
     # fire-everything saturation before it has broken symmetry / steered
     # (AxonML pairs its zero-init GD with weight decay for exactly this).
     weight_decay: float = 0.0,
+    # Charge-balance (Kirchhoff) constraint.  When True, project the per-contact
+    # amplitudes onto the sum-to-zero hyperplane after every step, so the cuff's
+    # sources balance its sinks -- the physical reality of a multipolar cuff with
+    # no external return.  Without it the optimiser's cheapest descent direction
+    # is "make every contact the same sign", which is a MONOPOLAR field over the
+    # whole nerve that fires every fibre (observed: 12/12 contacts ~+0.03 mA ->
+    # 313/313 fired, SI=0).  Sum-to-zero forces simultaneous sources AND sinks,
+    # i.e. the focal source/sink contrast that selectivity requires (the same
+    # thing hand-tuned bipolar/tripolar configs do).  Default off (backward-compat).
+    balance_currents: bool = False,
     verbose: bool = True,
     # L1 sparsity regularisation via proximal soft-thresholding step
     # after each Adam update.  Drives small-magnitude amps exactly to
@@ -344,6 +354,20 @@ def run_rect_optimization(
         amps = jnp.where(freeze_mask_j, 0.0, amps)
     else:
         freeze_mask_j = None
+
+    # Charge-balance projection onto sum(amps)=0 (see balance_currents docstring).
+    # Over the non-frozen contacts only, so a frozen contact stays at 0 mA.
+    def _balance(a):
+        if not balance_currents:
+            return a
+        if freeze_mask_j is not None:
+            free   = ~freeze_mask_j
+            n_free = jnp.maximum(jnp.sum(free), 1.0)
+            mean_f = jnp.sum(jnp.where(free, a, 0.0)) / n_free
+            return jnp.where(free, a - mean_f, a)
+        return a - jnp.mean(a)
+    amps = _balance(amps)
+
     history   = {"loss": [], "bce": [], "si": [], "amps": [], "acts": []}
     best_loss = float("inf")
     best_amps = np.array(amps)
@@ -407,6 +431,7 @@ def run_rect_optimization(
         if freeze_mask_j is not None:
             amps = jnp.where(freeze_mask_j, 0.0, amps)
         amps = jnp.clip(amps, amp_clip[0], amp_clip[1])
+        amps = _balance(amps)   # re-impose sum(amps)=0 after the update
 
         acts_np = np.array(acts_val)
         si_now  = selectivity_index(acts_np, target_mask)
@@ -527,6 +552,9 @@ def run_rect_optimization_autodiff(
     # fire-everything saturation before it has broken symmetry / steered
     # (AxonML pairs its zero-init GD with weight decay for exactly this).
     weight_decay: float = 0.0,
+    # Charge-balance (Kirchhoff) constraint: project amps onto sum=0 each step.
+    # See run_rect_optimization for the full rationale.  Default off.
+    balance_currents: bool = False,
     verbose: bool = True,
     early_stop_si:          float = 1.0,
     early_stop_patience:    int   = 20,
@@ -612,6 +640,11 @@ def run_rect_optimization_autodiff(
     opt_state = optimizer.init(amps0)
     amps      = amps0
 
+    # Charge-balance projection onto sum(amps)=0 (see run_rect_optimization).
+    def _balance(a):
+        return a - jnp.mean(a) if balance_currents else a
+    amps = _balance(amps)
+
     history   = {"loss": [], "bce": [], "si": [], "amps": [], "acts": []}
     best_loss = float("inf")
     best_amps = np.array(amps)
@@ -639,6 +672,7 @@ def run_rect_optimization_autodiff(
             updates = jax.tree_util.tree_map(
                 lambda u, p: -lr_cur * (u + weight_decay * p), updates, amps)
         amps = jnp.clip(optax.apply_updates(amps, updates), amp_clip[0], amp_clip[1])
+        amps = _balance(amps)   # re-impose sum(amps)=0 after the update
 
         acts_np = np.array(acts_val)
         si_now  = selectivity_index(acts_np, target_mask)

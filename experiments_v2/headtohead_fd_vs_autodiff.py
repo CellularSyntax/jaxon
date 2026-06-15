@@ -137,6 +137,9 @@ _ZERO_LR_DECAY = float(os.environ.get("ZERO_LR_DECAY", "0.6"))
 _ZERO_SI_FLOOR = float(os.environ.get("ZERO_SI_FLOOR", "0.5"))
 _ZERO_PATIENCE = int(os.environ.get("ZERO_PATIENCE", "10"))
 _LOSS_MODE  = os.environ.get("JAXLEY_FIBERS_LOSS", "linear").strip().lower()
+# H2H_VERBOSE=1 -> print the per-iteration optimisation trajectory (SI, fired
+# counts, amps) for both arms, so a cold ramp can be watched escaping SI=0.
+_VERBOSE = os.environ.get("H2H_VERBOSE", "0").strip() in ("1", "true", "yes")
 
 import numpy as np
 import jax
@@ -235,7 +238,7 @@ def main() -> int:
             fiber_statics_batch=seed_in["fs_batch"], state0_batch=seed_in["s0_batch"],
             Ve_unit=seed_in["Ve_unit"], pulse_mask=seed_in["pulse_mask"],
             node_indices=seed_in["node_indices"], target_mask=seed_in["target_mask"],
-            weights=seed_in["weights"], dt=S.DT, amp_clip=S.AMP_CLIP, verbose=False,
+            weights=seed_in["weights"], dt=S.DT, amp_clip=S.AMP_CLIP, verbose=_VERBOSE,
         )
 
         t0 = time.time()

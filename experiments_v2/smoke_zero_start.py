@@ -71,11 +71,12 @@ def main() -> int:
     print(f"  N={tgt.size}  targets={int(tgt.sum())} ({100*frac:.0f}%)  "
           f"K={K} contacts  init = {init_desc}, no probe, no freeze", flush=True)
     if frac > 0.4:
-        print(f"  *** WARNING: target fraction {100*frac:.0f}% -- this is a target "
-              f"MAJORITY, not a selectivity problem.  The gradient is ~symmetric "
-              f"(every contact wants cathodic), so amps will move together and "
-              f"fire everything.  Raise MAX_FIBERS so the cluster is a minority.",
-              flush=True)
+        print(f"  *** NOTE: target fraction {100*frac:.0f}% (populous angular cluster). "
+              f"Selectivity IS achievable here with a warm/focal init -- but from a "
+              f"COLD symmetric start nearly every contact wants cathodic, so the "
+              f"gradient is ~symmetric and amps ramp together into fire-everything. "
+              f"This is the symmetry-breaking limitation of cold start, not a "
+              f"degenerate problem.", flush=True)
 
     amps_init = (None if _JITTER <= 0 else
                  np.asarray(np.random.default_rng(0).normal(0.0, _JITTER, K)))

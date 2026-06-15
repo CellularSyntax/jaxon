@@ -157,7 +157,9 @@ identical stimuli and compared three quantities against NEURON: the
 strength--duration threshold (terminal node, $\mathrm{PW} \in
 [0.02,1.0]\,\mathrm{ms}$), the conduction velocity over the published
 diameter range, and the full center-node intracellular trace; agreement
-to $<\!1\,\%$ on all three was required for acceptance.  All results
+to $<\!1\,\%$ on all three was required for acceptance, following the
+established practice of validating open-source nerve-stimulation models
+against NEURON~\cite{bucksot2021validation}.  All results
 were produced on one NVIDIA A100 (40\,GB) with \texttt{jax} 0.6.2 /
 \texttt{jaxley} 0.13.0 (CUDA 12.4) and pyfibers 0.8.5 (NEURON 8.2); the
 full environment and reproduction code are available in the project

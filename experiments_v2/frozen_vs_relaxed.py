@@ -57,6 +57,14 @@ def _summarize(rows, label) -> dict | None:
     rows = [r for r in rows if r.get("ok")]
     if not rows:
         return None
+    # Coerce missing transfer/penalty (sparse leg skipped at small N) to NaN so
+    # formatting + nan-aware medians still work.
+    NAN = float("nan")
+    for r in rows:
+        for k in ("transfer_si_frozen", "transfer_si_relaxed",
+                  "penalty_frozen", "penalty_relaxed"):
+            if r.get(k) is None:
+                r[k] = NAN
 
     def _xvar(r):  # dense_si_frozen - transfer_si_relaxed (cross-variant)
         return r["dense_si_frozen"] - r["transfer_si_relaxed"]
@@ -81,9 +89,9 @@ def _summarize(rows, label) -> dict | None:
         if not sr:
             continue
         def med(key, sr=sr):
-            return float(np.median([r[key] for r in sr]))
+            return float(np.nanmedian([r[key] for r in sr]))
         def med_expr(fn, sr=sr):
-            return float(np.median([fn(r) for r in sr]))
+            return float(np.nanmedian([fn(r) for r in sr]))
         summary["by_species"][sp] = {
             "n": len(sr),
             "dense_si_frozen":     med("dense_si_frozen"),
@@ -161,6 +169,9 @@ _ZERO_STEPS = int(os.environ.get("ZERO_STEPS", "200"))
 _ZERO_LR_DECAY = float(os.environ.get("ZERO_LR_DECAY", "0.6"))
 _ZERO_SI_FLOOR = float(os.environ.get("ZERO_SI_FLOOR", "0.5"))
 _ZERO_PATIENCE = int(os.environ.get("ZERO_PATIENCE", "10"))
+# FVR_VERBOSE=1 -> print the per-iteration trajectory of the (cold) relaxed
+# dense optimisation so the ramp can be watched escaping SI=0.
+_VERBOSE = os.environ.get("FVR_VERBOSE", "0").strip() in ("1", "true", "yes")
 
 import numpy as np
 import jax
@@ -190,7 +201,7 @@ def _probe_init(seed_in):
     return np.asarray(amps), str(pattern), float(best_mag)
 
 
-def _optimize(seed_in, relaxed: bool):
+def _optimize(seed_in, relaxed: bool, verbose: bool = False):
     """Adam-FD selectivity optimization.
 
     frozen (relaxed=False): probe warm start, zero contacts frozen.
@@ -222,7 +233,7 @@ def _optimize(seed_in, relaxed: bool):
         weights=seed_in["weights"], dt=S.DT, n_steps=n_iters,
         amps_init_vector=amps_init, amp_init_mA=amp_init_mA, amp_clip=S.AMP_CLIP,
         lr=lr, fd_eps=S.FD_EPS_SMART_MA,
-        freeze_zero_mask=freeze, early_stop_si=S.EARLY_STOP_SI, verbose=False,
+        freeze_zero_mask=freeze, early_stop_si=S.EARLY_STOP_SI, verbose=verbose,
         **extra,
     )
     # Hard-best: pick the iterate with the highest SI, tiebroken by lowest loss
@@ -284,25 +295,15 @@ def main() -> int:
             return 0
         N = int(np.asarray(dense["target_mask"]).size)
 
-        # Dense ceilings for both variants.
+        # Dense ceilings for both variants.  Watch the (cold) relaxed ramp when
+        # FVR_VERBOSE=1 -- that is the trajectory that should escape SI=0.
         t0 = time.time()
         _af, dsi_f, na_f, patt = _optimize(dense, relaxed=False)
-        _ar, dsi_r, na_r, _    = _optimize(dense, relaxed=True)
+        _ar, dsi_r, na_r, _    = _optimize(dense, relaxed=True, verbose=_VERBOSE)
         t_dense = time.time() - t0
 
-        # Sparse-optimized transfer for both variants -> deployment penalty.
-        sp = _sparse_seed(duke, dense)
-        if sp is None:
-            rec["skip"] = "sparse subsample had no target fibers"
-            out_path.write_text(json.dumps(rec, indent=2))
-            print(f"  SKIP: {rec['skip']}", flush=True)
-            return 0
-        amps_sf, _, _, _ = _optimize(sp, relaxed=False)
-        amps_sr, _, _, _ = _optimize(sp, relaxed=True)
-        tsi_f, _ = S._eval_amps_on_dense(amps_sf, dense, S.DT)
-        tsi_r, _ = S._eval_amps_on_dense(amps_sr, dense, S.DT)
-        tsi_f, tsi_r = float(tsi_f), float(tsi_r)
-
+        # Always record the dense results first, so a failed sparse-transfer leg
+        # (possible at very small N) does NOT discard the dense comparison.
         rec.update(
             ok=True, n_fibers=N, K=int(dense["Ve_unit"].shape[0]),
             n_per_fascicle=_N_PER_FASC, pattern=patt,
@@ -311,15 +312,33 @@ def main() -> int:
             soft_temperature=float(os.environ["JAXLEY_FIBERS_SOFT_TEMPERATURE"]),
             energy_lambda=float(os.environ["JAXLEY_FIBERS_ENERGY_LAMBDA"]),
             dense_si_frozen=dsi_f, dense_si_relaxed=dsi_r,
-            transfer_si_frozen=tsi_f, transfer_si_relaxed=tsi_r,
-            penalty_frozen=dsi_f - tsi_f, penalty_relaxed=dsi_r - tsi_r,
+            transfer_si_frozen=None, transfer_si_relaxed=None,
+            penalty_frozen=None, penalty_relaxed=None,
             n_active_frozen=na_f, n_active_relaxed=na_r,
             t_dense_s=t_dense,
         )
+
+        # Sparse-optimized transfer for both variants -> deployment penalty.
+        sp = _sparse_seed(duke, dense)
+        if sp is None:
+            rec["transfer_skip"] = "sparse subsample had no target fibers"
+        else:
+            amps_sf, _, _, _ = _optimize(sp, relaxed=False)
+            amps_sr, _, _, _ = _optimize(sp, relaxed=True)
+            tsi_f, _ = S._eval_amps_on_dense(amps_sf, dense, S.DT)
+            tsi_r, _ = S._eval_amps_on_dense(amps_sr, dense, S.DT)
+            tsi_f, tsi_r = float(tsi_f), float(tsi_r)
+            rec.update(
+                transfer_si_frozen=tsi_f, transfer_si_relaxed=tsi_r,
+                penalty_frozen=dsi_f - tsi_f, penalty_relaxed=dsi_r - tsi_r,
+            )
+
         out_path.write_text(json.dumps(rec, indent=2))
+        tline = ("transfer skipped (small N)" if sp is None else
+                 f"penalty  frozen {rec['penalty_frozen']:+.3f} | "
+                 f"relaxed {rec['penalty_relaxed']:+.3f}")
         print(f"  dense SI  frozen {dsi_f:+.3f} | relaxed {dsi_r:+.3f}   "
-              f"penalty  frozen {dsi_f-tsi_f:+.3f} | relaxed {dsi_r-tsi_r:+.3f}   "
-              f"n_active {na_f}->{na_r}", flush=True)
+              f"{tline}   n_active {na_f}->{na_r}", flush=True)
         return 0
     except Exception as e:  # noqa: BLE001
         rec["error"] = f"{type(e).__name__}: {str(e)[:200]}"

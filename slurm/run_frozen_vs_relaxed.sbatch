@@ -86,6 +86,7 @@ export SKIP_PYFIBERS_COMPILE=1
 export DUKE_SAMPLE_DIR=\"${SAMPLE_DIR}\"
 export FVR_STEPS=\"${FVR_STEPS:-15}\"
 export FVR_N_PER_FASC=\"${FVR_N_PER_FASC:-1}\"
+export FVR_VERBOSE=\"${FVR_VERBOSE:-0}\"
 export MAX_FIBERS=\"${MAX_FIBERS:-0}\"
 export FIBER_DIAMETER_UM=\"${FIBER_DIAMETER_UM:-5.7}\"
 export N_NODES=\"${N_NODES:-21}\"

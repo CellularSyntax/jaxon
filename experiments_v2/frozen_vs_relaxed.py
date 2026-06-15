@@ -59,15 +59,24 @@ def aggregate() -> int:
         print(f"[aggregate] no usable results in {OUT_DIR}", file=sys.stderr)
         return 1
 
-    print(f"\n{'nerve':22s} {'sp':5s} {'N':>5} "
-          f"{'denseF':>6} {'denseR':>6} {'dDense':>6}  "
-          f"{'penF':>6} {'penR':>6} {'dPen':>6}  {'naF':>3} {'naR':>3}")
+    # Cross-variant deployment delta: frozen optimized on the full dense nerve
+    # vs relaxed optimized on the sparse reduced-order model and re-scored on
+    # the dense nerve.  Positive => the frozen headline still beats a relaxed
+    # reduced-order deployment despite relaxed's extra contacts.
+    def _xvar(r):  # dense_si_frozen - transfer_si_relaxed
+        return r["dense_si_frozen"] - r["transfer_si_relaxed"]
+
+    print(f"\n{'nerve':22s} {'sp':5s} {'N':>5}  "
+          f"{'denseF':>6} {'denseR':>6}  "
+          f"{'transF':>6} {'transR':>6}  "
+          f"{'penF':>6} {'penR':>6}  "
+          f"{'Fd-Rt':>6}  {'naF':>3} {'naR':>3}")
     for r in sorted(rows, key=lambda r: (r["species"], r["nerve"])):
-        print(f"{r['nerve']:22s} {r['species']:5s} {r['n_fibers']:>5d} "
-              f"{r['dense_si_frozen']:>+6.3f} {r['dense_si_relaxed']:>+6.3f} "
-              f"{r['dense_si_relaxed']-r['dense_si_frozen']:>+6.3f}  "
-              f"{r['penalty_frozen']:>+6.3f} {r['penalty_relaxed']:>+6.3f} "
-              f"{r['penalty_relaxed']-r['penalty_frozen']:>+6.3f}  "
+        print(f"{r['nerve']:22s} {r['species']:5s} {r['n_fibers']:>5d}  "
+              f"{r['dense_si_frozen']:>+6.3f} {r['dense_si_relaxed']:>+6.3f}  "
+              f"{r['transfer_si_frozen']:>+6.3f} {r['transfer_si_relaxed']:>+6.3f}  "
+              f"{r['penalty_frozen']:>+6.3f} {r['penalty_relaxed']:>+6.3f}  "
+              f"{_xvar(r):>+6.3f}  "
               f"{r['n_active_frozen']:>3d} {r['n_active_relaxed']:>3d}")
 
     summary = {"n_nerves": len(rows), "by_species": {}}
@@ -77,22 +86,32 @@ def aggregate() -> int:
             continue
         def med(key):
             return float(np.median([r[key] for r in sr]))
+        def med_expr(fn):
+            return float(np.median([fn(r) for r in sr]))
         summary["by_species"][sp] = {
             "n": len(sr),
-            "dense_si_frozen":  med("dense_si_frozen"),
-            "dense_si_relaxed": med("dense_si_relaxed"),
-            "penalty_frozen":   med("penalty_frozen"),
-            "penalty_relaxed":  med("penalty_relaxed"),
-            "n_active_relaxed": med("n_active_relaxed"),
+            "dense_si_frozen":     med("dense_si_frozen"),
+            "dense_si_relaxed":    med("dense_si_relaxed"),
+            "transfer_si_frozen":  med("transfer_si_frozen"),
+            "transfer_si_relaxed": med("transfer_si_relaxed"),
+            "penalty_frozen":      med("penalty_frozen"),
+            "penalty_relaxed":     med("penalty_relaxed"),
+            # Cross-variant: frozen dense ceiling minus relaxed sparse-transfer.
+            "frozenDense_minus_relaxedTransfer": med_expr(_xvar),
+            "n_active_relaxed":    med("n_active_relaxed"),
         }
     print(f"\n[summary over {len(rows)} nerves]  (medians)")
     for sp, s in summary["by_species"].items():
-        print(f"  {sp:5s} (n={s['n']:2d}): "
-              f"dense SI  frozen {s['dense_si_frozen']:+.3f} -> relaxed "
-              f"{s['dense_si_relaxed']:+.3f}   |   "
-              f"penalty  frozen {s['penalty_frozen']:+.3f} -> relaxed "
-              f"{s['penalty_relaxed']:+.3f}   |   "
-              f"relaxed n_active {s['n_active_relaxed']:.0f}")
+        print(f"  {sp:5s} (n={s['n']:2d}):")
+        print(f"      Leg 1 (no transfer)  dense SI  frozen {s['dense_si_frozen']:+.3f} "
+              f"-> relaxed {s['dense_si_relaxed']:+.3f}")
+        print(f"      Leg 2 (sparse->dense) transfer SI  frozen {s['transfer_si_frozen']:+.3f} "
+              f"-> relaxed {s['transfer_si_relaxed']:+.3f}   "
+              f"penalty  frozen {s['penalty_frozen']:+.3f} -> relaxed {s['penalty_relaxed']:+.3f}")
+        print(f"      cross-variant  frozen-dense - relaxed-transfer = "
+              f"{s['frozenDense_minus_relaxedTransfer']:+.3f}   "
+              f"(>0: frozen headline beats relaxed reduced-order on the dense nerve)")
+        print(f"      relaxed n_active {s['n_active_relaxed']:.0f}")
     (OUT_DIR / "summary.json").write_text(json.dumps(summary, indent=2))
     print(f"  -> {OUT_DIR / 'summary.json'}")
     return 0

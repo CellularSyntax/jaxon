@@ -34,18 +34,19 @@ import jax  # noqa: F401  (ensures device init / X64 banner)
 from experiments_v2 import selectivity_sweep_duke as S
 from jaxfibers.optim.optimizer import run_rect_optimization
 
-_LR       = float(os.environ.get("ZERO_LR_MA", "0.3"))
+_LR       = float(os.environ.get("ZERO_LR_MA", "0.05"))   # 0.3 overshoots to fire-everything
 _STEPS    = int(os.environ.get("ZERO_STEPS", "300"))
 _DECAY    = float(os.environ.get("ZERO_LR_DECAY", "0.6"))
 _FLOOR    = float(os.environ.get("ZERO_SI_FLOOR", "0.5"))
 _PATIENCE = int(os.environ.get("ZERO_PATIENCE", "15"))
+_WD       = float(os.environ.get("ZERO_WD", "0.02"))      # decoupled weight decay (AxonML-style)
 
 
 def main() -> int:
     name = S.SAMPLE_NAME
     loss_mode = os.environ["JAXLEY_FIBERS_LOSS"]
     print(f"[zero-smoke] {name}  loss={loss_mode}  "
-          f"lr={_LR} steps={_STEPS} decay={_DECAY} floor={_FLOOR} "
+          f"lr={_LR} wd={_WD} steps={_STEPS} decay={_DECAY} floor={_FLOOR} "
           f"patience={_PATIENCE}", flush=True)
 
     duke = S.load_duke_sample(
@@ -72,7 +73,7 @@ def main() -> int:
         amps_init_vector=None, amp_init_mA=0.0, amp_clip=S.AMP_CLIP,
         lr=_LR, fd_eps=S.FD_EPS_SMART_MA,
         lr_mode="plateau", plateau_lr_decay=_DECAY, plateau_si_floor=_FLOOR,
-        plateau_patience=_PATIENCE, freeze_zero_mask=None,
+        plateau_patience=_PATIENCE, weight_decay=_WD, freeze_zero_mask=None,
         # never early-stop: we want the whole trajectory.
         early_stop_si=2.0, early_stop_patience=10**9, early_stop_si_patience=0,
         verbose=True,

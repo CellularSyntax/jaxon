@@ -147,6 +147,12 @@ def run_rect_optimization(
     plateau_lr_decay: float = 0.6,
     plateau_si_floor: float = 0.5,
     plateau_patience: int = 10,
+    # Decoupled (AdamW-style) weight decay, applied only in plateau mode:
+    # amps <- amps - lr*(adam_update + weight_decay*amps).  Pulls amplitudes
+    # toward zero so a cold (0 mA) start cannot run away into the
+    # fire-everything saturation before it has broken symmetry / steered
+    # (AxonML pairs its zero-init GD with weight decay for exactly this).
+    weight_decay: float = 0.0,
     verbose: bool = True,
     # L1 sparsity regularisation via proximal soft-thresholding step
     # after each Adam update.  Drives small-magnitude amps exactly to
@@ -330,11 +336,15 @@ def run_rect_optimization(
 
     if verbose:
         amp_init_str = "  ".join(f"{a:+.2f}" for a in np.array(amps0))
+        _lr_desc = (
+            f"lr {lr:.4f} (plateau: hold, x{plateau_lr_decay} after "
+            f"{plateau_patience} flat once SI>={plateau_si_floor})"
+            if _PLATEAU else f"lr {lr:.4f}->{lr*0.02:.5f} (cosine)")
         print(
-            f"  Rect opt (FD, cosine-LR): K={K} contacts, "
+            f"  Rect opt (FD, {lr_mode}-LR): K={K} contacts, "
             f"{n_configs} configs × {n_fibers} fibers = "
             f"{n_configs * n_fibers} effective fibers per pass, "
-            f"lr {lr:.4f}→{lr*0.02:.5f}, fd_eps={fd_eps}, {n_steps} iters",
+            f"{_lr_desc}, wd={weight_decay}, fd_eps={fd_eps}, {n_steps} iters",
             flush=True,
         )
         print(f"  init amps=[{amp_init_str}] mA", flush=True)
@@ -361,8 +371,10 @@ def run_rect_optimization(
             grads = jnp.where(freeze_mask_j, 0.0, grads)
         updates, opt_state = optimizer.update(grads, opt_state)
         if _PLATEAU:
-            # scale_by_adam returns the ascent direction; descend with -lr_cur.
-            updates = jax.tree_util.tree_map(lambda u: -lr_cur * u, updates)
+            # scale_by_adam returns the ascent direction; descend with -lr_cur,
+            # plus decoupled weight decay (-lr_cur*wd*amps) toward zero.
+            updates = jax.tree_util.tree_map(
+                lambda u, p: -lr_cur * (u + weight_decay * p), updates, amps)
         amps = optax.apply_updates(amps, updates)
         # L1 proximal soft-thresholding step.  Drives any amp with
         # |amps[k]| < lr * l1_lambda to EXACTLY zero so the optimiser
@@ -495,6 +507,12 @@ def run_rect_optimization_autodiff(
     plateau_lr_decay: float = 0.6,
     plateau_si_floor: float = 0.5,
     plateau_patience: int = 10,
+    # Decoupled (AdamW-style) weight decay, applied only in plateau mode:
+    # amps <- amps - lr*(adam_update + weight_decay*amps).  Pulls amplitudes
+    # toward zero so a cold (0 mA) start cannot run away into the
+    # fire-everything saturation before it has broken symmetry / steered
+    # (AxonML pairs its zero-init GD with weight decay for exactly this).
+    weight_decay: float = 0.0,
     verbose: bool = True,
     early_stop_si:          float = 1.0,
     early_stop_patience:    int   = 20,
@@ -604,7 +622,8 @@ def run_rect_optimization_autodiff(
         (loss_val, acts_val), grads = loss_and_grad(amps)
         updates, opt_state = optimizer.update(grads, opt_state)
         if _PLATEAU:
-            updates = jax.tree_util.tree_map(lambda u: -lr_cur * u, updates)
+            updates = jax.tree_util.tree_map(
+                lambda u, p: -lr_cur * (u + weight_decay * p), updates, amps)
         amps = jnp.clip(optax.apply_updates(amps, updates), amp_clip[0], amp_clip[1])
 
         acts_np = np.array(acts_val)

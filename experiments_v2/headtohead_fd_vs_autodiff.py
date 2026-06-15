@@ -132,7 +132,10 @@ _AUTODIFF_OPT = os.environ.get("H2H_AUTODIFF_OPT", "adam").strip().lower()
 # cold start sits in a flat region, which is the point of the comparison.
 _INIT_MODE  = os.environ.get("INIT_MODE", "warm").strip().lower()
 _ZERO_LR    = float(os.environ.get("ZERO_LR_MA", "0.1"))
-_ZERO_STEPS = int(os.environ.get("ZERO_STEPS", "120"))
+_ZERO_STEPS = int(os.environ.get("ZERO_STEPS", "200"))
+_ZERO_LR_DECAY = float(os.environ.get("ZERO_LR_DECAY", "0.6"))
+_ZERO_SI_FLOOR = float(os.environ.get("ZERO_SI_FLOOR", "0.5"))
+_ZERO_PATIENCE = int(os.environ.get("ZERO_PATIENCE", "10"))
 _LOSS_MODE  = os.environ.get("JAXLEY_FIBERS_LOSS", "linear").strip().lower()
 
 import numpy as np
@@ -214,13 +217,16 @@ def main() -> int:
         T = int(seed_in["N_STEPS"])
         NEVER = 10 ** 9
         if _INIT_MODE == "zero":
-            # AxonML cold start: all contacts 0 mA, no probe; larger LR + more
-            # steps so the optimiser can ramp up from silence.
+            # Cold start: all contacts 0 mA, no probe; ReduceLROnPlateau schedule
+            # (hold LR, anneal once selective) + more steps to ramp from silence.
             amps_start = None; start_si = 0.0; best_mag = 0.0; pattern = "zero"
             steps = _ZERO_STEPS; lr = _ZERO_LR; amp_init = 0.0
+            sched = dict(lr_mode="plateau", plateau_lr_decay=_ZERO_LR_DECAY,
+                         plateau_si_floor=_ZERO_SI_FLOOR, plateau_patience=_ZERO_PATIENCE)
         else:
             amps_start, start_si, best_mag, pattern = firing_start(seed_in)
             steps = S.N_OPT_RECT; lr = S.ADAM_LR_MA; amp_init = S.AMP_INIT_MA
+            sched = dict()
         print(f"  init={_INIT_MODE} loss={_LOSS_MODE}  start pattern={pattern} "
               f"mag={best_mag:+.2f} mA SI={start_si:+.3f}  "
               f"(N={N}, targets={tgt.sum()}, steps={steps}, lr={lr:g})", flush=True)
@@ -235,7 +241,7 @@ def main() -> int:
         t0 = time.time()
         fd = run_rect_optimization(
             **common, n_steps=steps, amps_init_vector=amps_start, amp_init_mA=amp_init,
-            lr=lr, fd_eps=S.FD_EPS_MA,
+            lr=lr, fd_eps=S.FD_EPS_MA, **sched,
             early_stop_si=2.0, early_stop_patience=NEVER, early_stop_si_patience=0,
         )
         jax.block_until_ready(fd["amps"]); fd_t = time.time() - t0
@@ -255,7 +261,7 @@ def main() -> int:
         else:
             ad = run_rect_optimization_autodiff(
                 **common, n_steps=steps, amps_init_vector=amps_start, amp_init_mA=amp_init,
-                lr=lr,
+                lr=lr, **sched,
                 early_stop_si=2.0, early_stop_patience=NEVER, early_stop_si_patience=0,
             )
             jax.block_until_ready(ad["history"]["acts"][-1]); lb_t = time.time() - t0

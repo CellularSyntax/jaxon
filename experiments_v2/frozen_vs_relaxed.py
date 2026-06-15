@@ -155,7 +155,12 @@ _N_PER_FASC = int(os.environ.get("FVR_N_PER_FASC", "1"))
 # Cold start needs a larger LR + more steps and the smooth quotient loss.
 _INIT_MODE  = os.environ.get("INIT_MODE", "warm").strip().lower()
 _ZERO_LR    = float(os.environ.get("ZERO_LR_MA", "0.1"))
-_ZERO_STEPS = int(os.environ.get("ZERO_STEPS", "120"))
+_ZERO_STEPS = int(os.environ.get("ZERO_STEPS", "200"))
+# ReduceLROnPlateau-style schedule for the cold ramp: hold LR until selective
+# (SI >= floor), then x decay on each new SI best.
+_ZERO_LR_DECAY = float(os.environ.get("ZERO_LR_DECAY", "0.6"))
+_ZERO_SI_FLOOR = float(os.environ.get("ZERO_SI_FLOOR", "0.5"))
+_ZERO_PATIENCE = int(os.environ.get("ZERO_PATIENCE", "10"))
 
 import numpy as np
 import jax
@@ -204,6 +209,12 @@ def _optimize(seed_in, relaxed: bool):
         lr = S.ADAM_LR_MA
         n_iters = max(int(os.environ.get("N_OPT_RECT", "15")) * 3, 30)
         amp_init_mA = S.AMP_INIT_MA
+    # Cold start: ReduceLROnPlateau schedule + disable the loss/SI-plateau early
+    # stops so the long ramp from silence is not cut short before it is selective.
+    extra = (dict(lr_mode="plateau", plateau_lr_decay=_ZERO_LR_DECAY,
+                  plateau_si_floor=_ZERO_SI_FLOOR, plateau_patience=_ZERO_PATIENCE,
+                  early_stop_patience=10**9, early_stop_si_patience=0)
+             if cold else dict())
     res = run_rect_optimization(
         fiber_statics_batch=seed_in["fs_batch"], state0_batch=seed_in["s0_batch"],
         Ve_unit=seed_in["Ve_unit"], pulse_mask=seed_in["pulse_mask"],
@@ -212,6 +223,7 @@ def _optimize(seed_in, relaxed: bool):
         amps_init_vector=amps_init, amp_init_mA=amp_init_mA, amp_clip=S.AMP_CLIP,
         lr=lr, fd_eps=S.FD_EPS_SMART_MA,
         freeze_zero_mask=freeze, early_stop_si=S.EARLY_STOP_SI, verbose=False,
+        **extra,
     )
     # Hard-best: pick the iterate with the highest SI, tiebroken by lowest loss
     # (mirrors Hussain's WBCE-primary / WQ-tiebreak selection).

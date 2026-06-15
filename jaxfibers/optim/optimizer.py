@@ -132,6 +132,21 @@ def run_rect_optimization(
     amp_clip: tuple[float, float] = (-2.5, 2.5),
     weights: np.ndarray | None = None,
     fd_eps: float = 5e-2,
+    # Learning-rate schedule.
+    #   'cosine'  (default) -- cosine decay over n_steps; good for the warm
+    #             probe-init refinement that starts near the optimum.
+    #   'plateau' -- ReduceLROnPlateau schedule: hold the LR constant while the
+    #             optimiser explores/ramps, and once selective (SI >=
+    #             ``plateau_si_floor``) multiply it by ``plateau_lr_decay``
+    #             whenever the loss has not improved for ``plateau_patience``
+    #             steps.  A fixed decay kills the LR before a cold
+    #             (zero-amplitude) start has shaped a pattern; this keeps it high
+    #             until there is something to refine, then anneals only on a
+    #             genuine plateau -- the regime cold-start optimisation needs.
+    lr_mode: str = "cosine",
+    plateau_lr_decay: float = 0.6,
+    plateau_si_floor: float = 0.5,
+    plateau_patience: int = 10,
     verbose: bool = True,
     # L1 sparsity regularisation via proximal soft-thresholding step
     # after each Adam update.  Drives small-magnitude amps exactly to
@@ -280,14 +295,24 @@ def run_rect_optimization(
     # given amp_init_mA (cathodic), farthest at −amp_init_mA (anodic).
     amps0 = amps0.astype(jnp.float64)
 
-    # Cosine LR decay: keeps the initial step size for exploration but
-    # shrinks to 2% of lr by the final iter so Adam settles instead of
-    # orbiting the optimum (the main cause of the loss oscillations seen
-    # at constant LR near narrow activation-threshold windows).
-    lr_schedule = optax.cosine_decay_schedule(
-        init_value=lr, decay_steps=max(n_steps, 1), alpha=0.02
-    )
-    optimizer = optax.chain(optax.clip_by_global_norm(1.0), optax.adam(lr_schedule))
+    # Learning-rate schedule (see lr_mode docstring).
+    _PLATEAU = (lr_mode == "plateau")
+    if _PLATEAU:
+        # Manual LR control: scale_by_adam gives the (clipped) Adam-preconditioned
+        # direction with NO learning rate baked in; we multiply by lr_cur, a plain
+        # Python float we anneal with a ReduceLROnPlateau-style rule in the loop.
+        optimizer = optax.chain(optax.clip_by_global_norm(1.0), optax.scale_by_adam())
+    else:
+        # Cosine LR decay: keeps the initial step size for exploration but
+        # shrinks to 2% of lr by the final iter so Adam settles instead of
+        # orbiting the optimum.
+        lr_schedule = optax.cosine_decay_schedule(
+            init_value=lr, decay_steps=max(n_steps, 1), alpha=0.02
+        )
+        optimizer = optax.chain(optax.clip_by_global_norm(1.0), optax.adam(lr_schedule))
+    lr_cur         = float(lr)        # only mutated in plateau mode
+    plat_best_loss = float("inf")     # ReduceLROnPlateau monitor (loss, once selective)
+    plat_bad       = 0                # steps since last loss improvement
     opt_state = optimizer.init(amps0)
     amps      = amps0
     # Apply the freeze mask to the init too -- if the caller passed an
@@ -335,6 +360,9 @@ def run_rect_optimization(
         if freeze_mask_j is not None:
             grads = jnp.where(freeze_mask_j, 0.0, grads)
         updates, opt_state = optimizer.update(grads, opt_state)
+        if _PLATEAU:
+            # scale_by_adam returns the ascent direction; descend with -lr_cur.
+            updates = jax.tree_util.tree_map(lambda u: -lr_cur * u, updates)
         amps = optax.apply_updates(amps, updates)
         # L1 proximal soft-thresholding step.  Drives any amp with
         # |amps[k]| < lr * l1_lambda to EXACTLY zero so the optimiser
@@ -361,6 +389,21 @@ def run_rect_optimization(
         history["si"].append(si_now)
         history["amps"].append(np.array(amps))
         history["acts"].append(acts_np)
+        # ReduceLROnPlateau-style anneal: hold lr_cur until selective
+        # (SI >= floor), then shrink it by plateau_lr_decay each time the
+        # hard SI (tiebreak: lower loss) reaches a new best.
+        if _PLATEAU and si_now >= plateau_si_floor:
+            # ReduceLROnPlateau: once selective, monitor the smooth loss; if it
+            # has not improved for plateau_patience steps, shrink the LR.  Held
+            # constant before this (during the cold ramp) so the step size stays
+            # full while a pattern is still being found.
+            if float(loss_val) < plat_best_loss - 1e-9:
+                plat_best_loss = float(loss_val); plat_bad = 0
+            else:
+                plat_bad += 1
+                if plat_bad > plateau_patience:
+                    lr_cur *= plateau_lr_decay
+                    plat_bad = 0
         if float(loss_val) < best_loss - early_stop_loss_tol:
             best_loss = float(loss_val)
             best_amps = np.array(amps)
@@ -448,6 +491,10 @@ def run_rect_optimization_autodiff(
     amps_init_vector: np.ndarray | None = None,
     amp_clip: tuple[float, float] = (-2.5, 2.5),
     weights: np.ndarray | None = None,
+    lr_mode: str = "cosine",            # "cosine" | "plateau" (see run_rect_optimization)
+    plateau_lr_decay: float = 0.6,
+    plateau_si_floor: float = 0.5,
+    plateau_patience: int = 10,
     verbose: bool = True,
     early_stop_si:          float = 1.0,
     early_stop_patience:    int   = 20,
@@ -519,10 +566,17 @@ def run_rect_optimization_autodiff(
         )
     amps0 = amps0.astype(jnp.float64)
 
-    lr_schedule = optax.cosine_decay_schedule(
-        init_value=lr, decay_steps=max(n_steps, 1), alpha=0.02
-    )
-    optimizer = optax.chain(optax.clip_by_global_norm(1.0), optax.adam(lr_schedule))
+    _PLATEAU = (lr_mode == "plateau")
+    if _PLATEAU:
+        optimizer = optax.chain(optax.clip_by_global_norm(1.0), optax.scale_by_adam())
+    else:
+        lr_schedule = optax.cosine_decay_schedule(
+            init_value=lr, decay_steps=max(n_steps, 1), alpha=0.02
+        )
+        optimizer = optax.chain(optax.clip_by_global_norm(1.0), optax.adam(lr_schedule))
+    lr_cur         = float(lr)
+    plat_best_loss = float("inf")
+    plat_bad       = 0
     opt_state = optimizer.init(amps0)
     amps      = amps0
 
@@ -533,8 +587,8 @@ def run_rect_optimization_autodiff(
     if verbose:
         amp_init_str = "  ".join(f"{a:+.2f}" for a in np.array(amps0))
         print(
-            f"  Rect opt (autodiff-Adam, cosine-LR): K={K} contacts, "
-            f"{n_fibers} fibers, lr {lr:.4f}->{lr*0.02:.5f}, {n_steps} iters",
+            f"  Rect opt (autodiff-Adam, {lr_mode}-LR): K={K} contacts, "
+            f"{n_fibers} fibers, lr {lr:.4f}, {n_steps} iters",
             flush=True,
         )
         print(f"  init amps=[{amp_init_str}] mA", flush=True)
@@ -549,6 +603,8 @@ def run_rect_optimization_autodiff(
         t0 = time.time()
         (loss_val, acts_val), grads = loss_and_grad(amps)
         updates, opt_state = optimizer.update(grads, opt_state)
+        if _PLATEAU:
+            updates = jax.tree_util.tree_map(lambda u: -lr_cur * u, updates)
         amps = jnp.clip(optax.apply_updates(amps, updates), amp_clip[0], amp_clip[1])
 
         acts_np = np.array(acts_val)
@@ -558,6 +614,18 @@ def run_rect_optimization_autodiff(
         history["si"].append(si_now)
         history["amps"].append(np.array(amps))
         history["acts"].append(acts_np)
+        if _PLATEAU and si_now >= plateau_si_floor:
+            # ReduceLROnPlateau: once selective, monitor the smooth loss; if it
+            # has not improved for plateau_patience steps, shrink the LR.  Held
+            # constant before this (during the cold ramp) so the step size stays
+            # full while a pattern is still being found.
+            if float(loss_val) < plat_best_loss - 1e-9:
+                plat_best_loss = float(loss_val); plat_bad = 0
+            else:
+                plat_bad += 1
+                if plat_bad > plateau_patience:
+                    lr_cur *= plateau_lr_decay
+                    plat_bad = 0
         if float(loss_val) < best_loss - early_stop_loss_tol:
             best_loss = float(loss_val)
             best_amps = np.array(amps)

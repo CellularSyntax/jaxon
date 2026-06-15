@@ -64,6 +64,14 @@ _MAX_TGT_FRAC = float(os.environ.get("ZERO_MAX_TGT_FRAC", "0.5"))
 # escapes into an all-same-sign monopolar field that fires the whole nerve.  ON
 # by default here -- this is the hypothesis under test.  Set ZERO_BALANCE=0 off.
 _BALANCE = os.environ.get("ZERO_BALANCE", "1").strip() not in ("0", "false", "")
+# Init mode.  "cold" = every contact ~0 mA (the thing we proved cannot bootstrap
+# focality: once charge balance forbids the monopolar mode, the focal gradient
+# is zero at rest).  "warm" = Ve-weighted focal init near threshold (closest-to-
+# target contacts cathodic, farthest anodic), which gives GD a non-zero focal
+# gradient to refine.  ZERO_WARM_MA sets that init magnitude (~ the firing onset,
+# nerve-specific; sub-10_sam-1 fires around 0.03-0.05 mA).
+_INIT    = os.environ.get("ZERO_INIT", "cold").strip().lower()
+_WARM_MA = float(os.environ.get("ZERO_WARM_MA", "0.04"))
 
 
 def main() -> int:
@@ -118,21 +126,29 @@ def main() -> int:
 
     tgt = np.asarray(seed["target_mask"], bool)
     K = int(seed["Ve_unit"].shape[0])
-    init_desc = "ALL ZERO (0 mA)" if _JITTER <= 0 else f"~0 mA + N(0,{_JITTER}) jitter"
+    if _INIT == "warm":
+        # Let run_rect_optimization build its Ve-weighted focal init from
+        # amp_init_mA (amps_init_vector=None triggers it): closest-to-target
+        # contacts cathodic, farthest anodic, scaled to ~the firing onset.
+        init_kw   = dict(amps_init_vector=None, amp_init_mA=-_WARM_MA)
+        init_desc = f"warm Ve-weighted focal, |{_WARM_MA}| mA near threshold"
+    else:
+        amps_init = (None if _JITTER <= 0 else
+                     np.asarray(np.random.default_rng(0).normal(0.0, _JITTER, K)))
+        init_kw   = dict(amps_init_vector=amps_init, amp_init_mA=0.0)
+        init_desc = ("ALL ZERO (0 mA)" if _JITTER <= 0
+                     else f"~0 mA + N(0,{_JITTER}) jitter")
     print(f"  USING pos {pos}:  N={tgt.size}  targets={int(tgt.sum())} "
           f"({100*frac:.0f}%)  K={K} contacts  grad={_GRAD_MODE}  "
           f"balance={'sum0' if _BALANCE else 'off'}  "
           f"init = {init_desc}, no probe, no freeze", flush=True)
-
-    amps_init = (None if _JITTER <= 0 else
-                 np.asarray(np.random.default_rng(0).normal(0.0, _JITTER, K)))
 
     call = dict(
         fiber_statics_batch=seed["fs_batch"], state0_batch=seed["s0_batch"],
         Ve_unit=seed["Ve_unit"], pulse_mask=seed["pulse_mask"],
         node_indices=seed["node_indices"], target_mask=seed["target_mask"],
         weights=seed["weights"], dt=S.DT, n_steps=_STEPS,
-        amps_init_vector=amps_init, amp_init_mA=0.0, amp_clip=S.AMP_CLIP,
+        amp_clip=S.AMP_CLIP, **init_kw,
         lr=_LR, lr_mode="plateau", plateau_lr_decay=_DECAY,
         plateau_si_floor=_FLOOR, plateau_patience=_PATIENCE, weight_decay=_WD,
         balance_currents=_BALANCE,

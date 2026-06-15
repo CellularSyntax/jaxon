@@ -41,6 +41,8 @@ from jaxfibers.stim.multichannel_field import compute_ve_unit_jax
 from jaxfibers.optim.losses import (
     activation_proxy_batch as _activation_proxy_batch_impl,
     wq_loss as _wq_loss_impl,
+    activation_mass_batch as _activation_mass_batch_impl,
+    quotient_loss as _quotient_loss_impl,
     wbce, selectivity_index,
 )
 import os as _os
@@ -48,6 +50,18 @@ import os as _os
 # JAXLEY_FIBERS_SOFT_TEMPERATURE: sigmoid-smooth the per-fibre activation
 # proxy.  See losses.activation_proxy_batch docstring.  Default 0 = binary.
 _SOFT_T = float(_os.environ.get("JAXLEY_FIBERS_SOFT_TEMPERATURE", "0.0"))
+
+# JAXLEY_FIBERS_LOSS: selectivity objective the optimisers descend.
+#   'linear'   (default) -- weighted sum  sum_f w_f[y_f(1-a_f)+(1-y_f)a_f]
+#              on the (soft) activation proxy a_f; the historical jaxon loss.
+#   'quotient' -- Hussain et al. (2024) weighted quotient off_mass/on_mass on
+#              the smooth end-node m-gate mass; smooth everywhere and
+#              self-regularising (see losses.quotient_loss).  In this mode the
+#              soft-temperature and energy-lambda knobs are bypassed (the proxy
+#              and the energy term are not used by the quotient).
+_LOSS_MODE   = _os.environ.get("JAXLEY_FIBERS_LOSS", "linear").strip().lower()
+# Terminal nodes summed at each end for the quotient's activation mass.
+_WQ_END_NODES = int(_os.environ.get("JAXLEY_FIBERS_WQ_END_NODES", "3"))
 
 # JAXLEY_FIBERS_ENERGY_LAMBDA: amplitude-energy regularisation strength.
 # Adds `lambda * mean(amps²)` to the selectivity loss.  Required for the
@@ -67,6 +81,21 @@ def wq_loss(acts, target_mask, weights=None, amps=None):
         acts, target_mask, weights=weights,
         amps=amps, energy_lambda=_ENERGY_LAMBDA,
     )
+
+
+def selectivity_loss_from_mmax(m_max, node_idx, target_mask, weights, amps):
+    """Scalar selectivity loss from per-compartment m_max, honouring _LOSS_MODE.
+
+    'quotient' -> off/on activation-mass ratio (smooth, self-regularising);
+    'linear'   -> the historical weighted-sum loss on the (soft) proxy.
+    The optimisers still compute the hard activation proxy separately for the
+    reported SI; this only swaps the differentiable objective.
+    """
+    if _LOSS_MODE == "quotient":
+        mass = _activation_mass_batch_impl(m_max, node_idx, end_nodes=_WQ_END_NODES)
+        return _quotient_loss_impl(mass, target_mask, weights=weights, scale=1.0)
+    acts = activation_proxy_batch(m_max, node_idx)
+    return wq_loss(acts, target_mask, weights=weights, amps=amps)
 
 
 # ──────────────────────────────────────────────── statics tiling helpers ──────
@@ -191,16 +220,17 @@ def run_rect_optimization(
         )
         m_max_all = m_max_flat.reshape(n_configs, n_fibers, n_comp)
 
-        # Activation proxy and loss for every config.
+        # Activation proxy (for the reported SI) and the differentiable
+        # selectivity loss (linear or quotient, per _LOSS_MODE) for every config.
         acts_all   = jax.vmap(lambda m: activation_proxy_batch(m, node_idx_j))(m_max_all)
 
-        # Per-config amplitudes for the energy-regularisation term:
+        # Per-config amplitudes for the energy-regularisation term (linear mode):
         # base = amps, perturbed config k = amps + fd_eps · e_k.
         amps_pert  = amps[None, :] + fd_eps * jnp.eye(K, dtype=amps.dtype)
         amps_all   = jnp.concatenate([amps[None, :], amps_pert], axis=0)
         losses_all = jax.vmap(
-            lambda a, ak: wq_loss(a, tgt_j, w, amps=ak)
-        )(acts_all, amps_all)
+            lambda m, ak: selectivity_loss_from_mmax(m, node_idx_j, tgt_j, w, ak)
+        )(m_max_all, amps_all)
 
         loss_base = losses_all[0]
         acts_base = acts_all[0]
@@ -466,8 +496,9 @@ def run_rect_optimization_autodiff(
             fiber_statics_batch, state0_batch, Ve_comb,
             pulse_j, pulse_prev_j, dt,
         )
-        acts = activation_proxy_batch(m_max, node_idx_j)
-        return wq_loss(acts, tgt_j, w, amps=amps), acts
+        acts = activation_proxy_batch(m_max, node_idx_j)          # for SI (aux)
+        loss = selectivity_loss_from_mmax(m_max, node_idx_j, tgt_j, w, amps)
+        return loss, acts
 
     loss_and_grad = jax.jit(jax.value_and_grad(loss_fn, has_aux=True))
 
@@ -604,8 +635,7 @@ def _build_rect_loss_fn(
             fiber_statics_batch, state0_batch, Ve_comb,
             pulse_j, pulse_prev_j, dt,
         )                                                          # [n_f, n_c]
-        acts = activation_proxy_batch(m_max, node_idx_j)           # [n_f]
-        return wq_loss(acts, tgt_j, w_j, amps=amps)
+        return selectivity_loss_from_mmax(m_max, node_idx_j, tgt_j, w_j, amps)
     return loss_fn
 
 

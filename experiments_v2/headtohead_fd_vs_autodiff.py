@@ -127,6 +127,14 @@ from jaxfibers.optim.optimizer import (
 from jaxfibers.optim.losses import selectivity_index
 
 
+def _hard_best(loss, si) -> int:
+    """Index of the iterate with the best hard SI, tiebroken by lowest loss --
+    mirrors Hussain's WBCE-primary / WQ-tiebreak selection, so we never return
+    a smooth-loss winner that is worse on the actual selectivity metric."""
+    loss = np.asarray(loss); si = np.asarray(si)
+    return int(np.lexsort((loss, -si))[0])
+
+
 def gpu_peak_mb() -> float:
     try:
         st = jax.devices()[0].memory_stats() or {}
@@ -200,7 +208,7 @@ def main() -> int:
         )
         jax.block_until_ready(fd["amps"]); fd_t = time.time() - t0
         hl = np.asarray(fd["history"]["loss"]); hs = np.asarray(fd["history"]["si"])
-        i = int(np.argmin(hl)); fd_si = float(hs[i]); fd_loss = float(hl[i])
+        i = _hard_best(hl, hs); fd_si = float(hs[i]); fd_loss = float(hl[i])
 
         t0 = time.time()
         if _AUTODIFF_OPT == "lbfgs":
@@ -220,7 +228,7 @@ def main() -> int:
             )
             jax.block_until_ready(ad["history"]["acts"][-1]); lb_t = time.time() - t0
             hl = np.asarray(ad["history"]["loss"]); hs = np.asarray(ad["history"]["si"])
-            j = int(np.argmin(hl)); lb_si = float(hs[j]); lb_loss = float(hl[j])
+            j = _hard_best(hl, hs); lb_si = float(hs[j]); lb_loss = float(hl[j])
             ad_label = "AD-Adam"
 
         rec.update(

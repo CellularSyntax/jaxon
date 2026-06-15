@@ -174,8 +174,11 @@ def _optimize(seed_in, relaxed: bool):
         lr=S.ADAM_LR_MA, fd_eps=S.FD_EPS_SMART_MA,
         freeze_zero_mask=freeze, early_stop_si=S.EARLY_STOP_SI, verbose=False,
     )
+    # Hard-best: pick the iterate with the highest SI, tiebroken by lowest loss
+    # (mirrors Hussain's WBCE-primary / WQ-tiebreak selection).
     loss = np.asarray(res["history"]["loss"])
-    i = int(np.argmin(loss))
+    si_hist = np.asarray(res["history"]["si"])
+    i = int(np.lexsort((loss, -si_hist))[0])
     amps = np.asarray(res["history"]["amps"][i])
     acts = np.asarray(res["history"]["acts"][i])
     si = float(selectivity_index(acts, np.asarray(seed_in["target_mask"], bool)))

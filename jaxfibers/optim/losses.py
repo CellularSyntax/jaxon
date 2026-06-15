@@ -123,6 +123,87 @@ def wq_loss(
     return sel
 
 
+def activation_mass_batch(
+    m_max_batch: jnp.ndarray,
+    node_indices: np.ndarray | jnp.ndarray,
+    end_nodes: int = 3,
+) -> jnp.ndarray:
+    """Smooth per-fiber activation mass for the quotient loss.
+
+    Sum of the (max-over-time) m-gate across the terminal node compartments at
+    BOTH fiber ends -- the differentiable quantity Hussain et al. (Nat Commun
+    2024) feed to their weighted-quotient loss, where they sum the m-gate over
+    the 20 end nodes (10 each end) of a 101-node fiber.
+
+    Summing the END nodes (rather than all nodes) rewards action potentials that
+    PROPAGATE to the ends, not merely local subthreshold depolarisation under
+    the cathode; summing (rather than min/max/threshold) keeps the quantity
+    smooth so its gradient is informative far from threshold -- the property the
+    binary ``activation_proxy_batch`` lacks.
+
+    Parameters
+    ----------
+    m_max_batch : [n_fibers, n_comp]
+    node_indices : [n_fibers, n_nodes] int
+    end_nodes : int, default 3
+        Number of terminal nodes summed at EACH end.  If ``2*end_nodes`` exceeds
+        the node count (short fibers) the whole node set is summed.
+
+    Returns
+    -------
+    mass : [n_fibers]  (>= 0)
+    """
+    node_indices = jnp.asarray(node_indices, dtype=jnp.int32)
+    n_fibers = m_max_batch.shape[0]
+    f_idx = jnp.arange(n_fibers)[:, None]
+    m_nodes = m_max_batch[f_idx, node_indices]          # [n_fibers, n_nodes]
+    n_nodes = m_nodes.shape[1]                          # static under jit
+    if 2 * end_nodes >= n_nodes:
+        ends = m_nodes
+    else:
+        ends = jnp.concatenate(
+            [m_nodes[:, :end_nodes], m_nodes[:, -end_nodes:]], axis=1)
+    return jnp.sum(ends, axis=1)                         # [n_fibers]
+
+
+def quotient_loss(
+    mass: jnp.ndarray,
+    target_mask: np.ndarray | jnp.ndarray,
+    weights: np.ndarray | jnp.ndarray | None = None,
+    scale: float = 1.0,
+    eps: float = 1e-6,
+) -> jnp.ndarray:
+    """Weighted-quotient selectivity loss (Hussain et al. 2024, Eq. 24-26).
+
+        L = scale * ( sum_off w_f mass_f ) / ( sum_target w_f mass_f )
+
+    A ratio of off-target to target activation mass.  Two properties make it a
+    better optimization objective than the linear ``wq_loss`` on the near-binary
+    proxy:
+
+    * **Smooth everywhere.**  Even with every fiber silent, increasing target
+      mass relative to off-target mass lowers the loss, so the gradient is
+      informative in the saturated regime where the linear loss is flat.
+    * **Self-regularising.**  Firing all fibers plateaus the ratio at the
+      target/off-target area ratio (never zero), so the "crank every contact to
+      fire everything" trap is not a minimum -- no amplitude-energy term needed.
+
+    ``scale = sqrt(d / n_contacts)`` in the reference; for per-contact amplitude
+    optimization d = n_contacts so scale = 1.
+
+    Returns
+    -------
+    loss : scalar  (lower = more selective)
+    """
+    n = mass.shape[0]
+    target = jnp.asarray(target_mask, dtype=jnp.float64)
+    w = jnp.ones(n, dtype=jnp.float64) / n if weights is None else jnp.asarray(weights, dtype=jnp.float64)
+    wm = w * mass
+    on  = jnp.sum(target * wm)
+    off = jnp.sum((1.0 - target) * wm)
+    return scale * off / (on + eps)
+
+
 def wbce(
     acts: jnp.ndarray,
     target_mask: np.ndarray | jnp.ndarray,

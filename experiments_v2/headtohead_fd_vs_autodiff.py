@@ -51,30 +51,22 @@ def _species(name: str) -> str:
 
 
 # ── aggregate mode: read per-nerve JSONs, print + save a table (no JAX) ──────
-def aggregate() -> int:
+def _summarize(rows, label) -> dict | None:
     import numpy as np
-    rows = []
-    for jp in sorted(OUT_DIR.glob("*.json")):
-        if jp.name == "summary.json":
-            continue
-        try:
-            rows.append(json.loads(jp.read_text()))
-        except Exception:
-            continue
     rows = [r for r in rows if r.get("ok")]
     if not rows:
-        print(f"[aggregate] no usable results in {OUT_DIR}", file=sys.stderr)
-        return 1
-
-    print(f"\n{'nerve':22s} {'sp':5s} {'N':>5} {'startSI':>7} "
-          f"{'FD SI':>6} {'LB SI':>6} {'dSI':>6} "
-          f"{'FD s':>7} {'LB s':>7} {'LB/FD':>6}")
+        return None
+    ad_label = rows[0].get("autodiff_opt", "ad").upper()[:5]
+    print(f"\n===== config: {label}   ({len(rows)} nerves, autodiff={ad_label}) =====")
+    print(f"{'nerve':22s} {'sp':5s} {'N':>5} {'startSI':>7} "
+          f"{'FD SI':>6} {'AD SI':>6} {'dSI':>6} "
+          f"{'FD s':>7} {'AD s':>7} {'AD/FD':>6}")
     for r in sorted(rows, key=lambda r: (r["species"], r["nerve"])):
-        sr = (r["lb_time"] / r["fd_time"]) if r["fd_time"] else float("nan")
+        ratio = (r["lb_time"] / r["fd_time"]) if r["fd_time"] else float("nan")
         print(f"{r['nerve']:22s} {r['species']:5s} {r['n_fibers']:>5d} "
               f"{r['start_si']:>+7.3f} {r['fd_si']:>+6.3f} {r['lb_si']:>+6.3f} "
               f"{r['fd_si']-r['lb_si']:>+6.3f} {r['fd_time']:>7.0f} "
-              f"{r['lb_time']:>7.0f} {sr:>6.1f}")
+              f"{r['lb_time']:>7.0f} {ratio:>6.1f}")
 
     fd = np.array([r["fd_si"] for r in rows]); lb = np.array([r["lb_si"] for r in rows])
     sr = np.array([r["lb_time"] / r["fd_time"] for r in rows if r["fd_time"]])
@@ -82,20 +74,40 @@ def aggregate() -> int:
     summary = {
         "n_nerves": n,
         "fd_si_median": float(np.median(fd)),
-        "lb_si_median": float(np.median(lb)),
+        "ad_si_median": float(np.median(lb)),
         "dSI_median": float(np.median(fd - lb)),
-        "frac_fd_ge_lb": float(np.mean(fd >= lb - 1e-9)),
-        "speed_ratio_median_lb_over_fd": float(np.median(sr)),
+        "frac_fd_ge_ad": float(np.mean(fd >= lb - 1e-9)),
+        "speed_ratio_median_ad_over_fd": float(np.median(sr)) if sr.size else float("nan"),
     }
-    print(f"\n[summary over {n} nerves]")
-    print(f"  median SI:  FD {summary['fd_si_median']:+.3f}  vs  "
-          f"LBFGS {summary['lb_si_median']:+.3f}   (median dSI = "
-          f"{summary['dSI_median']:+.3f})")
-    print(f"  FD >= autodiff on {100*summary['frac_fd_ge_lb']:.0f}% of nerves")
-    print(f"  autodiff-LBFGS is {summary['speed_ratio_median_lb_over_fd']:.1f}x "
-          f"slower (median wall-clock)")
-    (OUT_DIR / "summary.json").write_text(json.dumps(summary, indent=2))
-    print(f"  -> {OUT_DIR / 'summary.json'}")
+    print(f"  [medians]  FD {summary['fd_si_median']:+.3f}  vs  "
+          f"AD {summary['ad_si_median']:+.3f}   (dSI {summary['dSI_median']:+.3f})   "
+          f"FD>=AD on {100*summary['frac_fd_ge_ad']:.0f}%   "
+          f"AD {summary['speed_ratio_median_ad_over_fd']:.1f}x slower")
+    return summary
+
+
+def aggregate() -> int:
+    # Group per-nerve JSONs by their config sub-directory (init_loss_optimizer);
+    # flat files written directly under OUT_DIR are grouped as "(root)".
+    groups: dict[str, list] = {}
+    for jp in sorted(OUT_DIR.rglob("*.json")):
+        if jp.name == "summary.json":
+            continue
+        label = jp.parent.name if jp.parent != OUT_DIR else "(root)"
+        try:
+            groups.setdefault(label, []).append(json.loads(jp.read_text()))
+        except Exception:
+            continue
+    if not groups:
+        print(f"[aggregate] no usable results in {OUT_DIR}", file=sys.stderr)
+        return 1
+    all_summaries = {}
+    for label in sorted(groups):
+        s = _summarize(groups[label], label)
+        if s is not None:
+            all_summaries[label] = s
+    (OUT_DIR / "summary.json").write_text(json.dumps(all_summaries, indent=2))
+    print(f"\n  -> {OUT_DIR / 'summary.json'}  ({len(all_summaries)} config(s))")
     return 0
 
 
@@ -174,10 +186,14 @@ def firing_start(seed_in):
 
 
 def main() -> int:
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
     name = S.SAMPLE_NAME
-    out_path = OUT_DIR / f"{name}.json"
-    print(f"[h2h] {name} ({_species(name)})", flush=True)
+    # Per-config sub-directory so configurations never overwrite each other and
+    # the aggregator can group (init + loss + autodiff optimizer).
+    cfg = f"{_INIT_MODE}_{_LOSS_MODE}_{_AUTODIFF_OPT}"
+    cfg_dir = OUT_DIR / cfg
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    out_path = cfg_dir / f"{name}.json"
+    print(f"[h2h] {name} ({_species(name)})  config={cfg}", flush=True)
 
     rec = {"nerve": name, "species": _species(name), "ok": False}
     try:

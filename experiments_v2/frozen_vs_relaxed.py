@@ -50,23 +50,19 @@ def _species(name: str) -> str:
 
 
 # ── aggregate mode: read per-nerve JSONs, print per-species summary (no JAX) ──
-def aggregate() -> int:
+def _summarize(rows, label) -> dict | None:
+    """Print the table + per-species medians for one config's rows; return its
+    summary dict (or None if no usable rows)."""
     import numpy as np
-    rows = [json.loads(jp.read_text())
-            for jp in sorted(OUT_DIR.glob("*.json")) if jp.name != "summary.json"]
     rows = [r for r in rows if r.get("ok")]
     if not rows:
-        print(f"[aggregate] no usable results in {OUT_DIR}", file=sys.stderr)
-        return 1
+        return None
 
-    # Cross-variant deployment delta: frozen optimized on the full dense nerve
-    # vs relaxed optimized on the sparse reduced-order model and re-scored on
-    # the dense nerve.  Positive => the frozen headline still beats a relaxed
-    # reduced-order deployment despite relaxed's extra contacts.
-    def _xvar(r):  # dense_si_frozen - transfer_si_relaxed
+    def _xvar(r):  # dense_si_frozen - transfer_si_relaxed (cross-variant)
         return r["dense_si_frozen"] - r["transfer_si_relaxed"]
 
-    print(f"\n{'nerve':22s} {'sp':5s} {'N':>5}  "
+    print(f"\n===== config: {label}   ({len(rows)} nerves) =====")
+    print(f"{'nerve':22s} {'sp':5s} {'N':>5}  "
           f"{'denseF':>6} {'denseR':>6}  "
           f"{'transF':>6} {'transR':>6}  "
           f"{'penF':>6} {'penR':>6}  "
@@ -84,9 +80,9 @@ def aggregate() -> int:
         sr = [r for r in rows if r["species"] == sp]
         if not sr:
             continue
-        def med(key):
+        def med(key, sr=sr):
             return float(np.median([r[key] for r in sr]))
-        def med_expr(fn):
+        def med_expr(fn, sr=sr):
             return float(np.median([fn(r) for r in sr]))
         summary["by_species"][sp] = {
             "n": len(sr),
@@ -96,11 +92,10 @@ def aggregate() -> int:
             "transfer_si_relaxed": med("transfer_si_relaxed"),
             "penalty_frozen":      med("penalty_frozen"),
             "penalty_relaxed":     med("penalty_relaxed"),
-            # Cross-variant: frozen dense ceiling minus relaxed sparse-transfer.
             "frozenDense_minus_relaxedTransfer": med_expr(_xvar),
             "n_active_relaxed":    med("n_active_relaxed"),
         }
-    print(f"\n[summary over {len(rows)} nerves]  (medians)")
+    print(f"  [medians]")
     for sp, s in summary["by_species"].items():
         print(f"  {sp:5s} (n={s['n']:2d}):")
         print(f"      Leg 1 (no transfer)  dense SI  frozen {s['dense_si_frozen']:+.3f} "
@@ -112,8 +107,31 @@ def aggregate() -> int:
               f"{s['frozenDense_minus_relaxedTransfer']:+.3f}   "
               f"(>0: frozen headline beats relaxed reduced-order on the dense nerve)")
         print(f"      relaxed n_active {s['n_active_relaxed']:.0f}")
-    (OUT_DIR / "summary.json").write_text(json.dumps(summary, indent=2))
-    print(f"  -> {OUT_DIR / 'summary.json'}")
+    return summary
+
+
+def aggregate() -> int:
+    # Group per-nerve JSONs by their config sub-directory (init_loss); flat
+    # files written directly under OUT_DIR are grouped as "(root)".
+    groups: dict[str, list] = {}
+    for jp in sorted(OUT_DIR.rglob("*.json")):
+        if jp.name == "summary.json":
+            continue
+        label = jp.parent.name if jp.parent != OUT_DIR else "(root)"
+        try:
+            groups.setdefault(label, []).append(json.loads(jp.read_text()))
+        except Exception:
+            continue
+    if not groups:
+        print(f"[aggregate] no usable results in {OUT_DIR}", file=sys.stderr)
+        return 1
+    all_summaries = {}
+    for label in sorted(groups):
+        s = _summarize(groups[label], label)
+        if s is not None:
+            all_summaries[label] = s
+    (OUT_DIR / "summary.json").write_text(json.dumps(all_summaries, indent=2))
+    print(f"\n  -> {OUT_DIR / 'summary.json'}  ({len(all_summaries)} config(s))")
     return 0
 
 
@@ -231,10 +249,14 @@ def _sparse_seed(duke, dense_seed):
 
 
 def main() -> int:
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
     name = S.SAMPLE_NAME
-    out_path = OUT_DIR / f"{name}.json"
-    print(f"[fvr] {name} ({_species(name)})", flush=True)
+    # Per-config sub-directory (relaxed-arm init + loss) so different
+    # configurations never overwrite each other and the aggregator can group.
+    cfg = f"{_INIT_MODE}_{os.environ.get('JAXLEY_FIBERS_LOSS', 'linear')}"
+    cfg_dir = OUT_DIR / cfg
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    out_path = cfg_dir / f"{name}.json"
+    print(f"[fvr] {name} ({_species(name)})  config={cfg}", flush=True)
     rec = {"nerve": name, "species": _species(name), "ok": False}
     try:
         duke = S.load_duke_sample(

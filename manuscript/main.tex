@@ -77,6 +77,11 @@
 % Suppress the todonotes marginpar-width warning.
 \setlength{\marginparwidth}{2cm}
 
+% Raise the float-storage limit: the supplement has ~60 full-page [p]
+% figures (anatomy + per-nerve activation maps) which overflow the default
+% ~18-float queue ("Too many unprocessed floats").
+\extrafloats{200}
+
 \begin{document}
 
 \ifx\jneSubmission\undefined

@@ -5,7 +5,7 @@
   \centering
   \figmaybe[width=0.98\textwidth]{main/fig0_concept_overview.png}
   \caption{Overview of the jaxon differentiable pipeline.
-    \textbf{Top left --- forward-and-optimize loop.}  A per-contact
+    \textbf{(a) Forward-and-optimize loop.}  A per-contact
     stimulus $I_k(t)$ drives the superposed extracellular field
     $V_e = \sum_k I_k\,V_e^{(k)}$; the coupled-cable GPU solver
     integrates the membrane dynamics of every fiber in parallel and
@@ -16,15 +16,15 @@
     is available end-to-end by reverse-mode autodiff (dashed loop).
     The solver is validated against \texttt{pyfibers}/NEURON on
     thresholds and conduction velocity.
-    \textbf{Top right --- anatomy to model.}  A microCT vagus-nerve
+    \textbf{(b) Anatomy to model.}  A microCT vagus-nerve
     cross-section is segmented and embedded in the 12-contact
     MultiContact cuff finite-element model, from which the per-contact
     extracellular lead fields $V_e^{(k)}$ are computed.
-    \textbf{Bottom left --- fiber models and validation.}  The four
+    \textbf{(c) Fiber models and validation.}  The four
     implemented fiber models (myelinated MRG and Sweeney; unmyelinated
     Sundt and Rattay) and their strength--duration agreement with
     \texttt{pyfibers}/NEURON.
-    \textbf{Bottom right --- selectivity optimization on the cohort.}
+    \textbf{(d) Selectivity optimization on the cohort.}
     Two example nerves with the optimized cuff pattern (cathode blue,
     anode orange, inactive white, over the cuff's four angular columns
     $\times$ three axial rows) and fibers colored by recruitment
@@ -128,7 +128,9 @@ $\nabla \cdot (\sigma \nabla V) = 0$ in FEniCSx with literature
 conductivities and a zero-thickness perineurium contact impedance,
 giving a per-contact extracellular lead field $V_e^{(k)}$
 (full construction, conductivities and the optimizer defaults in the
-Supplementary Material).
+Supplementary Material).  The segmented anatomy, 3-D model and computed
+fields for every cohort nerve are shown in Supplementary
+Figs~\ref{fig:anat-human-sub-47-sam-2}--\ref{fig:anat-sub-9-sam-3}.
 
 \paragraph{Fiber sampling, target selection and cohort gating.}
 $1\,000$ straight axial fibers per nerve are seeded by area-weighted

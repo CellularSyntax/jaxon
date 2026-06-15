@@ -50,16 +50,14 @@ from jaxley.solver_gate import solve_gate_exponential
 jax.config.update("jax_enable_x64", True)
 
 from jaxfibers.fibers.mrg import (
-    build_mrg, node_indices, section_centers_um,
+    build_mrg, build_mrg_interp, node_indices, section_centers_um,
     V_REST, CM_AXON, G_PAS_MYSA, G_PAS_FLUT, G_PAS_STIN,
 )
 from jaxfibers.channels.mrg_axnode import AxnodeMyel
 from jaxfibers.stim.extracellular import point_source_potentials_mV
 from jaxfibers.stim.extracellular_coupled import arrays_from_geometry, integrate
-from jaxfibers.nrn_baseline import build_mrg_pyfibers
-
 from neuron import h
-from pyfibers import ScaledStim
+from pyfibers import build_fiber, FiberModel, ScaledStim
 from scipy.interpolate import interp1d
 
 from experiments_v2.utils import (
@@ -71,16 +69,16 @@ OUT = ensure_dir(ROOT / "outputs" / "dc_block")
 # ── shared constants ──────────────────────────────────────────────────────────
 CELSIUS  = 37.0
 DT       = 0.005
-TSTOP    = 3.0
+TSTOP    = 7.5    # ms — Hussain Fig 3a; covers propagation across 101-node fiber
 DELAY    = 0.5
-N_NODES  = 21
+N_NODES  = 101    # Hussain Fig 3a uses ~101 nodes; critical for visible spatial propagation
 N_STEPS  = int(TSTOP / DT)
 SIGMA    = 0.3
 SRC_H    = 1000.0
 
-DIAMETER     = 10.0
-PW_MS        = 0.1
-AMP_FACTORS  = [0.5, 1.05, 1.5, 3.0]
+DIAMETER     = 12.0               # µm — Hussain Fig 3a
+PW_MS        = 0.75               # ms — Hussain Fig 3a: cathodic monophasic
+AMP_FACTORS  = [0.5, 1.1, 1.5, 2.5]  # sub-thr → excitation → unidirectional → block/re-excitation
 
 # MRG channel constants
 GNABAR = 3.0;  GNAPBAR = 0.01; GKBAR = 0.08; GL = 0.007
@@ -125,7 +123,8 @@ def _build_membrane_fn(static, geom):
 
 def _run_pyfibers(amp_mA: float, diameter: float, n_nodes: int) -> tuple[np.ndarray, np.ndarray]:
     """PyFibers MRG run with cathodic monophasic ScaledStim. Returns (t_ms, vm [n_nodes, n_t])."""
-    fiber = build_mrg_pyfibers(diameter=diameter, n_nodes=n_nodes, temperature=CELSIUS)
+    fiber = build_fiber(FiberModel.MRG_INTERPOLATION, diameter=diameter,
+                         n_nodes=n_nodes, temperature=CELSIUS)
     fiber.record_vm()
     fiber.potentials = fiber.point_source_potentials(
         x=0.0, y=SRC_H, z=fiber.length / 2.0, i0=amp_mA, sigma=SIGMA,
@@ -148,7 +147,7 @@ def main():
     print(f"D = {DIAMETER} µm, N = {N_NODES} nodes, PW = {PW_MS} ms cathodic\n")
 
     # ── build JAX fiber + bisect for threshold ───────────────────────────────
-    _, geom = build_mrg(diameter=DIAMETER, n_nodes=N_NODES)
+    _, geom = build_mrg_interp(diameter=DIAMETER, n_nodes=N_NODES)
     nodes   = node_indices(geom)
     centers = np.array(section_centers_um(geom))
     n_comp  = geom.n_comp

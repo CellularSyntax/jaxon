@@ -341,7 +341,7 @@ def run_rect_optimization(
             f"{plateau_patience} flat once SI>={plateau_si_floor})"
             if _PLATEAU else f"lr {lr:.4f}->{lr*0.02:.5f} (cosine)")
         print(
-            f"  Rect opt (FD, {lr_mode}-LR): K={K} contacts, "
+            f"  Rect opt (GD, finite-diff grad, {lr_mode}-LR): K={K} contacts, "
             f"{n_configs} configs × {n_fibers} fibers = "
             f"{n_configs * n_fibers} effective fibers per pass, "
             f"{_lr_desc}, wd={weight_decay}, fd_eps={fd_eps}, {n_steps} iters",
@@ -605,7 +605,7 @@ def run_rect_optimization_autodiff(
     if verbose:
         amp_init_str = "  ".join(f"{a:+.2f}" for a in np.array(amps0))
         print(
-            f"  Rect opt (autodiff-Adam, {lr_mode}-LR): K={K} contacts, "
+            f"  Rect opt (GD, autodiff grad, {lr_mode}-LR): K={K} contacts, "
             f"{n_fibers} fibers, lr {lr:.4f}, {n_steps} iters",
             flush=True,
         )

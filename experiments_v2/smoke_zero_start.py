@@ -40,6 +40,10 @@ _DECAY    = float(os.environ.get("ZERO_LR_DECAY", "0.6"))
 _FLOOR    = float(os.environ.get("ZERO_SI_FLOOR", "0.5"))
 _PATIENCE = int(os.environ.get("ZERO_PATIENCE", "15"))
 _WD       = float(os.environ.get("ZERO_WD", "0.02"))      # decoupled weight decay (AxonML-style)
+# Symmetry-breaking jitter on the (otherwise exactly-zero) init: a tiny random
+# per-contact amplitude so Adam can leave the symmetric all-zero saddle even
+# when the gradient is near-symmetric.  0 = exact zero.
+_JITTER   = float(os.environ.get("ZERO_JITTER", "0.01"))
 
 
 def main() -> int:
@@ -62,15 +66,26 @@ def main() -> int:
 
     tgt = np.asarray(seed["target_mask"], bool)
     K = int(seed["Ve_unit"].shape[0])
-    print(f"  N={tgt.size}  targets={int(tgt.sum())}  K={K} contacts  "
-          f"init = ALL ZERO (0 mA), no probe, no freeze", flush=True)
+    frac = tgt.sum() / max(tgt.size, 1)
+    init_desc = "ALL ZERO (0 mA)" if _JITTER <= 0 else f"~0 mA + N(0,{_JITTER}) jitter"
+    print(f"  N={tgt.size}  targets={int(tgt.sum())} ({100*frac:.0f}%)  "
+          f"K={K} contacts  init = {init_desc}, no probe, no freeze", flush=True)
+    if frac > 0.4:
+        print(f"  *** WARNING: target fraction {100*frac:.0f}% -- this is a target "
+              f"MAJORITY, not a selectivity problem.  The gradient is ~symmetric "
+              f"(every contact wants cathodic), so amps will move together and "
+              f"fire everything.  Raise MAX_FIBERS so the cluster is a minority.",
+              flush=True)
+
+    amps_init = (None if _JITTER <= 0 else
+                 np.asarray(np.random.default_rng(0).normal(0.0, _JITTER, K)))
 
     res = run_rect_optimization(
         fiber_statics_batch=seed["fs_batch"], state0_batch=seed["s0_batch"],
         Ve_unit=seed["Ve_unit"], pulse_mask=seed["pulse_mask"],
         node_indices=seed["node_indices"], target_mask=seed["target_mask"],
         weights=seed["weights"], dt=S.DT, n_steps=_STEPS,
-        amps_init_vector=None, amp_init_mA=0.0, amp_clip=S.AMP_CLIP,
+        amps_init_vector=amps_init, amp_init_mA=0.0, amp_clip=S.AMP_CLIP,
         lr=_LR, fd_eps=S.FD_EPS_SMART_MA,
         lr_mode="plateau", plateau_lr_decay=_DECAY, plateau_si_floor=_FLOOR,
         plateau_patience=_PATIENCE, weight_decay=_WD, freeze_zero_mask=None,

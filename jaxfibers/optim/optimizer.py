@@ -402,6 +402,187 @@ def run_rect_optimization(
     }
 
 
+# ───────────────────────────── autodiff-Adam rect optimization (clean A/B) ────
+
+def run_rect_optimization_autodiff(
+    fiber_statics_batch: FiberStatics,
+    state0_batch: tuple,
+    Ve_unit: jnp.ndarray,              # [K, n_fibers, n_comp]
+    pulse_mask: jnp.ndarray,           # [T]
+    node_indices: np.ndarray,          # [n_fibers, n_nodes]
+    target_mask: np.ndarray,           # [n_fibers] bool
+    dt: float,
+    n_steps: int = 100,
+    lr: float = 8e-2,
+    amp_init_mA: float = -0.4,
+    amps_init_vector: np.ndarray | None = None,
+    amp_clip: tuple[float, float] = (-2.5, 2.5),
+    weights: np.ndarray | None = None,
+    verbose: bool = True,
+    early_stop_si:          float = 1.0,
+    early_stop_patience:    int   = 20,
+    early_stop_loss_tol:    float = 1e-5,
+    early_stop_si_patience: int   = 10,
+    early_stop_si_tol:      float = 0.01,
+    early_stop_si_floor:    float = 0.85,
+) -> dict:
+    """Identical Adam loop to ``run_rect_optimization`` but the gradient is
+    EXACT reverse-mode autodiff through the membrane scan, not the batched
+    finite-difference estimate.
+
+    This is the apples-to-apples A/B test the head-to-head actually wants:
+    optimizer (Adam), learning-rate schedule (cosine), gradient clipping
+    (global-norm 1.0), initialization and early-stop are all held identical
+    to the FD path -- ONLY the gradient source changes.  Any difference in
+    the resulting selectivity is therefore attributable to FD-vs-autodiff,
+    not to Adam-vs-L-BFGS (the confound in the earlier LBFGS comparison) and
+    not to the loss surface (use JAXLEY_FIBERS_SOFT_TEMPERATURE for both).
+
+    Per step this needs ONE forward + ONE backward (vs the FD path's K+1
+    forwards), so the per-step cost crosses over in autodiff's favour as K
+    (contact count) grows -- the regime that matters for many-contact cuffs
+    and waveform shaping.
+
+    Returns the same dict shape as ``run_rect_optimization``.
+    """
+    K        = Ve_unit.shape[0]
+    n_fibers = Ve_unit.shape[1]
+
+    Ve_unit_j    = jnp.asarray(Ve_unit,    dtype=jnp.float64)
+    pulse_j      = jnp.asarray(pulse_mask, dtype=jnp.float64)
+    pulse_prev_j = jnp.concatenate([jnp.zeros(1, dtype=jnp.float64), pulse_j[:-1]])
+    node_idx_j   = jnp.asarray(node_indices, dtype=jnp.int32)
+    tgt_j        = jnp.asarray(target_mask,  dtype=jnp.float64)
+    w = (jnp.ones(n_fibers, dtype=jnp.float64) / n_fibers
+         if weights is None else jnp.asarray(weights, dtype=jnp.float64))
+
+    target_mask_bool  = np.asarray(target_mask, dtype=bool)
+    n_target_total    = int(target_mask_bool.sum())
+    n_nontarget_total = int((~target_mask_bool).sum())
+
+    def loss_fn(amps):
+        Ve_comb = jnp.einsum("k,kfn->fn", -amps, Ve_unit_j)
+        m_max = batch_integrate_m_max_fd(
+            fiber_statics_batch, state0_batch, Ve_comb,
+            pulse_j, pulse_prev_j, dt,
+        )
+        acts = activation_proxy_batch(m_max, node_idx_j)
+        return wq_loss(acts, tgt_j, w, amps=amps), acts
+
+    loss_and_grad = jax.jit(jax.value_and_grad(loss_fn, has_aux=True))
+
+    # Init -- mirror run_rect_optimization exactly.
+    if amps_init_vector is not None:
+        amps0 = jnp.clip(
+            jnp.asarray(amps_init_vector, dtype=jnp.float64),
+            amp_clip[0], amp_clip[1],
+        )
+    else:
+        ve_tgt_sum  = jnp.where(tgt_j[None, :, None], jnp.abs(Ve_unit_j), 0.0).sum((1, 2))
+        ve_tgt_mean = ve_tgt_sum / jnp.maximum(tgt_j.sum(), 1.0)
+        ve_range    = ve_tgt_mean.max() - ve_tgt_mean.min()
+        ve_norm     = (ve_tgt_mean - ve_tgt_mean.min()) / (ve_range + 1e-10)
+        amps0 = jnp.clip(
+            (2.0 * ve_norm - 1.0) * jnp.abs(amp_init_mA) * jnp.sign(amp_init_mA),
+            amp_clip[0], amp_clip[1],
+        )
+    amps0 = amps0.astype(jnp.float64)
+
+    lr_schedule = optax.cosine_decay_schedule(
+        init_value=lr, decay_steps=max(n_steps, 1), alpha=0.02
+    )
+    optimizer = optax.chain(optax.clip_by_global_norm(1.0), optax.adam(lr_schedule))
+    opt_state = optimizer.init(amps0)
+    amps      = amps0
+
+    history   = {"loss": [], "bce": [], "si": [], "amps": [], "acts": []}
+    best_loss = float("inf")
+    best_amps = np.array(amps)
+
+    if verbose:
+        amp_init_str = "  ".join(f"{a:+.2f}" for a in np.array(amps0))
+        print(
+            f"  Rect opt (autodiff-Adam, cosine-LR): K={K} contacts, "
+            f"{n_fibers} fibers, lr {lr:.4f}->{lr*0.02:.5f}, {n_steps} iters",
+            flush=True,
+        )
+        print(f"  init amps=[{amp_init_str}] mA", flush=True)
+        print("  [iter 0] XLA compile - first call only ...", flush=True)
+
+    stale_iters    = 0
+    best_si        = -float("inf")
+    stale_si_iters = 0
+    stopped_at  = n_steps
+    stop_reason = "max iters"
+    for i in range(n_steps):
+        t0 = time.time()
+        (loss_val, acts_val), grads = loss_and_grad(amps)
+        updates, opt_state = optimizer.update(grads, opt_state)
+        amps = jnp.clip(optax.apply_updates(amps, updates), amp_clip[0], amp_clip[1])
+
+        acts_np = np.array(acts_val)
+        si_now  = selectivity_index(acts_np, target_mask)
+        history["loss"].append(float(loss_val))
+        history["bce"].append(float(wbce(acts_val, tgt_j, w)))
+        history["si"].append(si_now)
+        history["amps"].append(np.array(amps))
+        history["acts"].append(acts_np)
+        if float(loss_val) < best_loss - early_stop_loss_tol:
+            best_loss = float(loss_val)
+            best_amps = np.array(amps)
+            stale_iters = 0
+        else:
+            stale_iters += 1
+        if float(si_now) > best_si + early_stop_si_tol:
+            best_si = float(si_now)
+            stale_si_iters = 0
+        else:
+            stale_si_iters += 1
+
+        if verbose and (i % max(1, n_steps // 20) == 0 or i == n_steps - 1):
+            dt_ms   = (time.time() - t0) * 1000
+            amp_str = "  ".join(f"{a:+.2f}" for a in np.array(amps))
+            fired_now = acts_np > 0.5
+            nft = int(np.sum(fired_now & target_mask_bool))
+            nfn = int(np.sum(fired_now & ~target_mask_bool))
+            print(
+                f"  [{i:3d}/{n_steps}] loss={float(loss_val):.4f}  "
+                f"SI={si_now:+.3f}  "
+                f"fired={nft}/{n_target_total}t+{nfn}/{n_nontarget_total}nt  "
+                f"amps=[{amp_str}] mA  dt={dt_ms:.0f}ms",
+                flush=True,
+            )
+
+        if si_now >= early_stop_si:
+            stopped_at = i + 1
+            stop_reason = f"SI >= {early_stop_si:.3f}"
+            if verbose:
+                print(f"  [early stop @ iter {i}] {stop_reason}", flush=True)
+            break
+        if early_stop_patience > 0 and stale_iters >= early_stop_patience:
+            stopped_at = i + 1
+            stop_reason = f"no loss improvement for {stale_iters} iters"
+            if verbose:
+                print(f"  [early stop @ iter {i}] {stop_reason} "
+                      f"(best_loss={best_loss:.4f})", flush=True)
+            break
+        if (early_stop_si_patience > 0
+                and best_si >= early_stop_si_floor
+                and stale_si_iters >= early_stop_si_patience):
+            stopped_at = i + 1
+            stop_reason = (f"SI plateau at SI={best_si:.3f}")
+            if verbose:
+                print(f"  [early stop @ iter {i}] {stop_reason}", flush=True)
+            break
+
+    return {
+        "amps":        best_amps,
+        "history":     history,
+        "stopped_at":  stopped_at,
+        "stop_reason": stop_reason,
+    }
+
+
 # ─────────────────────────────────── LBFGS + multi-restart rect optimization ─
 
 def _build_rect_loss_fn(

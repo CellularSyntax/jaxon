@@ -1,11 +1,29 @@
-"""Adam-FD vs autodiff-LBFGS head-to-head on the IDENTICAL amplitude problem,
-across a cohort of nerves -- supplementary evidence that finite differences are
-the appropriate gradient estimator for the (near-discrete) recruitment
-objective.
+"""Adam-FD vs Adam-autodiff head-to-head on the IDENTICAL amplitude problem,
+across a cohort of nerves.
+
+This is the *clean* A/B test.  Both arms use the SAME optimizer (Adam), the
+SAME cosine-LR schedule, the SAME global-norm gradient clip, the SAME init and
+early-stop, on the SAME (soft) loss surface -- only the gradient source
+differs (batched finite differences vs exact reverse-mode autodiff).  Any
+SI difference is therefore attributable to the gradient estimator, not to
+Adam-vs-L-BFGS (the confound in the earlier comparison, which made autodiff
+collapse to SI=0 via line-search overshoot on the near-flat binary proxy) and
+not to the loss surface.
+
+We deliberately run on the SOFT activation proxy
+(JAXLEY_FIBERS_SOFT_TEMPERATURE, default 0.15 set below): with the default
+binary proxy the autodiff gradient is ~0 except in a narrow threshold window
+-- exactly the saturation Hussain et al. (Nat Commun 2024) avoid by
+optimizing a smooth m-gate quotient, not a thresholded activation.  The
+hard selectivity index reported is always measured at threshold 0.5,
+independent of the proxy used for the gradient.
+
+Set H2H_AUTODIFF_OPT=lbfgs to additionally reproduce the fragile L-BFGS arm
+for the record.
 
 For one nerve (DUKE_SAMPLE_DIR), seed 0:
   1. smart-init magnitude probe -> a focal FIRING start (cohort init);
-  2. run Adam-FD and autodiff-LBFGS from that SAME start, same fixed budget,
+  2. run Adam-FD and Adam-autodiff from that SAME start, same fixed budget,
      early-stop disabled -> compare final SI, loss and wall-clock;
   3. write outputs/headtohead_fd_vs_autodiff/<nerve>.json.
 
@@ -86,9 +104,15 @@ if os.environ.get("HEADTOHEAD_AGGREGATE", "").strip() in ("1", "true", "yes"):
 
 
 # ── per-nerve mode (imports the sweep pipeline; needs DUKE_SAMPLE_DIR) ────────
-os.environ.setdefault("RECT_OPTIMIZER", "lbfgs")
 os.environ.setdefault("N_OPT_RECT", os.environ.get("HEADTOHEAD_STEPS", "15"))
 os.environ.setdefault("N_RESTARTS_RECT", "1")
+# Soft proxy so the loss is genuinely differentiable for BOTH arms.  Without
+# this the binary proxy's gradient is ~0 except at threshold and the autodiff
+# arm is being asked to descend a flat surface (the real reason the old LBFGS
+# arm collapsed).  Read at import time by jaxfibers.optim.optimizer.
+os.environ.setdefault("JAXLEY_FIBERS_SOFT_TEMPERATURE", "0.15")
+# Which autodiff arm: 'adam' (clean A/B, default) or 'lbfgs' (fragile, for record).
+_AUTODIFF_OPT = os.environ.get("H2H_AUTODIFF_OPT", "adam").strip().lower()
 
 import numpy as np
 import jax
@@ -96,7 +120,9 @@ import jax.numpy as jnp
 
 from experiments_v2 import selectivity_sweep_duke as S
 from jaxfibers.optim.optimizer import (
-    run_rect_optimization, run_rect_optimization_lbfgs,
+    run_rect_optimization,
+    run_rect_optimization_autodiff,
+    run_rect_optimization_lbfgs,
 )
 from jaxfibers.optim.losses import selectivity_index
 
@@ -177,24 +203,38 @@ def main() -> int:
         i = int(np.argmin(hl)); fd_si = float(hs[i]); fd_loss = float(hl[i])
 
         t0 = time.time()
-        lb = run_rect_optimization_lbfgs(
-            **common, n_restarts=1, n_steps=budget,
-            amp_init_mA=S.AMP_INIT_MA, rng_seed=0, amps_init_vector=amps_start,
-        )
-        jax.block_until_ready(lb["final_acts"]); lb_t = time.time() - t0
-        lb_si = float(selectivity_index(np.asarray(lb["final_acts"]), tgt))
-        lb_loss = float(lb["final_loss"])
+        if _AUTODIFF_OPT == "lbfgs":
+            ad = run_rect_optimization_lbfgs(
+                **common, n_restarts=1, n_steps=budget,
+                amp_init_mA=S.AMP_INIT_MA, rng_seed=0, amps_init_vector=amps_start,
+            )
+            jax.block_until_ready(ad["final_acts"]); lb_t = time.time() - t0
+            lb_si = float(selectivity_index(np.asarray(ad["final_acts"]), tgt))
+            lb_loss = float(ad["final_loss"])
+            ad_label = "LBFGS"
+        else:
+            ad = run_rect_optimization_autodiff(
+                **common, n_steps=budget, amps_init_vector=amps_start,
+                lr=S.ADAM_LR_MA,
+                early_stop_si=2.0, early_stop_patience=NEVER, early_stop_si_patience=0,
+            )
+            jax.block_until_ready(ad["history"]["acts"][-1]); lb_t = time.time() - t0
+            hl = np.asarray(ad["history"]["loss"]); hs = np.asarray(ad["history"]["si"])
+            j = int(np.argmin(hl)); lb_si = float(hs[j]); lb_loss = float(hl[j])
+            ad_label = "AD-Adam"
 
         rec.update(
             ok=True, n_fibers=N, K=K, T=T, n_target=int(tgt.sum()),
             start_si=start_si, best_mag=best_mag, pattern=pattern, budget=int(budget),
+            autodiff_opt=_AUTODIFF_OPT, soft_temperature=float(
+                os.environ.get("JAXLEY_FIBERS_SOFT_TEMPERATURE", "0.0")),
             fd_si=fd_si, fd_loss=fd_loss, fd_time=fd_t,
             lb_si=lb_si, lb_loss=lb_loss, lb_time=lb_t,
             dSI=fd_si - lb_si, peak_mb=gpu_peak_mb(),
         )
         out_path.write_text(json.dumps(rec, indent=2))
         print(f"  FD  SI={fd_si:+.3f} ({fd_t:.0f}s)   "
-              f"LBFGS SI={lb_si:+.3f} ({lb_t:.0f}s)   dSI={fd_si-lb_si:+.3f}",
+              f"{ad_label} SI={lb_si:+.3f} ({lb_t:.0f}s)   dSI={fd_si-lb_si:+.3f}",
               flush=True)
         return 0
     except Exception as e:                # noqa: BLE001

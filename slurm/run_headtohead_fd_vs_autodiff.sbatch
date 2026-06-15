@@ -11,8 +11,10 @@
 #SBATCH -o logs/%x-%j.out
 #SBATCH -e logs/%x-%j.err
 
-# Adam-FD vs autodiff-LBFGS head-to-head on the identical amplitude problem,
-# across 6 swine + 6 human nerves.  SHARDED (not an array) to stay within the
+# Adam-FD vs Adam-autodiff head-to-head on the identical amplitude problem,
+# across 6 swine + 6 human nerves.  Clean A/B: same optimizer/schedule/clip/
+# init/soft-proxy, only the gradient source differs.  Set H2H_AUTODIFF_OPT=lbfgs
+# to reproduce the fragile L-BFGS arm instead.  SHARDED (not an array) to stay within the
 # a100 QOS submit limit: each job owns one shard of the nerve list (nerve i if
 # i % N_SHARDS == SHARD_INDEX) and processes its nerves sequentially.
 #
@@ -84,7 +86,7 @@ export PROJECT_ROOT=\"${PROJECT_ROOT}\"
 export JAX_ENABLE_X64=1
 export SKIP_PYFIBERS_COMPILE=1
 export DUKE_SAMPLE_DIR=\"${SAMPLE_DIR}\"
-export RECT_OPTIMIZER=lbfgs
+export H2H_AUTODIFF_OPT=\"${H2H_AUTODIFF_OPT:-adam}\"
 export N_RESTARTS_RECT=1
 export HEADTOHEAD_STEPS=\"${HEADTOHEAD_STEPS:-15}\"
 export MAX_FIBERS=\"${MAX_FIBERS:-0}\"
@@ -102,7 +104,7 @@ export AMP_CLIP_HI=\"${AMP_CLIP_HI:-2.00}\"
 export ADAM_LR_MA=\"${ADAM_LR_MA:-0.005}\"
 export FD_EPS_MA=\"${FD_EPS_MA:-0.030}\"
 export PROBE_MAGS_MA=\"${PROBE_MAGS_MA:--0.02,-0.05,-0.10,-0.20,-0.40,-0.80,-1.20,-1.50}\"
-export JAXLEY_FIBERS_SOFT_TEMPERATURE=\"${JAXLEY_FIBERS_SOFT_TEMPERATURE:-0.1}\"
+export JAXLEY_FIBERS_SOFT_TEMPERATURE=\"${JAXLEY_FIBERS_SOFT_TEMPERATURE:-0.15}\"
 export JAXLEY_FIBERS_ENERGY_LAMBDA=\"${JAXLEY_FIBERS_ENERGY_LAMBDA:-1e-3}\"
 export TARGET_PARADIGM=cluster
 export CLUSTER_RADIUS_QUANTILE=\"${CLUSTER_RADIUS_QUANTILE:-0.32}\"

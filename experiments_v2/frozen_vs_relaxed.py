@@ -364,6 +364,10 @@ def main() -> int:
     # other and the aggregator can group them.
     loss_mode = os.environ.get("JAXLEY_FIBERS_LOSS", "linear")
     cfg = f"{_INIT_MODE}_{loss_mode}_bal{int(_BALANCE)}"
+    # Keep downsampled checks (MAX_FIBERS>0) in their own subdir so they can
+    # never shadow / collide with the full-population run via the claim logic.
+    if S.MAX_FIBERS and S.MAX_FIBERS > 0:
+        cfg += f"_n{S.MAX_FIBERS}"
     cfg_dir = OUT_DIR / cfg
     cfg_dir.mkdir(parents=True, exist_ok=True)
     out_path = cfg_dir / f"{name}.json"

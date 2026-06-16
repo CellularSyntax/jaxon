@@ -43,7 +43,11 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT_DIR = ROOT / "outputs" / "frozen_vs_relaxed"
+# Output root is configurable so a fresh full-dataset run (replacing the FD
+# results in the manuscript) can land in e.g. outputs_new without touching the
+# old outputs/.  Set FVR_OUT_ROOT=outputs_new.  The aggregator reads the same
+# env, so pass it there too.
+OUT_DIR = ROOT / os.environ.get("FVR_OUT_ROOT", "outputs") / "frozen_vs_relaxed"
 
 
 def _species(name: str) -> str:
@@ -197,6 +201,32 @@ _BALANCE = os.environ.get("FVR_BALANCE", "1").strip() not in ("0", "false", "")
 # Fixed dense step count, early stop disabled, so FD-vs-autodiff wall-clock is a
 # clean per-step comparison (both run the same number of iterations).
 _DENSE_STEPS = int(os.environ.get("FVR_DENSE_STEPS", "45"))
+# Stale-lock age (s): a claim left by a killed worker older than this is stolen
+# so the nerve is not orphaned.  Set comfortably above the per-nerve runtime.
+_LOCK_STALE_S = float(os.environ.get("FVR_LOCK_STALE_S", "7200"))
+
+
+def _claim(lock: Path) -> bool:
+    """Atomically claim a nerve via an exclusive lock file; steal it if it is a
+    stale (> _LOCK_STALE_S) leftover from a killed worker.  Returns True iff this
+    worker now owns the lock.  Lets any number of concurrent workers on any
+    partition (a100, b200, ...) divide the work without coordination."""
+    try:
+        os.close(os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+        return True
+    except FileExistsError:
+        try:
+            age = time.time() - lock.stat().st_mtime
+        except OSError:
+            return False
+        if age <= _LOCK_STALE_S:
+            return False
+        try:                      # steal the stale lock
+            lock.unlink()
+            os.close(os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+            return True
+        except (OSError, FileExistsError):
+            return False
 
 import numpy as np
 import jax
@@ -328,6 +358,22 @@ def main() -> int:
     cfg_dir = OUT_DIR / cfg
     cfg_dir.mkdir(parents=True, exist_ok=True)
     out_path = cfg_dir / f"{name}.json"
+
+    # Claim-based work distribution (see _claim).  A finished or intentionally
+    # skipped nerve is terminal; a previously errored one is left for retry.
+    if out_path.exists():
+        try:
+            prev = json.loads(out_path.read_text())
+            if prev.get("ok") or prev.get("skip"):
+                print(f"[fvr] {name}: already done, skip", flush=True)
+                return 0
+        except Exception:
+            pass
+    _lock = cfg_dir / f".{name}.lock"
+    if not _claim(_lock):
+        print(f"[fvr] {name}: claimed by another worker, skip", flush=True)
+        return 0
+
     print(f"[fvr] {name} ({_species(name)})  config={cfg}  "
           f"balance={'sum0' if _BALANCE else 'off'}  dense_steps={_DENSE_STEPS}",
           flush=True)
@@ -424,6 +470,13 @@ def main() -> int:
         out_path.write_text(json.dumps(rec, indent=2))
         print(f"  ERROR: {rec['error']}", flush=True)
         return 1
+    finally:
+        # Release the claim.  out_path (ok/skip/error) is the durable record;
+        # the lock is only mutual exclusion between concurrent workers.
+        try:
+            _lock.unlink()
+        except OSError:
+            pass
 
 
 if __name__ == "__main__":

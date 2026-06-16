@@ -11,23 +11,28 @@
 #SBATCH -o logs/%x-%j.out
 #SBATCH -e logs/%x-%j.err
 
-# Frozen-tripole vs relaxed-all-contacts sparsity, with the deployment penalty,
-# across 6 swine + 6 human nerves.  For each variant we measure dense SI (full
-# population ceiling) AND the sparse-optimized transfer SI (1 fiber/fascicle
-# re-scored on the full population); penalty = dense - transfer.  Only the
-# freeze differs; soft proxy + energy reg held identical so the relaxed run is
-# stable.  SHARDED to stay within the a100 QOS submit limit.
+# Frozen-tripole vs free-all-contacts sparsity (deployment penalty) AND the
+# FD-vs-autodiff gradient-source speedup, across the FULL nerve set on the full
+# fibre population.  Each worker walks the whole nerve list and atomically CLAIMS
+# each nerve (see _claim in frozen_vs_relaxed.py), so any number of jobs on any
+# partitions (a100 + b200 at once) divide the work without duplicating -- no
+# shard-index coordination needed.  This file's #SBATCH -q/--gres are just the
+# a100 default; override per partition on the sbatch command line.
 #
-# Submit 4 shards = 4 a100 in parallel:
+# Launch a mix of a100 + b200 workers into outputs_new/ (claim pool shared):
 #   bash slurm/submit_frozen_vs_relaxed.sh
-# or manually:
-#   for s in 0 1 2 3; do SHARD_INDEX=$s N_SHARDS=4 \
-#     sbatch slurm/run_frozen_vs_relaxed.sbatch; done
+# or by hand, e.g. 4 a100 + 2 b200:
+#   for i in 1 2 3 4; do FVR_OUT_ROOT=outputs_new \
+#     sbatch -q a100 --gres=gpu:a100:1 slurm/run_frozen_vs_relaxed.sbatch; done
+#   for i in 1 2;     do FVR_OUT_ROOT=outputs_new \
+#     sbatch -q b200 --gres=gpu:b200:1 slurm/run_frozen_vs_relaxed.sbatch; done
 #
-# Each task writes outputs/frozen_vs_relaxed/<nerve>.json.  Then:
-#   FROZEN_VS_RELAXED_AGGREGATE=1 python -m experiments_v2.frozen_vs_relaxed
+# Each task writes ${FVR_OUT_ROOT}/frozen_vs_relaxed/<cfg>/<nerve>.json.  Then:
+#   FVR_OUT_ROOT=outputs_new FROZEN_VS_RELAXED_AGGREGATE=1 \
+#     python -m experiments_v2.frozen_vs_relaxed
 #
-# Quick check on a downsampled population:  MAX_FIBERS=300 bash slurm/submit_frozen_vs_relaxed.sh
+# Quick downsampled check:  FVR_SAMPLES=sub-10_sam-1 MAX_FIBERS=300 \
+#     sbatch slurm/run_frozen_vs_relaxed.sbatch
 
 set -euo pipefail
 
@@ -46,24 +51,24 @@ else
   DUKE_VES_ROOT="${DUKE_VES_ROOT:-${PROJECT_ROOT}/duke_Ves}"
 fi
 
-# Nerve list: first 6 swine + first 6 human with a valid paths_Ve.npz.
-# Override with FVR_SAMPLES="name1,name2,...".
+# Nerve list: ALL swine + ALL human with a valid paths_Ve.npz (cap per species
+# with FVR_MAX_PER_SPECIES).  Override the list entirely with FVR_SAMPLES=...
 if [ -n "${FVR_SAMPLES:-}" ]; then
   IFS=',' read -r -a SAMPLES <<< "${FVR_SAMPLES}"
 else
   mapfile -t SWINE < <(for d in "${DUKE_VES_ROOT}"/*/; do
     n=$(basename "${d%/}"); [[ "$n" == human_* ]] && continue
-    [ -f "${d}/paths_Ve.npz" ] && echo "$n"; done | sort | head -n 6)
+    [ -f "${d}/paths_Ve.npz" ] && echo "$n"; done | sort | head -n "${FVR_MAX_PER_SPECIES:-100000}")
   mapfile -t HUMAN < <(for d in "${DUKE_VES_ROOT}"/*/; do
     n=$(basename "${d%/}"); [[ "$n" != human_* ]] && continue
-    [ -f "${d}/paths_Ve.npz" ] && echo "$n"; done | sort | head -n 6)
+    [ -f "${d}/paths_Ve.npz" ] && echo "$n"; done | sort | head -n "${FVR_MAX_PER_SPECIES:-100000}")
   SAMPLES=("${SWINE[@]}" "${HUMAN[@]}")
 fi
 
 N_SHARDS="${N_SHARDS:-1}"
 SHARD_INDEX="${SHARD_INDEX:-${SLURM_ARRAY_TASK_ID:-0}}"
-echo "Frozen-vs-relaxed: ${#SAMPLES[@]} nerves, shard ${SHARD_INDEX} of ${N_SHARDS}"
-echo "DUKE_VES_ROOT=${DUKE_VES_ROOT}  MAX_FIBERS=${MAX_FIBERS:-0 (full)}"
+echo "Frozen-vs-free: ${#SAMPLES[@]} nerves (claim-distributed), shard ${SHARD_INDEX}/${N_SHARDS}"
+echo "DUKE_VES_ROOT=${DUKE_VES_ROOT}  MAX_FIBERS=${MAX_FIBERS:-0 (full)}  OUT=${FVR_OUT_ROOT:-outputs}"
 
 for i in "${!SAMPLES[@]}"; do
   if [ $(( i % N_SHARDS )) -ne "${SHARD_INDEX}" ]; then continue; fi
@@ -89,6 +94,8 @@ export FVR_N_PER_FASC=\"${FVR_N_PER_FASC:-1}\"
 export FVR_VERBOSE=\"${FVR_VERBOSE:-0}\"
 export FVR_BALANCE=\"${FVR_BALANCE:-1}\"
 export FVR_DENSE_STEPS=\"${FVR_DENSE_STEPS:-45}\"
+export FVR_OUT_ROOT=\"${FVR_OUT_ROOT:-outputs}\"
+export FVR_LOCK_STALE_S=\"${FVR_LOCK_STALE_S:-7200}\"
 export MAX_FIBERS=\"${MAX_FIBERS:-0}\"
 export FIBER_DIAMETER_UM=\"${FIBER_DIAMETER_UM:-5.7}\"
 export N_NODES=\"${N_NODES:-21}\"

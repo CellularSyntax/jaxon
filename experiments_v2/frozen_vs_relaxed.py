@@ -68,7 +68,8 @@ def _summarize(rows, label) -> dict | None:
     soft_keys = ("transfer_si_frozen", "transfer_si_relaxed",
                  "penalty_frozen", "penalty_relaxed",
                  "dense_si_relaxed_autodiff", "t_dense_relaxed_fd",
-                 "t_dense_relaxed_autodiff", "speedup_fd_over_autodiff",
+                 "t_dense_relaxed_autodiff", "ms_iter_relaxed_fd",
+                 "ms_iter_relaxed_autodiff", "speedup_fd_over_autodiff",
                  "si_parity_autodiff_minus_fd", "n_active_relaxed_autodiff")
     for r in rows:
         for k in soft_keys:
@@ -95,15 +96,15 @@ def _summarize(rows, label) -> dict | None:
               f"{r['n_active_frozen']:>3d} {r['n_active_relaxed']:>3d}")
 
     # ---- METHODS: FD vs autodiff wall-clock on the free arm ----
-    has_timing = any(np.isfinite(r["t_dense_relaxed_autodiff"]) for r in rows)
+    has_timing = any(np.isfinite(r["ms_iter_relaxed_autodiff"]) for r in rows)
     if has_timing:
-        print("\n  [methods] FD vs autodiff (free arm, same warm init + steps)")
+        print("\n  [methods] FD vs autodiff (free arm, per-iter ms, compile excluded)")
         print(f"{'nerve':22s} {'sp':5s} {'N':>5}  "
-              f"{'tFD_s':>8} {'tAD_s':>8} {'speedup':>7}  "
+              f"{'msFD':>8} {'msAD':>8} {'speedup':>7}  "
               f"{'siFD':>6} {'siAD':>6} {'dSI':>6}")
         for r in sorted(rows, key=lambda r: (r["species"], r["nerve"])):
             print(f"{r['nerve']:22s} {r['species']:5s} {r['n_fibers']:>5d}  "
-                  f"{r['t_dense_relaxed_fd']:>8.1f} {r['t_dense_relaxed_autodiff']:>8.1f} "
+                  f"{r['ms_iter_relaxed_fd']:>8.0f} {r['ms_iter_relaxed_autodiff']:>8.0f} "
                   f"{r['speedup_fd_over_autodiff']:>6.2f}x  "
                   f"{r['dense_si_relaxed']:>+6.3f} {r['dense_si_relaxed_autodiff']:>+6.3f} "
                   f"{r['si_parity_autodiff_minus_fd']:>+6.3f}")
@@ -128,8 +129,8 @@ def _summarize(rows, label) -> dict | None:
             "penalty_relaxed":          med("penalty_relaxed"),
             "frozenDense_minus_relaxedTransfer": med_expr(_xvar),
             "n_active_relaxed":         med("n_active_relaxed"),
-            "t_dense_relaxed_fd":       med("t_dense_relaxed_fd"),
-            "t_dense_relaxed_autodiff": med("t_dense_relaxed_autodiff"),
+            "ms_iter_relaxed_fd":       med("ms_iter_relaxed_fd"),
+            "ms_iter_relaxed_autodiff": med("ms_iter_relaxed_autodiff"),
             "speedup_fd_over_autodiff": med("speedup_fd_over_autodiff"),
             "si_parity_autodiff_minus_fd": med("si_parity_autodiff_minus_fd"),
         }
@@ -145,9 +146,10 @@ def _summarize(rows, label) -> dict | None:
               f"{s['frozenDense_minus_relaxedTransfer']:+.3f}   "
               f"(>0: frozen headline beats free reduced-order on the dense nerve)")
         if np.isfinite(s["speedup_fd_over_autodiff"]):
-            print(f"      speedup (free)  FD {s['t_dense_relaxed_fd']:.1f}s / "
-                  f"autodiff {s['t_dense_relaxed_autodiff']:.1f}s = "
+            print(f"      per-iter (free)  FD {s['ms_iter_relaxed_fd']:.0f}ms / "
+                  f"autodiff {s['ms_iter_relaxed_autodiff']:.0f}ms = "
                   f"{s['speedup_fd_over_autodiff']:.2f}x   "
+                  f"(>1: autodiff faster per step)   "
                   f"SI parity (AD-FD) {s['si_parity_autodiff_minus_fd']:+.3f}")
     return summary
 
@@ -270,7 +272,11 @@ def _optimize(seed_in, relaxed: bool, grad_mode: str = "fd",
     grad_mode 'autodiff' -> run_rect_optimization_autodiff (exact reverse-mode);
         no freeze support, so the frozen arm must use 'fd'.
 
-    Returns (amps, in-sample SI, n_active, pattern, t_opt_seconds)."""
+    Returns (amps, in-sample SI, n_active, pattern, t_opt_seconds,
+    ms_per_iter) where ms_per_iter is the MEDIAN per-iteration wall time with
+    the first (XLA-compile) iteration excluded -- the honest per-step cost for
+    the FD-vs-autodiff comparison (total wall-clock is compile-contaminated,
+    which penalises the autodiff graph)."""
     cold = relaxed and _INIT_MODE == "zero"
     if cold:
         amps_init = None; pattern = "zero"; freeze = None
@@ -323,7 +329,10 @@ def _optimize(seed_in, relaxed: bool, grad_mode: str = "fd",
     acts = np.asarray(res["history"]["acts"][i])
     si = float(selectivity_index(acts, np.asarray(seed_in["target_mask"], bool)))
     n_active = int(np.sum(np.abs(amps) > 1e-6))
-    return amps, si, n_active, pattern, t_opt
+    dt_ms = list(res["history"].get("dt_ms", []))
+    ms_per_iter = (float(np.median(dt_ms[1:])) if len(dt_ms) > 1
+                   else (float(dt_ms[0]) if dt_ms else float("nan")))
+    return amps, si, n_active, pattern, t_opt, ms_per_iter
 
 
 def _sparse_seed(duke, dense_seed):
@@ -403,22 +412,24 @@ def main() -> int:
         #   frozen  : FD, probe init, zero contacts frozen   (headline)
         #   free FD : FD, all K free                          (science arm)
         #   free AD : autodiff, all K free                    (methods arm)
-        _af, dsi_f, na_f, patt, t_f = _optimize(
+        _af, dsi_f, na_f, patt, t_f, ms_f = _optimize(
             dense, relaxed=False, grad_mode="fd",
             n_steps=_DENSE_STEPS, warm_init=warm)
-        _ar, dsi_r, na_r, _, t_r_fd = _optimize(
+        _ar, dsi_r, na_r, _, t_r_fd, ms_r_fd = _optimize(
             dense, relaxed=True, grad_mode="fd",
             n_steps=_DENSE_STEPS, warm_init=warm, verbose=_VERBOSE)
         try:
-            _ad, dsi_r_ad, na_r_ad, _, t_r_ad = _optimize(
+            _ad, dsi_r_ad, na_r_ad, _, t_r_ad, ms_r_ad = _optimize(
                 dense, relaxed=True, grad_mode="autodiff",
                 n_steps=_DENSE_STEPS, warm_init=warm)
         except Exception as e:  # noqa: BLE001 -- autodiff arm is non-fatal
             print(f"  autodiff arm failed: {type(e).__name__}: {str(e)[:120]}",
                   flush=True)
-            dsi_r_ad = na_r_ad = t_r_ad = None
+            dsi_r_ad = na_r_ad = t_r_ad = ms_r_ad = None
 
-        speedup = (t_r_fd / t_r_ad) if (t_r_ad and t_r_ad > 0) else None
+        # Speedup from the COMPILE-EXCLUDED per-iter cost (the honest per-step
+        # number); total wall-clock kept for reference.
+        speedup = (ms_r_fd / ms_r_ad) if (ms_r_ad and ms_r_ad > 0) else None
         si_parity = (dsi_r_ad - dsi_r) if dsi_r_ad is not None else None
 
         # Record dense results first, so a failed sparse-transfer leg does NOT
@@ -438,6 +449,8 @@ def main() -> int:
             n_active_relaxed_autodiff=na_r_ad,
             t_dense_frozen_fd=t_f, t_dense_relaxed_fd=t_r_fd,
             t_dense_relaxed_autodiff=t_r_ad,
+            ms_iter_frozen_fd=ms_f, ms_iter_relaxed_fd=ms_r_fd,
+            ms_iter_relaxed_autodiff=ms_r_ad,
             speedup_fd_over_autodiff=speedup,
             si_parity_autodiff_minus_fd=si_parity,
         )
@@ -447,8 +460,8 @@ def main() -> int:
         if sp is None:
             rec["transfer_skip"] = "sparse subsample had no target fibers"
         else:
-            amps_sf, _, _, _, _ = _optimize(sp, relaxed=False, grad_mode="fd")
-            amps_sr, _, _, _, _ = _optimize(sp, relaxed=True, grad_mode="fd")
+            amps_sf, *_ = _optimize(sp, relaxed=False, grad_mode="fd")
+            amps_sr, *_ = _optimize(sp, relaxed=True, grad_mode="fd")
             tsi_f, _ = S._eval_amps_on_dense(amps_sf, dense, S.DT)
             tsi_r, _ = S._eval_amps_on_dense(amps_sr, dense, S.DT)
             tsi_f, tsi_r = float(tsi_f), float(tsi_r)
@@ -460,7 +473,8 @@ def main() -> int:
         out_path.write_text(json.dumps(rec, indent=2))
         tline = ("transfer skipped (small N)" if sp is None else
                  f"penalty F {rec['penalty_frozen']:+.3f} | R {rec['penalty_relaxed']:+.3f}")
-        sline = (f"speedup FD/AD {speedup:.2f}x (SI {dsi_r:+.3f} vs {dsi_r_ad:+.3f})"
+        sline = (f"per-iter FD {ms_r_fd:.0f}ms / AD {ms_r_ad:.0f}ms -> "
+                 f"{speedup:.2f}x (SI {dsi_r:+.3f} vs {dsi_r_ad:+.3f})"
                  if speedup is not None else "autodiff arm n/a")
         print(f"  dense SI  frozen {dsi_f:+.3f} | free {dsi_r:+.3f}   {tline}   "
               f"n_active {na_f}->{na_r}   {sline}", flush=True)

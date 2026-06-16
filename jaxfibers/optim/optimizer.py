@@ -368,7 +368,7 @@ def run_rect_optimization(
         return a - jnp.mean(a)
     amps = _balance(amps)
 
-    history   = {"loss": [], "bce": [], "si": [], "amps": [], "acts": []}
+    history   = {"loss": [], "bce": [], "si": [], "amps": [], "acts": [], "dt_ms": []}
     best_loss = float("inf")
     best_amps = np.array(amps)
 
@@ -440,6 +440,7 @@ def run_rect_optimization(
         history["si"].append(si_now)
         history["amps"].append(np.array(amps))
         history["acts"].append(acts_np)
+        history["dt_ms"].append((time.time() - t0) * 1000.0)  # per-iter wall time
         # ReduceLROnPlateau-style anneal: hold lr_cur until selective
         # (SI >= floor), then shrink it by plateau_lr_decay each time the
         # hard SI (tiebreak: lower loss) reaches a new best.
@@ -645,7 +646,7 @@ def run_rect_optimization_autodiff(
         return a - jnp.mean(a) if balance_currents else a
     amps = _balance(amps)
 
-    history   = {"loss": [], "bce": [], "si": [], "amps": [], "acts": []}
+    history   = {"loss": [], "bce": [], "si": [], "amps": [], "acts": [], "dt_ms": []}
     best_loss = float("inf")
     best_amps = np.array(amps)
 
@@ -681,6 +682,7 @@ def run_rect_optimization_autodiff(
         history["si"].append(si_now)
         history["amps"].append(np.array(amps))
         history["acts"].append(acts_np)
+        history["dt_ms"].append((time.time() - t0) * 1000.0)  # per-iter wall time
         if _PLATEAU and si_now >= plateau_si_floor:
             # ReduceLROnPlateau: once selective, monitor the smooth loss; if it
             # has not improved for plateau_patience steps, shrink the LR.  Held

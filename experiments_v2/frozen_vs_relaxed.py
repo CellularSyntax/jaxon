@@ -63,29 +63,44 @@ def _summarize(rows, label) -> dict | None:
     if not rows:
         return None
 
-    # Headline group (free-autodiff only): no frozen/free-FD arms.  Print the
-    # lean autodiff selectivity table instead of the frozen-vs-free comparison.
-    if all(r.get("dense_si_frozen") is None for r in rows):
+    # Headline group (free-autodiff, position sweep): each per-nerve record
+    # carries a per-position 'seeds' list -- no frozen/free-FD arms.  Print the
+    # lean per-position free-AD selectivity table instead of frozen-vs-free.
+    if all(r.get("seeds") is not None for r in rows):
         print(f"\n===== config: {label}   ({len(rows)} nerves, free-AD headline) =====")
-        print(f"{'nerve':22s} {'sp':5s} {'N':>5}  {'freeAD_SI':>9} {'ms/iter':>8} {'n_act':>5}")
+        print(f"{'nerve':22s} {'sp':5s} {'pos':>3} {'N':>6}  "
+              f"{'freeAD_SI':>9} {'ms/iter':>8} {'n_act':>5}")
+        flat = []  # (species, nerve, si)
         for r in sorted(rows, key=lambda r: (r["species"], r["nerve"])):
-            si = r.get("dense_si_relaxed_autodiff")
-            ms = r.get("ms_iter_relaxed_autodiff")
-            na = r.get("n_active_relaxed_autodiff")
-            print(f"{r['nerve']:22s} {r['species']:5s} {r['n_fibers']:>5d}  "
-                  f"{(si if si is not None else float('nan')):>+9.3f} "
-                  f"{(ms if ms is not None else float('nan')):>8.0f} "
-                  f"{(na if na is not None else -1):>5d}")
+            for sd in sorted(r.get("seeds", []), key=lambda d: d.get("position_idx", 0)):
+                si = sd.get("dense_si_relaxed_autodiff")
+                ms = sd.get("ms_iter_relaxed_autodiff")
+                na = sd.get("n_active_relaxed_autodiff")
+                print(f"{r['nerve']:22s} {r['species']:5s} "
+                      f"{sd.get('position_idx', -1):>3} {sd.get('n_fibers', 0):>6}  "
+                      f"{(si if si is not None else float('nan')):>+9.3f} "
+                      f"{(ms if ms is not None else float('nan')):>8.0f} "
+                      f"{(na if na is not None else -1):>5d}")
+                if si is not None:
+                    flat.append((r["species"], r["nerve"], float(si)))
         summary = {"n_nerves": len(rows), "by_species": {}}
         print("  [medians]")
         for sp in ("swine", "human"):
-            vals = [r["dense_si_relaxed_autodiff"] for r in rows
-                    if r["species"] == sp and r.get("dense_si_relaxed_autodiff") is not None]
-            if not vals:
+            pts = [(nv, si) for (s, nv, si) in flat if s == sp]
+            if not pts:
                 continue
-            m = float(np.median(vals))
-            summary["by_species"][sp] = {"n": len(vals), "dense_si_relaxed_autodiff": m}
-            print(f"  {sp:5s} (n={len(vals):2d}): free-AD dense SI {m:+.3f}")
+            pooled = float(np.median([si for _, si in pts]))
+            nerves = sorted({nv for nv, _ in pts})
+            per_nerve = [float(np.median([si for nv2, si in pts if nv2 == nv]))
+                         for nv in nerves]
+            mnn = float(np.median(per_nerve))
+            summary["by_species"][sp] = {
+                "n_nerves": len(nerves), "n_positions": len(pts),
+                "free_ad_si_pooled_median": pooled,
+                "free_ad_si_per_nerve_median": mnn,
+            }
+            print(f"  {sp:5s}: {len(nerves)} nerves, {len(pts)} positions  "
+                  f"free-AD SI median {pooled:+.3f} (pooled) / {mnn:+.3f} (per-nerve)")
         return summary
 
     NAN = float("nan")
@@ -239,6 +254,11 @@ _DENSE_STEPS = int(os.environ.get("FVR_DENSE_STEPS", "45"))
 #                 separate <cfg>_adheadline subdir so it never collides with a
 #                 speed run of the same nerve.
 _MODE = os.environ.get("FVR_MODE", "speed").strip().lower()
+# Headline mode sweeps the cluster POSITIONS via seeds (pos_idx = seed %
+# CLUSTER_N_POSITIONS).  The FD headline ran each of the 4 positions once, so the
+# default is seeds 0..3.  Speed mode ignores this (single position, seed 0).
+_SEED_START = int(os.environ.get("SEED_START", "0"))
+_SEED_END   = int(os.environ.get("SEED_END", "4"))
 # Stale-lock age (s): a claim left by a killed worker older than this is stolen
 # so the nerve is not orphaned.  Set comfortably above the per-nerve runtime.
 _LOCK_STALE_S = float(os.environ.get("FVR_LOCK_STALE_S", "7200"))
@@ -297,7 +317,8 @@ def _probe_init(seed_in):
 
 
 def _optimize(seed_in, relaxed: bool, grad_mode: str = "fd",
-              n_steps: int | None = None, warm_init=None, verbose: bool = False):
+              n_steps: int | None = None, warm_init=None,
+              early_stop: bool = False, verbose: bool = False):
     """Adam selectivity optimization, charge-balanced.
 
     relaxed=False (frozen): probe warm start, zero contacts frozen.  FD only.
@@ -337,17 +358,23 @@ def _optimize(seed_in, relaxed: bool, grad_mode: str = "fd",
     plateau = (dict(lr_mode="plateau", plateau_lr_decay=_ZERO_LR_DECAY,
                     plateau_si_floor=_ZERO_SI_FLOOR, plateau_patience=_ZERO_PATIENCE)
                if cold else dict())
-    # Early stop disabled so both gradient sources run the same fixed n_iters
-    # (clean wall-clock comparison); hard-best over the trajectory gives the SI.
+    # early_stop=False (speed timing): fixed n_iters, never stop, so the FD/AD
+    # wall-clock is a clean per-step comparison.  early_stop=True (headline SI
+    # sweep): stop once selective / stagnant -- matches the FD headline's
+    # EARLY_STOP_SI and keeps the 4-position sweep tractable.  Either way the
+    # reported SI is hard-best over the trajectory, so it's unaffected.
+    es = (dict(early_stop_si=S.EARLY_STOP_SI, early_stop_patience=20,
+               early_stop_si_patience=10)
+          if early_stop
+          else dict(early_stop_si=2.0, early_stop_patience=10**9,
+                    early_stop_si_patience=0))
     common = dict(
         fiber_statics_batch=seed_in["fs_batch"], state0_batch=seed_in["s0_batch"],
         Ve_unit=seed_in["Ve_unit"], pulse_mask=seed_in["pulse_mask"],
         node_indices=seed_in["node_indices"], target_mask=seed_in["target_mask"],
         weights=seed_in["weights"], dt=S.DT, n_steps=n_iters,
         amps_init_vector=amps_init, amp_init_mA=amp_init_mA, amp_clip=S.AMP_CLIP,
-        lr=lr, balance_currents=_BALANCE,
-        early_stop_si=2.0, early_stop_patience=10**9, early_stop_si_patience=0,
-        verbose=verbose,
+        lr=lr, balance_currents=_BALANCE, verbose=verbose, **es,
     )
     t0 = time.time()
     if grad_mode == "autodiff":
@@ -394,6 +421,60 @@ def _sparse_seed(duke, dense_seed):
     }
 
 
+def _run_headline(duke, name: str, out_path: Path, loss_mode: str) -> int:
+    """Headline mode: free-autodiff selectivity swept over the cluster positions
+    (seeds _SEED_START.._SEED_END-1), one optimisation per position, early-stop
+    on.  Writes one per-nerve JSON with a per-position 'seeds' list.  This is the
+    autodiff warm-start, charge-balanced result that replaces the FD dense
+    headline."""
+    print(f"  headline free-AD sweep: seeds {_SEED_START}..{_SEED_END - 1} "
+          f"({_SEED_END - _SEED_START} positions)", flush=True)
+    seed_rows = []
+    K = None
+    for s in range(_SEED_START, _SEED_END):
+        dense = S._build_seed(duke, seed=s, verbose=False)
+        if dense is None:
+            print(f"  seed {s}: no valid target at this position, skip", flush=True)
+            continue
+        N = int(np.asarray(dense["target_mask"]).size)
+        K = int(dense["Ve_unit"].shape[0])
+        warm = None
+        if _INIT_MODE != "zero":
+            pa = _probe_init(dense)
+            warm = (pa[0], pa[1])
+        _ad, si, na, patt, t_ad, ms_ad = _optimize(
+            dense, relaxed=True, grad_mode="autodiff", n_steps=_DENSE_STEPS,
+            warm_init=warm, early_stop=True, verbose=_VERBOSE)
+        pos = int(s % S.CLUSTER_N_POSITIONS)
+        print(f"  seed {s} (pos {pos}): N={N}  free-AD SI {si:+.3f}  "
+              f"({ms_ad:.0f} ms/iter, n_active {na})", flush=True)
+        seed_rows.append(dict(
+            seed=s, position_idx=pos, n_fibers=N, pattern=patt,
+            dense_si_relaxed_autodiff=si, ms_iter_relaxed_autodiff=ms_ad,
+            n_active_relaxed_autodiff=na, t_dense_relaxed_autodiff=t_ad))
+
+    rec = {"nerve": name, "species": _species(name)}
+    if not seed_rows:
+        rec.update(ok=False, skip="no valid target at any swept position")
+        out_path.write_text(json.dumps(rec, indent=2))
+        print(f"  SKIP: {rec['skip']}", flush=True)
+        return 0
+    si_vals = [r["dense_si_relaxed_autodiff"] for r in seed_rows]
+    rec.update(
+        ok=True, mode="headline", K=K, init_mode=_INIT_MODE, loss_mode=loss_mode,
+        balance=bool(_BALANCE), dense_steps=_DENSE_STEPS,
+        seed_start=_SEED_START, seed_end=_SEED_END, n_seeds=len(seed_rows),
+        soft_temperature=float(os.environ["JAXLEY_FIBERS_SOFT_TEMPERATURE"]),
+        energy_lambda=float(os.environ["JAXLEY_FIBERS_ENERGY_LAMBDA"]),
+        seeds=seed_rows,
+        dense_si_relaxed_autodiff_median=float(np.median(si_vals)),
+    )
+    out_path.write_text(json.dumps(rec, indent=2))
+    print(f"  [headline] {len(seed_rows)} position(s), median free-AD SI "
+          f"{float(np.median(si_vals)):+.3f}", flush=True)
+    return 0
+
+
 def main() -> int:
     name = S.SAMPLE_NAME
     # Per-config sub-directory so different configurations never overwrite each
@@ -435,6 +516,12 @@ def main() -> int:
             max_fibers=(S.MAX_FIBERS if S.MAX_FIBERS > 0 else None),
             subsample_seed=S.SUBSAMPLE_SEED, verbose=False,
         )
+
+        # Headline = free-autodiff swept over the cluster positions (its own
+        # per-seed path); speed = single position (seed 0), 3-arm + transfer.
+        if _MODE == "headline":
+            return _run_headline(duke, name, out_path, loss_mode)
+
         dense = S._build_seed(duke, seed=0, verbose=False)
         if dense is None:
             rec["skip"] = "no valid target at seed 0"

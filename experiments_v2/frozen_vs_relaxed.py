@@ -1,30 +1,31 @@
-"""Frozen-tripole vs relaxed-all-contacts sparsity, with the deployment penalty.
+"""Frozen-tripole vs free-all-contacts sparsity + FD-vs-autodiff speedup.
 
-The cohort headline optimizer ("Adam-FD-smart") warm-starts from a probe-
-selected tripole and then FREEZES the contacts the probe left at zero
-(freeze_zero_mask in run_rect_optimization), so 91% of seeds end on a
-3-contact pattern.  The freeze was added because, under the old binary
-proxy, unfrozen Adam drifted the zero contacts and flooded off-target
-fibers.  The soft proxy + energy regularization now counter that failure
-mode, so the question re-opens: if we let ALL K contacts move from the same
-tripolar warm start, do we get better selectivity -- or just overfit the
-sampled fibers and widen the deployment penalty?
+Two questions, one sweep, per nerve (warm probe init, charge-balanced cuff):
 
-This script answers both, per nerve, for a quick subset:
+  SCIENCE -- frozen vs free selectivity + deployment penalty
+    for variant in {frozen, free}:
+      dense_si    = optimize on the FULL population, score on it       (ceiling)
+      transfer_si = optimize on a SPARSE subsample (1 fiber/fascicle),
+                    then re-score those amps on the FULL population
+      penalty     = dense_si - transfer_si       (the paper's deployment penalty)
+    Only the freeze differs; optimizer/schedule/init/loss held identical.  A free
+    variant that lifts dense_si but inflates penalty is OVERFITTING the sampled
+    fibers -- which reframes frozen sparsity as protective regularization.
 
-  for variant in {frozen, relaxed}:
-    dense_si   = optimize on the FULL population, score on it          (ceiling)
-    transfer_si= optimize on a SPARSE subsample (1 fiber/fascicle),
-                 then re-score those amps on the FULL population
-    penalty    = dense_si - transfer_si        (the paper's deployment penalty)
-    n_active   = non-zero contacts in the dense solution
+  METHODS -- gradient-source speedup (same workload, free arm, K contacts)
+    The free arm is run with BOTH gradient sources:
+      FD       (run_rect_optimization)          -- K+1 forward passes / step
+      autodiff (run_rect_optimization_autodiff) -- 1 forward + 1 backward / step
+    Both are gradient descent (Adam); only the gradient source differs.  We log
+    wall-clock per nerve and confirm SI parity, so the speedup is attributable to
+    the gradient source, not the optimizer.  (The frozen arm is FD-only: the
+    autodiff path has no contact-freeze support, and the K=3 frozen case is the
+    regime where FD's K+1 forwards is cheap anyway.)
 
-Only the freeze differs between variants; optimizer, schedule, init, soft
-proxy and energy reg are held identical.  A relaxed variant that lifts
-dense_si but inflates penalty is OVERFITTING the sampled fibers -- which
-would reframe frozen sparsity as protective regularization, the paper's
-thesis.  One that lifts dense_si AND holds penalty is a genuinely better
-optimizer.
+Charge balance (balance_currents): the per-contact currents are projected onto
+sum=0 each step -- the physical multipolar-cuff Kirchhoff constraint.  Essential
+for the FREE arm: without it the unfrozen optimiser drifts into an unphysical
+all-same-sign monopolar field that fires the whole nerve.  FVR_BALANCE=0 to off.
 
 Aggregate per-nerve JSONs:
     FROZEN_VS_RELAXED_AGGREGATE=1 python -m experiments_v2.frozen_vs_relaxed
@@ -51,37 +52,57 @@ def _species(name: str) -> str:
 
 # ── aggregate mode: read per-nerve JSONs, print per-species summary (no JAX) ──
 def _summarize(rows, label) -> dict | None:
-    """Print the table + per-species medians for one config's rows; return its
-    summary dict (or None if no usable rows)."""
+    """Print the science + methods tables and per-species medians for one
+    config's rows; return its summary dict (or None if no usable rows)."""
     import numpy as np
     rows = [r for r in rows if r.get("ok")]
     if not rows:
         return None
-    # Coerce missing transfer/penalty (sparse leg skipped at small N) to NaN so
-    # formatting + nan-aware medians still work.
     NAN = float("nan")
+    # Coerce missing transfer/penalty/timing keys to NaN so formatting +
+    # nan-aware medians still work (sparse leg or autodiff arm may be absent).
+    soft_keys = ("transfer_si_frozen", "transfer_si_relaxed",
+                 "penalty_frozen", "penalty_relaxed",
+                 "dense_si_relaxed_autodiff", "t_dense_relaxed_fd",
+                 "t_dense_relaxed_autodiff", "speedup_fd_over_autodiff",
+                 "si_parity_autodiff_minus_fd", "n_active_relaxed_autodiff")
     for r in rows:
-        for k in ("transfer_si_frozen", "transfer_si_relaxed",
-                  "penalty_frozen", "penalty_relaxed"):
+        for k in soft_keys:
             if r.get(k) is None:
                 r[k] = NAN
 
     def _xvar(r):  # dense_si_frozen - transfer_si_relaxed (cross-variant)
         return r["dense_si_frozen"] - r["transfer_si_relaxed"]
 
+    # ---- SCIENCE: frozen vs free selectivity + deployment penalty ----
     print(f"\n===== config: {label}   ({len(rows)} nerves) =====")
+    print("  [science] frozen vs free  (denseR_ad = free arm, autodiff grad)")
     print(f"{'nerve':22s} {'sp':5s} {'N':>5}  "
-          f"{'denseF':>6} {'denseR':>6}  "
-          f"{'transF':>6} {'transR':>6}  "
-          f"{'penF':>6} {'penR':>6}  "
+          f"{'denseF':>6} {'denseR':>6} {'dnsRad':>6}  "
+          f"{'transF':>6} {'transR':>6}  {'penF':>6} {'penR':>6}  "
           f"{'Fd-Rt':>6}  {'naF':>3} {'naR':>3}")
     for r in sorted(rows, key=lambda r: (r["species"], r["nerve"])):
         print(f"{r['nerve']:22s} {r['species']:5s} {r['n_fibers']:>5d}  "
-              f"{r['dense_si_frozen']:>+6.3f} {r['dense_si_relaxed']:>+6.3f}  "
+              f"{r['dense_si_frozen']:>+6.3f} {r['dense_si_relaxed']:>+6.3f} "
+              f"{r['dense_si_relaxed_autodiff']:>+6.3f}  "
               f"{r['transfer_si_frozen']:>+6.3f} {r['transfer_si_relaxed']:>+6.3f}  "
               f"{r['penalty_frozen']:>+6.3f} {r['penalty_relaxed']:>+6.3f}  "
               f"{_xvar(r):>+6.3f}  "
               f"{r['n_active_frozen']:>3d} {r['n_active_relaxed']:>3d}")
+
+    # ---- METHODS: FD vs autodiff wall-clock on the free arm ----
+    has_timing = any(np.isfinite(r["t_dense_relaxed_autodiff"]) for r in rows)
+    if has_timing:
+        print("\n  [methods] FD vs autodiff (free arm, same warm init + steps)")
+        print(f"{'nerve':22s} {'sp':5s} {'N':>5}  "
+              f"{'tFD_s':>8} {'tAD_s':>8} {'speedup':>7}  "
+              f"{'siFD':>6} {'siAD':>6} {'dSI':>6}")
+        for r in sorted(rows, key=lambda r: (r["species"], r["nerve"])):
+            print(f"{r['nerve']:22s} {r['species']:5s} {r['n_fibers']:>5d}  "
+                  f"{r['t_dense_relaxed_fd']:>8.1f} {r['t_dense_relaxed_autodiff']:>8.1f} "
+                  f"{r['speedup_fd_over_autodiff']:>6.2f}x  "
+                  f"{r['dense_si_relaxed']:>+6.3f} {r['dense_si_relaxed_autodiff']:>+6.3f} "
+                  f"{r['si_parity_autodiff_minus_fd']:>+6.3f}")
 
     summary = {"n_nerves": len(rows), "by_species": {}}
     for sp in ("swine", "human"):
@@ -94,33 +115,40 @@ def _summarize(rows, label) -> dict | None:
             return float(np.nanmedian([fn(r) for r in sr]))
         summary["by_species"][sp] = {
             "n": len(sr),
-            "dense_si_frozen":     med("dense_si_frozen"),
-            "dense_si_relaxed":    med("dense_si_relaxed"),
-            "transfer_si_frozen":  med("transfer_si_frozen"),
-            "transfer_si_relaxed": med("transfer_si_relaxed"),
-            "penalty_frozen":      med("penalty_frozen"),
-            "penalty_relaxed":     med("penalty_relaxed"),
+            "dense_si_frozen":          med("dense_si_frozen"),
+            "dense_si_relaxed":         med("dense_si_relaxed"),
+            "dense_si_relaxed_autodiff": med("dense_si_relaxed_autodiff"),
+            "transfer_si_frozen":       med("transfer_si_frozen"),
+            "transfer_si_relaxed":      med("transfer_si_relaxed"),
+            "penalty_frozen":           med("penalty_frozen"),
+            "penalty_relaxed":          med("penalty_relaxed"),
             "frozenDense_minus_relaxedTransfer": med_expr(_xvar),
-            "n_active_relaxed":    med("n_active_relaxed"),
+            "n_active_relaxed":         med("n_active_relaxed"),
+            "t_dense_relaxed_fd":       med("t_dense_relaxed_fd"),
+            "t_dense_relaxed_autodiff": med("t_dense_relaxed_autodiff"),
+            "speedup_fd_over_autodiff": med("speedup_fd_over_autodiff"),
+            "si_parity_autodiff_minus_fd": med("si_parity_autodiff_minus_fd"),
         }
     print(f"  [medians]")
     for sp, s in summary["by_species"].items():
         print(f"  {sp:5s} (n={s['n']:2d}):")
-        print(f"      Leg 1 (no transfer)  dense SI  frozen {s['dense_si_frozen']:+.3f} "
-              f"-> relaxed {s['dense_si_relaxed']:+.3f}")
-        print(f"      Leg 2 (sparse->dense) transfer SI  frozen {s['transfer_si_frozen']:+.3f} "
-              f"-> relaxed {s['transfer_si_relaxed']:+.3f}   "
-              f"penalty  frozen {s['penalty_frozen']:+.3f} -> relaxed {s['penalty_relaxed']:+.3f}")
-        print(f"      cross-variant  frozen-dense - relaxed-transfer = "
+        print(f"      dense SI   frozen {s['dense_si_frozen']:+.3f} "
+              f"-> free {s['dense_si_relaxed']:+.3f}")
+        print(f"      transfer   frozen {s['transfer_si_frozen']:+.3f} "
+              f"-> free {s['transfer_si_relaxed']:+.3f}   "
+              f"penalty  frozen {s['penalty_frozen']:+.3f} -> free {s['penalty_relaxed']:+.3f}")
+        print(f"      cross-variant  frozen-dense - free-transfer = "
               f"{s['frozenDense_minus_relaxedTransfer']:+.3f}   "
-              f"(>0: frozen headline beats relaxed reduced-order on the dense nerve)")
-        print(f"      relaxed n_active {s['n_active_relaxed']:.0f}")
+              f"(>0: frozen headline beats free reduced-order on the dense nerve)")
+        if np.isfinite(s["speedup_fd_over_autodiff"]):
+            print(f"      speedup (free)  FD {s['t_dense_relaxed_fd']:.1f}s / "
+                  f"autodiff {s['t_dense_relaxed_autodiff']:.1f}s = "
+                  f"{s['speedup_fd_over_autodiff']:.2f}x   "
+                  f"SI parity (AD-FD) {s['si_parity_autodiff_minus_fd']:+.3f}")
     return summary
 
 
 def aggregate() -> int:
-    # Group per-nerve JSONs by their config sub-directory (init_loss); flat
-    # files written directly under OUT_DIR are grouped as "(root)".
     groups: dict[str, list] = {}
     for jp in sorted(OUT_DIR.rglob("*.json")):
         if jp.name == "summary.json":
@@ -149,36 +177,35 @@ if os.environ.get("FROZEN_VS_RELAXED_AGGREGATE", "").strip() in ("1", "true", "y
 
 # ── per-nerve mode (needs DUKE_SAMPLE_DIR) ────────────────────────────────────
 os.environ.setdefault("N_OPT_RECT", os.environ.get("FVR_STEPS", "15"))
-# Soft proxy + energy reg: these are what make the relaxed (unfrozen) run
-# stable.  Held identical for BOTH variants so the comparison isolates the
-# freeze.  Read at import by jaxfibers.optim.optimizer.
 os.environ.setdefault("JAXLEY_FIBERS_SOFT_TEMPERATURE", "0.15")
 os.environ.setdefault("JAXLEY_FIBERS_ENERGY_LAMBDA", "1e-3")
 # Sparse density for the transfer leg (paper's reduced-order = 1 fiber/fascicle).
 _N_PER_FASC = int(os.environ.get("FVR_N_PER_FASC", "1"))
-# Init for the RELAXED arm: 'warm' (probe-selected start, default) or 'zero'
-# (AxonML-style cold start, no probe).  The FROZEN arm is always warm -- there
-# is nothing to freeze in an all-zero pattern -- so INIT_MODE=zero turns this
-# into "warm+freeze headline vs fully cold AxonML-style relaxed optimiser".
-# Cold start needs a larger LR + more steps and the smooth quotient loss.
+# Init for the FREE arm: 'warm' (probe-selected start, default) or 'zero'
+# (cold start, no probe).  The FROZEN arm is always warm.
 _INIT_MODE  = os.environ.get("INIT_MODE", "warm").strip().lower()
 _ZERO_LR    = float(os.environ.get("ZERO_LR_MA", "0.1"))
 _ZERO_STEPS = int(os.environ.get("ZERO_STEPS", "200"))
-# ReduceLROnPlateau-style schedule for the cold ramp: hold LR until selective
-# (SI >= floor), then x decay on each new SI best.
 _ZERO_LR_DECAY = float(os.environ.get("ZERO_LR_DECAY", "0.6"))
 _ZERO_SI_FLOOR = float(os.environ.get("ZERO_SI_FLOOR", "0.5"))
 _ZERO_PATIENCE = int(os.environ.get("ZERO_PATIENCE", "10"))
-# FVR_VERBOSE=1 -> print the per-iteration trajectory of the (cold) relaxed
-# dense optimisation so the ramp can be watched escaping SI=0.
 _VERBOSE = os.environ.get("FVR_VERBOSE", "0").strip() in ("1", "true", "yes")
+# Charge-balance (Kirchhoff) projection: sum(contact currents)=0 each step.
+# Essential for the FREE arm (no monopolar exploit); applied to both arms over
+# the active/non-frozen contacts.  FVR_BALANCE=0 to disable.
+_BALANCE = os.environ.get("FVR_BALANCE", "1").strip() not in ("0", "false", "")
+# Fixed dense step count, early stop disabled, so FD-vs-autodiff wall-clock is a
+# clean per-step comparison (both run the same number of iterations).
+_DENSE_STEPS = int(os.environ.get("FVR_DENSE_STEPS", "45"))
 
 import numpy as np
 import jax
 import jax.numpy as jnp
 
 from experiments_v2 import selectivity_sweep_duke as S
-from jaxfibers.optim.optimizer import run_rect_optimization
+from jaxfibers.optim.optimizer import (
+    run_rect_optimization, run_rect_optimization_autodiff,
+)
 from jaxfibers.optim.losses import selectivity_index
 
 
@@ -201,43 +228,64 @@ def _probe_init(seed_in):
     return np.asarray(amps), str(pattern), float(best_mag)
 
 
-def _optimize(seed_in, relaxed: bool, verbose: bool = False):
-    """Adam-FD selectivity optimization.
+def _optimize(seed_in, relaxed: bool, grad_mode: str = "fd",
+              n_steps: int | None = None, warm_init=None, verbose: bool = False):
+    """Adam selectivity optimization, charge-balanced.
 
-    frozen (relaxed=False): probe warm start, zero contacts frozen.
-    relaxed (relaxed=True):
-        INIT_MODE=warm -> probe warm start, all K contacts free.
-        INIT_MODE=zero -> AxonML cold start (all 0 mA, no probe), larger LR +
-                          more steps to ramp from silence.
-    Returns (amps, in-sample SI, n_active, pattern)."""
+    relaxed=False (frozen): probe warm start, zero contacts frozen.  FD only.
+    relaxed=True  (free):   all K contacts free.
+        INIT_MODE=warm -> probe warm start (reused via warm_init if provided).
+        INIT_MODE=zero -> cold start (all 0 mA, no probe), ReduceLROnPlateau ramp.
+    grad_mode 'fd' -> run_rect_optimization (finite-difference gradient).
+    grad_mode 'autodiff' -> run_rect_optimization_autodiff (exact reverse-mode);
+        no freeze support, so the frozen arm must use 'fd'.
+
+    Returns (amps, in-sample SI, n_active, pattern, t_opt_seconds)."""
     cold = relaxed and _INIT_MODE == "zero"
     if cold:
         amps_init = None; pattern = "zero"; freeze = None
-        lr = _ZERO_LR; n_iters = _ZERO_STEPS; amp_init_mA = 0.0
+        lr = _ZERO_LR
+        n_iters = n_steps if n_steps is not None else _ZERO_STEPS
+        amp_init_mA = 0.0
     else:
-        amps_init, pattern, _mag = _probe_init(seed_in)
+        if warm_init is not None:
+            amps_init, pattern = warm_init
+        else:
+            amps_init, pattern, _mag = _probe_init(seed_in)
         freeze = None if relaxed else (np.abs(amps_init) < 1e-9)
         lr = S.ADAM_LR_MA
-        n_iters = max(int(os.environ.get("N_OPT_RECT", "15")) * 3, 30)
+        n_iters = (n_steps if n_steps is not None
+                   else max(int(os.environ.get("N_OPT_RECT", "15")) * 3, 30))
         amp_init_mA = S.AMP_INIT_MA
-    # Cold start: ReduceLROnPlateau schedule + disable the loss/SI-plateau early
-    # stops so the long ramp from silence is not cut short before it is selective.
-    extra = (dict(lr_mode="plateau", plateau_lr_decay=_ZERO_LR_DECAY,
-                  plateau_si_floor=_ZERO_SI_FLOOR, plateau_patience=_ZERO_PATIENCE,
-                  early_stop_patience=10**9, early_stop_si_patience=0)
-             if cold else dict())
-    res = run_rect_optimization(
+
+    if grad_mode == "autodiff" and freeze is not None:
+        raise ValueError("autodiff path has no freeze support; the frozen arm "
+                         "must use grad_mode='fd'")
+
+    plateau = (dict(lr_mode="plateau", plateau_lr_decay=_ZERO_LR_DECAY,
+                    plateau_si_floor=_ZERO_SI_FLOOR, plateau_patience=_ZERO_PATIENCE)
+               if cold else dict())
+    # Early stop disabled so both gradient sources run the same fixed n_iters
+    # (clean wall-clock comparison); hard-best over the trajectory gives the SI.
+    common = dict(
         fiber_statics_batch=seed_in["fs_batch"], state0_batch=seed_in["s0_batch"],
         Ve_unit=seed_in["Ve_unit"], pulse_mask=seed_in["pulse_mask"],
         node_indices=seed_in["node_indices"], target_mask=seed_in["target_mask"],
         weights=seed_in["weights"], dt=S.DT, n_steps=n_iters,
         amps_init_vector=amps_init, amp_init_mA=amp_init_mA, amp_clip=S.AMP_CLIP,
-        lr=lr, fd_eps=S.FD_EPS_SMART_MA,
-        freeze_zero_mask=freeze, early_stop_si=S.EARLY_STOP_SI, verbose=verbose,
-        **extra,
+        lr=lr, balance_currents=_BALANCE,
+        early_stop_si=2.0, early_stop_patience=10**9, early_stop_si_patience=0,
+        verbose=verbose,
     )
-    # Hard-best: pick the iterate with the highest SI, tiebroken by lowest loss
-    # (mirrors Hussain's WBCE-primary / WQ-tiebreak selection).
+    t0 = time.time()
+    if grad_mode == "autodiff":
+        res = run_rect_optimization_autodiff(**common, **plateau)
+    else:
+        res = run_rect_optimization(
+            **common, fd_eps=S.FD_EPS_SMART_MA, freeze_zero_mask=freeze, **plateau)
+    t_opt = time.time() - t0
+
+    # Hard-best: highest SI, tiebroken by lowest loss (Hussain WBCE/WQ style).
     loss = np.asarray(res["history"]["loss"])
     si_hist = np.asarray(res["history"]["si"])
     i = int(np.lexsort((loss, -si_hist))[0])
@@ -245,7 +293,7 @@ def _optimize(seed_in, relaxed: bool, verbose: bool = False):
     acts = np.asarray(res["history"]["acts"][i])
     si = float(selectivity_index(acts, np.asarray(seed_in["target_mask"], bool)))
     n_active = int(np.sum(np.abs(amps) > 1e-6))
-    return amps, si, n_active, pattern
+    return amps, si, n_active, pattern, t_opt
 
 
 def _sparse_seed(duke, dense_seed):
@@ -273,13 +321,16 @@ def _sparse_seed(duke, dense_seed):
 
 def main() -> int:
     name = S.SAMPLE_NAME
-    # Per-config sub-directory (relaxed-arm init + loss) so different
-    # configurations never overwrite each other and the aggregator can group.
-    cfg = f"{_INIT_MODE}_{os.environ.get('JAXLEY_FIBERS_LOSS', 'linear')}"
+    # Per-config sub-directory so different configurations never overwrite each
+    # other and the aggregator can group them.
+    loss_mode = os.environ.get("JAXLEY_FIBERS_LOSS", "linear")
+    cfg = f"{_INIT_MODE}_{loss_mode}_bal{int(_BALANCE)}"
     cfg_dir = OUT_DIR / cfg
     cfg_dir.mkdir(parents=True, exist_ok=True)
     out_path = cfg_dir / f"{name}.json"
-    print(f"[fvr] {name} ({_species(name)})  config={cfg}", flush=True)
+    print(f"[fvr] {name} ({_species(name)})  config={cfg}  "
+          f"balance={'sum0' if _BALANCE else 'off'}  dense_steps={_DENSE_STEPS}",
+          flush=True)
     rec = {"nerve": name, "species": _species(name), "ok": False}
     try:
         duke = S.load_duke_sample(
@@ -295,36 +346,63 @@ def main() -> int:
             return 0
         N = int(np.asarray(dense["target_mask"]).size)
 
-        # Dense ceilings for both variants.  Watch the (cold) relaxed ramp when
-        # FVR_VERBOSE=1 -- that is the trajectory that should escape SI=0.
-        t0 = time.time()
-        _af, dsi_f, na_f, patt = _optimize(dense, relaxed=False)
-        _ar, dsi_r, na_r, _    = _optimize(dense, relaxed=True, verbose=_VERBOSE)
-        t_dense = time.time() - t0
+        # Probe warm start once; reuse for all three dense arms so the FD/autodiff
+        # free arms start identically (SI parity meaningful, timing isolates grad).
+        warm = None
+        if not (_INIT_MODE == "zero"):
+            pa = _probe_init(dense)
+            warm = (pa[0], pa[1])
 
-        # Always record the dense results first, so a failed sparse-transfer leg
-        # (possible at very small N) does NOT discard the dense comparison.
+        # Dense ceilings.
+        #   frozen  : FD, probe init, zero contacts frozen   (headline)
+        #   free FD : FD, all K free                          (science arm)
+        #   free AD : autodiff, all K free                    (methods arm)
+        _af, dsi_f, na_f, patt, t_f = _optimize(
+            dense, relaxed=False, grad_mode="fd",
+            n_steps=_DENSE_STEPS, warm_init=warm)
+        _ar, dsi_r, na_r, _, t_r_fd = _optimize(
+            dense, relaxed=True, grad_mode="fd",
+            n_steps=_DENSE_STEPS, warm_init=warm, verbose=_VERBOSE)
+        try:
+            _ad, dsi_r_ad, na_r_ad, _, t_r_ad = _optimize(
+                dense, relaxed=True, grad_mode="autodiff",
+                n_steps=_DENSE_STEPS, warm_init=warm)
+        except Exception as e:  # noqa: BLE001 -- autodiff arm is non-fatal
+            print(f"  autodiff arm failed: {type(e).__name__}: {str(e)[:120]}",
+                  flush=True)
+            dsi_r_ad = na_r_ad = t_r_ad = None
+
+        speedup = (t_r_fd / t_r_ad) if (t_r_ad and t_r_ad > 0) else None
+        si_parity = (dsi_r_ad - dsi_r) if dsi_r_ad is not None else None
+
+        # Record dense results first, so a failed sparse-transfer leg does NOT
+        # discard the dense comparison.
         rec.update(
             ok=True, n_fibers=N, K=int(dense["Ve_unit"].shape[0]),
             n_per_fascicle=_N_PER_FASC, pattern=patt,
-            init_mode=_INIT_MODE,
-            loss_mode=os.environ.get("JAXLEY_FIBERS_LOSS", "linear"),
+            init_mode=_INIT_MODE, loss_mode=loss_mode, balance=bool(_BALANCE),
+            dense_steps=_DENSE_STEPS,
             soft_temperature=float(os.environ["JAXLEY_FIBERS_SOFT_TEMPERATURE"]),
             energy_lambda=float(os.environ["JAXLEY_FIBERS_ENERGY_LAMBDA"]),
             dense_si_frozen=dsi_f, dense_si_relaxed=dsi_r,
+            dense_si_relaxed_autodiff=dsi_r_ad,
             transfer_si_frozen=None, transfer_si_relaxed=None,
             penalty_frozen=None, penalty_relaxed=None,
             n_active_frozen=na_f, n_active_relaxed=na_r,
-            t_dense_s=t_dense,
+            n_active_relaxed_autodiff=na_r_ad,
+            t_dense_frozen_fd=t_f, t_dense_relaxed_fd=t_r_fd,
+            t_dense_relaxed_autodiff=t_r_ad,
+            speedup_fd_over_autodiff=speedup,
+            si_parity_autodiff_minus_fd=si_parity,
         )
 
-        # Sparse-optimized transfer for both variants -> deployment penalty.
+        # Sparse-optimized transfer (FD, both variants) -> deployment penalty.
         sp = _sparse_seed(duke, dense)
         if sp is None:
             rec["transfer_skip"] = "sparse subsample had no target fibers"
         else:
-            amps_sf, _, _, _ = _optimize(sp, relaxed=False)
-            amps_sr, _, _, _ = _optimize(sp, relaxed=True)
+            amps_sf, _, _, _, _ = _optimize(sp, relaxed=False, grad_mode="fd")
+            amps_sr, _, _, _, _ = _optimize(sp, relaxed=True, grad_mode="fd")
             tsi_f, _ = S._eval_amps_on_dense(amps_sf, dense, S.DT)
             tsi_r, _ = S._eval_amps_on_dense(amps_sr, dense, S.DT)
             tsi_f, tsi_r = float(tsi_f), float(tsi_r)
@@ -335,10 +413,11 @@ def main() -> int:
 
         out_path.write_text(json.dumps(rec, indent=2))
         tline = ("transfer skipped (small N)" if sp is None else
-                 f"penalty  frozen {rec['penalty_frozen']:+.3f} | "
-                 f"relaxed {rec['penalty_relaxed']:+.3f}")
-        print(f"  dense SI  frozen {dsi_f:+.3f} | relaxed {dsi_r:+.3f}   "
-              f"{tline}   n_active {na_f}->{na_r}", flush=True)
+                 f"penalty F {rec['penalty_frozen']:+.3f} | R {rec['penalty_relaxed']:+.3f}")
+        sline = (f"speedup FD/AD {speedup:.2f}x (SI {dsi_r:+.3f} vs {dsi_r_ad:+.3f})"
+                 if speedup is not None else "autodiff arm n/a")
+        print(f"  dense SI  frozen {dsi_f:+.3f} | free {dsi_r:+.3f}   {tline}   "
+              f"n_active {na_f}->{na_r}   {sline}", flush=True)
         return 0
     except Exception as e:  # noqa: BLE001
         rec["error"] = f"{type(e).__name__}: {str(e)[:200]}"

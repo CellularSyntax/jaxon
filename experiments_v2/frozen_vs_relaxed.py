@@ -49,6 +49,15 @@ ROOT = Path(__file__).resolve().parent.parent
 # env, so pass it there too.
 OUT_DIR = ROOT / os.environ.get("FVR_OUT_ROOT", "outputs") / "frozen_vs_relaxed"
 
+# Degenerate-target threshold.  A position whose TARGET FRACTION exceeds this is
+# ill-posed -- almost no off-target to spare, so selectivity is impossible for
+# ANY method (e.g. the 96%-target nerve) -- and is excluded from the reported
+# medians.  This is a property of the target DEFINITION, not the achieved SI:
+# filtering on SI>=0.5 instead would also silently drop solver failures on
+# SELECTABLE targets, biasing the result optimistically.  Defined before the
+# aggregate early-exit so _summarize can use it.
+_MAX_TGT_FRAC = float(os.environ.get("FVR_MAX_TGT_FRAC", "0.6"))
+
 
 def _species(name: str) -> str:
     return "human" if name.startswith("human") else "swine"
@@ -68,28 +77,51 @@ def _summarize(rows, label) -> dict | None:
     # lean per-position free-AD selectivity table instead of frozen-vs-free.
     if all(r.get("seeds") is not None for r in rows):
         print(f"\n===== config: {label}   ({len(rows)} nerves, free-AD headline) =====")
-        print(f"{'nerve':22s} {'sp':5s} {'pos':>3} {'N':>6}  "
+        print(f"  excluding positions with target fraction > {100*_MAX_TGT_FRAC:.0f}% "
+              f"(degenerate / ill-posed)")
+        print(f"{'nerve':22s} {'sp':5s} {'pos':>3} {'N':>6} {'tgt%':>5} "
               f"{'freeAD_SI':>9} {'ms/iter':>8} {'n_act':>5}")
-        flat = []  # (species, nerve, si)
+        flat = []          # (species, nerve, si) -- well-posed positions only
+        n_degen = n_unknown = 0
         for r in sorted(rows, key=lambda r: (r["species"], r["nerve"])):
             for sd in sorted(r.get("seeds", []), key=lambda d: d.get("position_idx", 0)):
                 si = sd.get("dense_si_relaxed_autodiff")
                 ms = sd.get("ms_iter_relaxed_autodiff")
                 na = sd.get("n_active_relaxed_autodiff")
+                frac = sd.get("target_fraction")
+                # degenerate flag, or recompute from fraction; None = pre-fix record
+                if frac is None and sd.get("degenerate") is None:
+                    degen, mark, n_unknown = None, "?", n_unknown + 1
+                else:
+                    degen = bool(sd.get("degenerate")
+                                 if sd.get("degenerate") is not None
+                                 else frac > _MAX_TGT_FRAC)
+                    mark = "X" if degen else " "
                 print(f"{r['nerve']:22s} {r['species']:5s} "
-                      f"{sd.get('position_idx', -1):>3} {sd.get('n_fibers', 0):>6}  "
+                      f"{sd.get('position_idx', -1):>3} {sd.get('n_fibers', 0):>6} "
+                      f"{(100*frac if frac is not None else float('nan')):>4.0f}{mark} "
                       f"{(si if si is not None else float('nan')):>+9.3f} "
                       f"{(ms if ms is not None else float('nan')):>8.0f} "
                       f"{(na if na is not None else -1):>5d}")
-                if si is not None:
+                if si is None:
+                    continue
+                if degen:
+                    n_degen += 1
+                else:                      # well-posed (or unknown -> kept, flagged)
                     flat.append((r["species"], r["nerve"], float(si)))
-        summary = {"n_nerves": len(rows), "by_species": {}}
-        print("  [medians]")
+        summary = {"n_nerves": len(rows), "max_tgt_frac": _MAX_TGT_FRAC,
+                   "n_excluded_degenerate": n_degen,
+                   "n_positions_missing_fraction": n_unknown, "by_species": {}}
+        print(f"  excluded {n_degen} degenerate position(s)"
+              + (f"; {n_unknown} pre-fix position(s) have no target_fraction "
+                 f"(not excluded -- backfill/rerun to filter them)" if n_unknown else ""))
+        print("  [medians, well-posed positions only]")
         for sp in ("swine", "human"):
             pts = [(nv, si) for (s, nv, si) in flat if s == sp]
             if not pts:
                 continue
             pooled = float(np.median([si for _, si in pts]))
+            frac_ok = float(np.mean([si >= 0.5 for _, si in pts]))   # success-rate stat
             nerves = sorted({nv for nv, _ in pts})
             per_nerve = [float(np.median([si for nv2, si in pts if nv2 == nv]))
                          for nv in nerves]
@@ -98,9 +130,11 @@ def _summarize(rows, label) -> dict | None:
                 "n_nerves": len(nerves), "n_positions": len(pts),
                 "free_ad_si_pooled_median": pooled,
                 "free_ad_si_per_nerve_median": mnn,
+                "frac_positions_si_ge_0p5": frac_ok,
             }
             print(f"  {sp:5s}: {len(nerves)} nerves, {len(pts)} positions  "
-                  f"free-AD SI median {pooled:+.3f} (pooled) / {mnn:+.3f} (per-nerve)")
+                  f"free-AD SI median {pooled:+.3f} (pooled) / {mnn:+.3f} (per-nerve)  "
+                  f"[{100*frac_ok:.0f}% reach SI>=0.5]")
         return summary
 
     NAN = float("nan")
@@ -421,6 +455,48 @@ def _sparse_seed(duke, dense_seed):
     }
 
 
+def _backfill(out_path: Path) -> int:
+    """Patch an existing headline JSON in place with per-position target_fraction
+    (+ n_target/n_off + degenerate), WITHOUT re-optimising -- for records written
+    before the fraction was recorded.  Loads geometry only; idempotent (a record
+    already carrying target_fraction is skipped before the load).  Run with the
+    SAME MAX_FIBERS as the original so the rebuilt seed matches what was optimised."""
+    name = S.SAMPLE_NAME
+    if not out_path.exists():
+        print(f"[backfill] {name}: no JSON, skip", flush=True)
+        return 0
+    try:
+        rec = json.loads(out_path.read_text())
+    except Exception:
+        print(f"[backfill] {name}: unreadable JSON, skip", flush=True)
+        return 0
+    seeds = rec.get("seeds")
+    if not rec.get("ok") or not seeds:
+        print(f"[backfill] {name}: nothing to backfill", flush=True)
+        return 0
+    if all(sd.get("target_fraction") is not None for sd in seeds):
+        print(f"[backfill] {name}: already has target_fraction", flush=True)
+        return 0
+    duke = S.load_duke_sample(
+        S.SAMPLE_PATH, fiber_diam_um=S.FIBER_DIAMETER_UM, n_nodes=S.N_NODES,
+        max_fibers=(S.MAX_FIBERS if S.MAX_FIBERS > 0 else None),
+        subsample_seed=S.SUBSAMPLE_SEED, verbose=False)
+    n_patched = 0
+    for sd in seeds:
+        dense = S._build_seed(duke, seed=int(sd["seed"]), verbose=False)
+        if dense is None:
+            continue
+        tm = np.asarray(dense["target_mask"], bool)
+        frac = float(tm.sum()) / max(tm.size, 1)
+        sd["target_fraction"] = frac
+        sd["n_target"] = int(tm.sum()); sd["n_off"] = int((~tm).sum())
+        sd["degenerate"] = bool(frac > _MAX_TGT_FRAC)
+        n_patched += 1
+    out_path.write_text(json.dumps(rec, indent=2))
+    print(f"[backfill] {name}: patched {n_patched}/{len(seeds)} positions", flush=True)
+    return 0
+
+
 def _run_headline(duke, name: str, out_path: Path, loss_mode: str) -> int:
     """Headline mode: free-autodiff selectivity swept over the cluster positions
     (seeds _SEED_START.._SEED_END-1), one optimisation per position, early-stop
@@ -436,7 +512,10 @@ def _run_headline(duke, name: str, out_path: Path, loss_mode: str) -> int:
         if dense is None:
             print(f"  seed {s}: no valid target at this position, skip", flush=True)
             continue
-        N = int(np.asarray(dense["target_mask"]).size)
+        tm = np.asarray(dense["target_mask"], bool)
+        N = int(tm.size)
+        frac = float(tm.sum()) / max(N, 1)
+        degen = bool(frac > _MAX_TGT_FRAC)
         K = int(dense["Ve_unit"].shape[0])
         warm = None
         if _INIT_MODE != "zero":
@@ -446,10 +525,13 @@ def _run_headline(duke, name: str, out_path: Path, loss_mode: str) -> int:
             dense, relaxed=True, grad_mode="autodiff", n_steps=_DENSE_STEPS,
             warm_init=warm, early_stop=True, verbose=_VERBOSE)
         pos = int(s % S.CLUSTER_N_POSITIONS)
-        print(f"  seed {s} (pos {pos}): N={N}  free-AD SI {si:+.3f}  "
+        print(f"  seed {s} (pos {pos}): N={N}  tgt={100*frac:.0f}%"
+              f"{' DEGENERATE' if degen else ''}  free-AD SI {si:+.3f}  "
               f"({ms_ad:.0f} ms/iter, n_active {na})", flush=True)
         seed_rows.append(dict(
             seed=s, position_idx=pos, n_fibers=N, pattern=patt,
+            target_fraction=frac, n_target=int(tm.sum()), n_off=int((~tm).sum()),
+            degenerate=degen,
             dense_si_relaxed_autodiff=si, ms_iter_relaxed_autodiff=ms_ad,
             n_active_relaxed_autodiff=na, t_dense_relaxed_autodiff=t_ad))
 
@@ -481,7 +563,7 @@ def main() -> int:
     # other and the aggregator can group them.
     loss_mode = os.environ.get("JAXLEY_FIBERS_LOSS", "linear")
     cfg = f"{_INIT_MODE}_{loss_mode}_bal{int(_BALANCE)}"
-    if _MODE == "headline":
+    if _MODE in ("headline", "backfill"):
         cfg += "_adheadline"   # free-autodiff-only; never collide with a speed run
     # Keep downsampled checks (MAX_FIBERS>0) in their own subdir so they can
     # never shadow / collide with the full-population run via the claim logic.
@@ -490,6 +572,11 @@ def main() -> int:
     cfg_dir = OUT_DIR / cfg
     cfg_dir.mkdir(parents=True, exist_ok=True)
     out_path = cfg_dir / f"{name}.json"
+
+    # Backfill mode: patch target_fraction into an existing headline JSON without
+    # re-optimising (bypasses the claim/already-done logic on purpose).
+    if _MODE == "backfill":
+        return _backfill(out_path)
 
     # Claim-based work distribution (see _claim).  A finished or intentionally
     # skipped nerve is terminal; a previously errored one is left for retry.

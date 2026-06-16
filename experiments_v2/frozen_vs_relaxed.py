@@ -62,6 +62,32 @@ def _summarize(rows, label) -> dict | None:
     rows = [r for r in rows if r.get("ok")]
     if not rows:
         return None
+
+    # Headline group (free-autodiff only): no frozen/free-FD arms.  Print the
+    # lean autodiff selectivity table instead of the frozen-vs-free comparison.
+    if all(r.get("dense_si_frozen") is None for r in rows):
+        print(f"\n===== config: {label}   ({len(rows)} nerves, free-AD headline) =====")
+        print(f"{'nerve':22s} {'sp':5s} {'N':>5}  {'freeAD_SI':>9} {'ms/iter':>8} {'n_act':>5}")
+        for r in sorted(rows, key=lambda r: (r["species"], r["nerve"])):
+            si = r.get("dense_si_relaxed_autodiff")
+            ms = r.get("ms_iter_relaxed_autodiff")
+            na = r.get("n_active_relaxed_autodiff")
+            print(f"{r['nerve']:22s} {r['species']:5s} {r['n_fibers']:>5d}  "
+                  f"{(si if si is not None else float('nan')):>+9.3f} "
+                  f"{(ms if ms is not None else float('nan')):>8.0f} "
+                  f"{(na if na is not None else -1):>5d}")
+        summary = {"n_nerves": len(rows), "by_species": {}}
+        print("  [medians]")
+        for sp in ("swine", "human"):
+            vals = [r["dense_si_relaxed_autodiff"] for r in rows
+                    if r["species"] == sp and r.get("dense_si_relaxed_autodiff") is not None]
+            if not vals:
+                continue
+            m = float(np.median(vals))
+            summary["by_species"][sp] = {"n": len(vals), "dense_si_relaxed_autodiff": m}
+            print(f"  {sp:5s} (n={len(vals):2d}): free-AD dense SI {m:+.3f}")
+        return summary
+
     NAN = float("nan")
     # Coerce missing transfer/penalty/timing keys to NaN so formatting +
     # nan-aware medians still work (sparse leg or autodiff arm may be absent).
@@ -203,6 +229,16 @@ _BALANCE = os.environ.get("FVR_BALANCE", "1").strip() not in ("0", "false", "")
 # Fixed dense step count, early stop disabled, so FD-vs-autodiff wall-clock is a
 # clean per-step comparison (both run the same number of iterations).
 _DENSE_STEPS = int(os.environ.get("FVR_DENSE_STEPS", "45"))
+# Run mode:
+#   'speed'    -> all 3 dense arms (frozen-FD, free-FD, free-autodiff) + the
+#                 transfer leg.  Gives frozen-vs-free science AND the FD-vs-
+#                 autodiff per-step speedup/parity.  Use for the 6+6 perf study.
+#   'headline' -> ONLY the free-autodiff dense arm (no FD arms, no transfer).
+#                 ~1/3 the cost; the autodiff warm-start selectivity result that
+#                 replaces the FD headline.  Use for the all-36 run.  Lands in a
+#                 separate <cfg>_adheadline subdir so it never collides with a
+#                 speed run of the same nerve.
+_MODE = os.environ.get("FVR_MODE", "speed").strip().lower()
 # Stale-lock age (s): a claim left by a killed worker older than this is stolen
 # so the nerve is not orphaned.  Set comfortably above the per-nerve runtime.
 _LOCK_STALE_S = float(os.environ.get("FVR_LOCK_STALE_S", "7200"))
@@ -364,6 +400,8 @@ def main() -> int:
     # other and the aggregator can group them.
     loss_mode = os.environ.get("JAXLEY_FIBERS_LOSS", "linear")
     cfg = f"{_INIT_MODE}_{loss_mode}_bal{int(_BALANCE)}"
+    if _MODE == "headline":
+        cfg += "_adheadline"   # free-autodiff-only; never collide with a speed run
     # Keep downsampled checks (MAX_FIBERS>0) in their own subdir so they can
     # never shadow / collide with the full-population run via the claim logic.
     if S.MAX_FIBERS and S.MAX_FIBERS > 0:
@@ -405,12 +443,13 @@ def main() -> int:
             return 0
         N = int(np.asarray(dense["target_mask"]).size)
         K = int(dense["Ve_unit"].shape[0])
-        print(f"  loaded: N={N} fibers, K={K} contacts; "
-              f"3 dense arms x {_DENSE_STEPS} steps (verbose={'on' if _VERBOSE else 'off'})",
-              flush=True)
+        n_arms = 1 if _MODE == "headline" else 3
+        print(f"  loaded: N={N} fibers, K={K} contacts; mode={_MODE}; "
+              f"{n_arms} dense arm(s) x {_DENSE_STEPS} steps "
+              f"(verbose={'on' if _VERBOSE else 'off'})", flush=True)
 
-        # Probe warm start once; reuse for all three dense arms so the FD/autodiff
-        # free arms start identically (SI parity meaningful, timing isolates grad).
+        # Probe warm start once; reuse for all dense arms so the FD/autodiff free
+        # arms start identically (SI parity meaningful, timing isolates grad).
         warm = None
         if not (_INIT_MODE == "zero"):
             print("  computing probe warm init ...", flush=True)
@@ -419,44 +458,55 @@ def main() -> int:
             warm = (pa[0], pa[1])
             print(f"    probe done ({time.time()-_tp:.0f}s)  pattern={pa[1]}", flush=True)
 
-        # Dense ceilings.
-        #   frozen  : FD, probe init, zero contacts frozen   (headline)
-        #   free FD : FD, all K free                          (science arm)
-        #   free AD : autodiff, all K free                    (methods arm)
-        print(f"  [1/3] dense frozen (FD) ...", flush=True)
-        _af, dsi_f, na_f, patt, t_f, ms_f = _optimize(
-            dense, relaxed=False, grad_mode="fd",
-            n_steps=_DENSE_STEPS, warm_init=warm, verbose=_VERBOSE)
-        print(f"    frozen SI {dsi_f:+.3f}  ({t_f:.0f}s total, {ms_f:.0f} ms/iter)",
-              flush=True)
-        print(f"  [2/3] dense free (FD) ...", flush=True)
-        _ar, dsi_r, na_r, _, t_r_fd, ms_r_fd = _optimize(
-            dense, relaxed=True, grad_mode="fd",
-            n_steps=_DENSE_STEPS, warm_init=warm, verbose=_VERBOSE)
-        print(f"    free SI {dsi_r:+.3f}  ({t_r_fd:.0f}s total, {ms_r_fd:.0f} ms/iter)",
-              flush=True)
-        print(f"  [3/3] dense free (autodiff) ...", flush=True)
-        try:
-            _ad, dsi_r_ad, na_r_ad, _, t_r_ad, ms_r_ad = _optimize(
+        # Defaults (None for any arm not run in this mode).
+        dsi_f = na_f = t_f = ms_f = None
+        dsi_r = na_r = t_r_fd = ms_r_fd = None
+        dsi_r_ad = na_r_ad = t_r_ad = ms_r_ad = None
+        patt = warm[1] if warm else "zero"
+
+        if _MODE == "speed":
+            #   frozen  : FD, zero contacts frozen   (science vs free)
+            #   free FD : FD, all K free             (science + FD timing)
+            #   free AD : autodiff, all K free       (autodiff timing)
+            print(f"  [1/3] dense frozen (FD) ...", flush=True)
+            _af, dsi_f, na_f, patt, t_f, ms_f = _optimize(
+                dense, relaxed=False, grad_mode="fd",
+                n_steps=_DENSE_STEPS, warm_init=warm, verbose=_VERBOSE)
+            print(f"    frozen SI {dsi_f:+.3f}  ({t_f:.0f}s total, {ms_f:.0f} ms/iter)",
+                  flush=True)
+            print(f"  [2/3] dense free (FD) ...", flush=True)
+            _ar, dsi_r, na_r, _, t_r_fd, ms_r_fd = _optimize(
+                dense, relaxed=True, grad_mode="fd",
+                n_steps=_DENSE_STEPS, warm_init=warm, verbose=_VERBOSE)
+            print(f"    free SI {dsi_r:+.3f}  ({t_r_fd:.0f}s total, {ms_r_fd:.0f} ms/iter)",
+                  flush=True)
+            print(f"  [3/3] dense free (autodiff) ...", flush=True)
+            try:
+                _ad, dsi_r_ad, na_r_ad, _, t_r_ad, ms_r_ad = _optimize(
+                    dense, relaxed=True, grad_mode="autodiff",
+                    n_steps=_DENSE_STEPS, warm_init=warm, verbose=_VERBOSE)
+                print(f"    free-AD SI {dsi_r_ad:+.3f}  ({t_r_ad:.0f}s total, "
+                      f"{ms_r_ad:.0f} ms/iter)", flush=True)
+            except Exception as e:  # noqa: BLE001 -- autodiff arm is non-fatal
+                print(f"  autodiff arm failed: {type(e).__name__}: {str(e)[:120]}",
+                      flush=True)
+        else:  # headline: free-autodiff only (the result that replaces FD)
+            print(f"  [1/1] dense free (autodiff) [headline] ...", flush=True)
+            _ad, dsi_r_ad, na_r_ad, patt, t_r_ad, ms_r_ad = _optimize(
                 dense, relaxed=True, grad_mode="autodiff",
                 n_steps=_DENSE_STEPS, warm_init=warm, verbose=_VERBOSE)
             print(f"    free-AD SI {dsi_r_ad:+.3f}  ({t_r_ad:.0f}s total, "
                   f"{ms_r_ad:.0f} ms/iter)", flush=True)
-        except Exception as e:  # noqa: BLE001 -- autodiff arm is non-fatal
-            print(f"  autodiff arm failed: {type(e).__name__}: {str(e)[:120]}",
-                  flush=True)
-            dsi_r_ad = na_r_ad = t_r_ad = ms_r_ad = None
 
-        # Speedup from the COMPILE-EXCLUDED per-iter cost (the honest per-step
-        # number); total wall-clock kept for reference.
-        speedup = (ms_r_fd / ms_r_ad) if (ms_r_ad and ms_r_ad > 0) else None
-        si_parity = (dsi_r_ad - dsi_r) if dsi_r_ad is not None else None
+        # Speedup from the COMPILE-EXCLUDED per-iter cost (speed mode only).
+        speedup = (ms_r_fd / ms_r_ad) if (ms_r_fd and ms_r_ad and ms_r_ad > 0) else None
+        si_parity = (dsi_r_ad - dsi_r) if (dsi_r_ad is not None and dsi_r is not None) else None
 
         # Record dense results first, so a failed sparse-transfer leg does NOT
         # discard the dense comparison.
         rec.update(
             ok=True, n_fibers=N, K=int(dense["Ve_unit"].shape[0]),
-            n_per_fascicle=_N_PER_FASC, pattern=patt,
+            n_per_fascicle=_N_PER_FASC, pattern=patt, mode=_MODE,
             init_mode=_INIT_MODE, loss_mode=loss_mode, balance=bool(_BALANCE),
             dense_steps=_DENSE_STEPS,
             soft_temperature=float(os.environ["JAXLEY_FIBERS_SOFT_TEMPERATURE"]),
@@ -478,31 +528,40 @@ def main() -> int:
         # so a walltime kill during transfer does not discard them.  ok=True here
         # makes the nerve terminal; transfer/penalty fields are filled below.
         out_path.write_text(json.dumps(rec, indent=2))
-        print("  dense arms saved (transfer leg next) ...", flush=True)
 
         # Sparse-optimized transfer (FD, both variants) -> deployment penalty.
-        sp = _sparse_seed(duke, dense)
-        if sp is None:
-            rec["transfer_skip"] = "sparse subsample had no target fibers"
+        # Speed mode only; the headline (free-AD) run reuses the existing FD
+        # sparsity/transfer results, so it does no transfer leg.
+        if _MODE != "speed":
+            rec["transfer_skip"] = "headline mode (free-AD only)"
         else:
-            amps_sf, *_ = _optimize(sp, relaxed=False, grad_mode="fd")
-            amps_sr, *_ = _optimize(sp, relaxed=True, grad_mode="fd")
-            tsi_f, _ = S._eval_amps_on_dense(amps_sf, dense, S.DT)
-            tsi_r, _ = S._eval_amps_on_dense(amps_sr, dense, S.DT)
-            tsi_f, tsi_r = float(tsi_f), float(tsi_r)
-            rec.update(
-                transfer_si_frozen=tsi_f, transfer_si_relaxed=tsi_r,
-                penalty_frozen=dsi_f - tsi_f, penalty_relaxed=dsi_r - tsi_r,
-            )
+            print("  dense arms saved (transfer leg next) ...", flush=True)
+            sp = _sparse_seed(duke, dense)
+            if sp is None:
+                rec["transfer_skip"] = "sparse subsample had no target fibers"
+            else:
+                amps_sf, *_ = _optimize(sp, relaxed=False, grad_mode="fd")
+                amps_sr, *_ = _optimize(sp, relaxed=True, grad_mode="fd")
+                tsi_f, _ = S._eval_amps_on_dense(amps_sf, dense, S.DT)
+                tsi_r, _ = S._eval_amps_on_dense(amps_sr, dense, S.DT)
+                tsi_f, tsi_r = float(tsi_f), float(tsi_r)
+                rec.update(
+                    transfer_si_frozen=tsi_f, transfer_si_relaxed=tsi_r,
+                    penalty_frozen=dsi_f - tsi_f, penalty_relaxed=dsi_r - tsi_r,
+                )
 
         out_path.write_text(json.dumps(rec, indent=2))
-        tline = ("transfer skipped (small N)" if sp is None else
-                 f"penalty F {rec['penalty_frozen']:+.3f} | R {rec['penalty_relaxed']:+.3f}")
-        sline = (f"per-iter FD {ms_r_fd:.0f}ms / AD {ms_r_ad:.0f}ms -> "
-                 f"{speedup:.2f}x (SI {dsi_r:+.3f} vs {dsi_r_ad:+.3f})"
-                 if speedup is not None else "autodiff arm n/a")
-        print(f"  dense SI  frozen {dsi_f:+.3f} | free {dsi_r:+.3f}   {tline}   "
-              f"n_active {na_f}->{na_r}   {sline}", flush=True)
+        if _MODE == "headline":
+            print(f"  [headline] free-AD dense SI {dsi_r_ad:+.3f}  "
+                  f"({ms_r_ad:.0f} ms/iter, n_active {na_r_ad})", flush=True)
+        else:
+            tline = (f"penalty F {rec['penalty_frozen']:+.3f} | R {rec['penalty_relaxed']:+.3f}"
+                     if rec.get("penalty_frozen") is not None else "transfer skipped")
+            sline = (f"per-iter FD {ms_r_fd:.0f}ms / AD {ms_r_ad:.0f}ms -> "
+                     f"{speedup:.2f}x (SI {dsi_r:+.3f} vs {dsi_r_ad:+.3f})"
+                     if speedup is not None else "autodiff arm n/a")
+            print(f"  dense SI  frozen {dsi_f:+.3f} | free {dsi_r:+.3f}   {tline}   "
+                  f"n_active {na_f}->{na_r}   {sline}", flush=True)
         return 0
     except Exception as e:  # noqa: BLE001
         rec["error"] = f"{type(e).__name__}: {str(e)[:200]}"

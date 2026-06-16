@@ -404,28 +404,44 @@ def main() -> int:
             print(f"  SKIP: {rec['skip']}", flush=True)
             return 0
         N = int(np.asarray(dense["target_mask"]).size)
+        K = int(dense["Ve_unit"].shape[0])
+        print(f"  loaded: N={N} fibers, K={K} contacts; "
+              f"3 dense arms x {_DENSE_STEPS} steps (verbose={'on' if _VERBOSE else 'off'})",
+              flush=True)
 
         # Probe warm start once; reuse for all three dense arms so the FD/autodiff
         # free arms start identically (SI parity meaningful, timing isolates grad).
         warm = None
         if not (_INIT_MODE == "zero"):
+            print("  computing probe warm init ...", flush=True)
+            _tp = time.time()
             pa = _probe_init(dense)
             warm = (pa[0], pa[1])
+            print(f"    probe done ({time.time()-_tp:.0f}s)  pattern={pa[1]}", flush=True)
 
         # Dense ceilings.
         #   frozen  : FD, probe init, zero contacts frozen   (headline)
         #   free FD : FD, all K free                          (science arm)
         #   free AD : autodiff, all K free                    (methods arm)
+        print(f"  [1/3] dense frozen (FD) ...", flush=True)
         _af, dsi_f, na_f, patt, t_f, ms_f = _optimize(
             dense, relaxed=False, grad_mode="fd",
-            n_steps=_DENSE_STEPS, warm_init=warm)
+            n_steps=_DENSE_STEPS, warm_init=warm, verbose=_VERBOSE)
+        print(f"    frozen SI {dsi_f:+.3f}  ({t_f:.0f}s total, {ms_f:.0f} ms/iter)",
+              flush=True)
+        print(f"  [2/3] dense free (FD) ...", flush=True)
         _ar, dsi_r, na_r, _, t_r_fd, ms_r_fd = _optimize(
             dense, relaxed=True, grad_mode="fd",
             n_steps=_DENSE_STEPS, warm_init=warm, verbose=_VERBOSE)
+        print(f"    free SI {dsi_r:+.3f}  ({t_r_fd:.0f}s total, {ms_r_fd:.0f} ms/iter)",
+              flush=True)
+        print(f"  [3/3] dense free (autodiff) ...", flush=True)
         try:
             _ad, dsi_r_ad, na_r_ad, _, t_r_ad, ms_r_ad = _optimize(
                 dense, relaxed=True, grad_mode="autodiff",
-                n_steps=_DENSE_STEPS, warm_init=warm)
+                n_steps=_DENSE_STEPS, warm_init=warm, verbose=_VERBOSE)
+            print(f"    free-AD SI {dsi_r_ad:+.3f}  ({t_r_ad:.0f}s total, "
+                  f"{ms_r_ad:.0f} ms/iter)", flush=True)
         except Exception as e:  # noqa: BLE001 -- autodiff arm is non-fatal
             print(f"  autodiff arm failed: {type(e).__name__}: {str(e)[:120]}",
                   flush=True)
@@ -458,6 +474,11 @@ def main() -> int:
             speedup_fd_over_autodiff=speedup,
             si_parity_autodiff_minus_fd=si_parity,
         )
+        # Checkpoint the (expensive) dense results NOW, before the transfer leg,
+        # so a walltime kill during transfer does not discard them.  ok=True here
+        # makes the nerve terminal; transfer/penalty fields are filled below.
+        out_path.write_text(json.dumps(rec, indent=2))
+        print("  dense arms saved (transfer leg next) ...", flush=True)
 
         # Sparse-optimized transfer (FD, both variants) -> deployment penalty.
         sp = _sparse_seed(duke, dense)

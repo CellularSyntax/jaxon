@@ -12,6 +12,7 @@ Run from project root:
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -21,7 +22,10 @@ import matplotlib.pyplot as plt
 import matplotlib.lines as mlines
 
 ROOT  = Path(__file__).resolve().parent.parent
-SWEEP = ROOT / "outputs" / "duke_sweeps"
+# Env-overridable (shared with figures_duke_main): DUKE_SWEEP_ROOT points the
+# loaders at outputs/duke_sweeps_autodiff for the autodiff re-run.
+_SW   = os.environ.get("DUKE_SWEEP_ROOT", "").strip() or "outputs/duke_sweeps"
+SWEEP = Path(_SW) if Path(_SW).is_absolute() else ROOT / _SW
 OUT_DIR = ROOT / "manuscript" / "figures" / "duke" / "sparse_sampling"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -111,6 +115,15 @@ def _load() -> list[dict]:
             fibers_per_target_fasc = (n_tgt_fibers / n_tgt_fasc
                                       if (n_tgt_fibers and n_tgt_fasc) else _nan)
 
+            # Degenerate-target exclusion key (used by panel d): fraction of all
+            # fibres that are target, from the dense JSON's full-population mask.
+            _tm = (dense_d.get("nerve") or {}).get("target_mask")
+            if _tm:
+                _tm_a = np.asarray(_tm, dtype=float)
+                target_fraction = float(_tm_a.sum()) / max(_tm_a.size, 1)
+            else:
+                target_fraction = _nan
+
             # Per-strategy maps keyed by (strategy, n_per_fascicle):
             #   si           = in-sample SI on the sparse model
             #   si_transfer  = sparse-optimised amps re-evaluated on the FULL nerve
@@ -148,6 +161,7 @@ def _load() -> list[dict]:
                 n_target_fibers=n_tgt_fibers,
                 n_target_fascicles=n_tgt_fasc,
                 fibers_per_target_fasc=fibers_per_target_fasc,
+                target_fraction=target_fraction,
             ))
     return rows
 

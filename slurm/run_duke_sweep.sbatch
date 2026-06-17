@@ -76,7 +76,15 @@ export SEED_START="${SEED_START:-0}"
 export SEED_END="${SEED_END:-4}"
 export FIBER_DIAMETER_UM="${FIBER_DIAMETER_UM:-5.7}"
 export N_NODES="${N_NODES:-21}"
+# RECT_OPTIMIZER=adam_fd (default) → FD gradient, probe-zeros frozen (sparse).
+# RECT_OPTIMIZER=autodiff          → exact reverse-mode grad, all contacts free,
+#                                    charge-balanced (SWEEP_BALANCE).  This is the
+#                                    jaxon headline run; pair it with
+#                                    DUKE_SWEEP_ROOT=outputs/duke_sweeps_autodiff
+#                                    so it never clobbers the FD tree.
 export RECT_OPTIMIZER="${RECT_OPTIMIZER:-adam_fd}"
+export SWEEP_BALANCE="${SWEEP_BALANCE:-1}"
+export DUKE_SWEEP_ROOT="${DUKE_SWEEP_ROOT:-outputs/duke_sweeps}"
 export N_OPT_RECT="${N_OPT_RECT:-30}"
 export N_OPT_WAVE="${N_OPT_WAVE:-100}"
 export WAVE_LR="${WAVE_LR:-5e-4}"
@@ -237,7 +245,8 @@ SHARD_IDX="$(( ${SLURM_ARRAY_TASK_ID:-0} + ${SHARD_OFFSET:-0} ))"
 echo "Duke sweep: seeds ${SEED_START}..$((SEED_END-1))  D=${FIBER_DIAMETER_UM} µm"
 echo "DUKE_VES_ROOT=${DUKE_VES_ROOT}"
 echo "Shard ${SHARD_IDX} of ${N_SHARDS}"
-echo "Optimiser: ${RECT_OPTIMIZER}  (init=${AMP_INIT_MA}, clip=[${AMP_CLIP_LO}, ${AMP_CLIP_HI}], lr=${ADAM_LR_MA}, fd_eps=${FD_EPS_MA})"
+echo "Optimiser: ${RECT_OPTIMIZER}  (init=${AMP_INIT_MA}, clip=[${AMP_CLIP_LO}, ${AMP_CLIP_HI}], lr=${ADAM_LR_MA}, fd_eps=${FD_EPS_MA}, balance=${SWEEP_BALANCE})"
+echo "Output root: ${DUKE_SWEEP_ROOT}"
 echo "Samples discovered:"
 ls -d "${DUKE_VES_ROOT}"/*/ 2>/dev/null | xargs -n1 basename | sed "s/^/  /"
 
@@ -281,6 +290,8 @@ export SEED_END=\"${SEED_END}\"
 export FIBER_DIAMETER_UM=\"${FIBER_DIAMETER_UM}\"
 export N_NODES=\"${N_NODES}\"
 export RECT_OPTIMIZER=\"${RECT_OPTIMIZER}\"
+export SWEEP_BALANCE=\"${SWEEP_BALANCE}\"
+export DUKE_SWEEP_ROOT=\"${DUKE_SWEEP_ROOT}\"
 export N_OPT_RECT=\"${N_OPT_RECT}\" N_OPT_WAVE=\"${N_OPT_WAVE}\"
 export WAVE_LR=\"${WAVE_LR}\" WAVE_PATIENCE=\"${WAVE_PATIENCE}\"
 export AMP_INIT_MA=\"${AMP_INIT_MA}\"

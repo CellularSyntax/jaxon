@@ -59,6 +59,7 @@ from jaxfibers.stim.batch_solve import (
 )
 from jaxfibers.optim.optimizer import (
     run_rect_optimization,
+    run_rect_optimization_autodiff,
     run_rect_optimization_lbfgs,
     run_waveform_optimization,
 )
@@ -94,7 +95,15 @@ if _OUT_OVERRIDE:
         _OUT_PATH = ROOT / _OUT_PATH
     OUT = ensure_dir(_OUT_PATH)
 else:
-    OUT = ensure_dir(ROOT / "outputs" / "duke_sweeps" / SAMPLE_NAME)
+    # Parent tree for all samples.  Override DUKE_SWEEP_ROOT to keep an
+    # alternative optimiser's results separate (e.g. the autodiff re-run
+    # writes to outputs/duke_sweeps_autodiff/ so it never clobbers the FD
+    # outputs/duke_sweeps/).  The figure reads the SAME env var.
+    _SWEEP_ROOT = os.environ.get("DUKE_SWEEP_ROOT", "").strip() or "outputs/duke_sweeps"
+    _SWEEP_ROOT_PATH = pathlib.Path(_SWEEP_ROOT)
+    if not _SWEEP_ROOT_PATH.is_absolute():
+        _SWEEP_ROOT_PATH = ROOT / _SWEEP_ROOT_PATH
+    OUT = ensure_dir(_SWEEP_ROOT_PATH / SAMPLE_NAME)
 
 # ────────────────────────────────────────── sweep parameters (env-overrideable)
 def _env_int(name, default): return int(os.environ.get(name, default))
@@ -118,7 +127,11 @@ WAVEFORM_OPT_ENABLED = os.environ.get(
 N_OPT_WAVE      = _env_int("N_OPT_WAVE", 100)
 WAVE_LR         = _env_flt("WAVE_LR", 5e-4)
 WAVE_PATIENCE   = _env_int("WAVE_PATIENCE", 20)
-RECT_OPTIMIZER  = os.environ.get("RECT_OPTIMIZER", "adam_fd")  # adam_fd | lbfgs
+RECT_OPTIMIZER  = os.environ.get("RECT_OPTIMIZER", "adam_fd")  # adam_fd | autodiff | lbfgs
+# Charge-balance (Kirchhoff sum(I)=0) projection for the autodiff path.  ON by
+# default to match the frozen_vs_relaxed headline run (warm_quotient_bal1).  The
+# FD-frozen path pins sparsity with freeze_zero_mask instead and ignores this.
+SWEEP_BALANCE   = _env_int("SWEEP_BALANCE", 1)
 
 # Pulse shape (env-overrideable).  Charge-balanced biphasic is the
 # clinical default for any chronic implant -- monophasic deposits net
@@ -1106,15 +1119,20 @@ def _run_one_seed(seed_in: dict, verbose: bool = True) -> dict:
               f"opt={RECT_OPTIMIZER}", flush=True)
 
     rect_t0 = time.time()
-    if RECT_OPTIMIZER == "adam_fd" and SMART_INIT_ENABLED:
+    _autodiff = (RECT_OPTIMIZER == "autodiff")
+    if RECT_OPTIMIZER in ("adam_fd", "autodiff") and SMART_INIT_ENABLED:
         # ── Smart init path ─────────────────────────────────────────
         # (1) per-contact spatial pattern from target/off-target Ve contrast,
         # (2) magnitude probe over PROBE_MAGS_MA (single forwards),
-        # (3) ONE Adam-FD run from amps_init = best_mag × spatial_pattern.
+        # (3) ONE polish run from amps_init = best_mag × spatial_pattern.
+        #     RECT_OPTIMIZER=adam_fd  → FD gradient, probe-zeros FROZEN (sparse).
+        #     RECT_OPTIMIZER=autodiff → exact reverse-mode grad, all contacts
+        #                               FREE, charge-balanced (the headline run).
+        _grad_label = "autodiff-free" if _autodiff else "Adam-FD-frozen"
         n_iters = max(N_OPT_RECT * 3, 30)
         if verbose:
             print(f"{label} Smart init path: spatial-contrast pattern + "
-                  f"{len(PROBE_MAGS_MA)}-magnitude probe + 1×Adam-FD "
+                  f"{len(PROBE_MAGS_MA)}-magnitude probe + 1×{_grad_label} "
                   f"({n_iters} iters)", flush=True)
 
         spatial_bipolar = _smart_spatial_pattern(
@@ -1153,43 +1171,69 @@ def _run_one_seed(seed_in: dict, verbose: bool = True) -> dict:
 
         if verbose:
             init_str = "  ".join(f"{a:+.2f}" for a in amps_init_vec)
-            print(f"{label} Rect Adam-FD ({n_iters} iters) from smart "
+            print(f"{label} Rect {_grad_label} ({n_iters} iters) from smart "
                   f"init  [{init_str}] mA ...", flush=True)
 
-        # Hard freeze on contacts the probe winner left at exactly zero.
-        # Without this the Adam-FD step drifts the zeros by ~lr=0.005 mA
-        # per iter in a coherent direction (since the FD gradient sees
-        # tiny apparent improvements from adding global drive) -- after
-        # ~5 iters the accumulated unbalanced current floods every nt
-        # fibre and the probe winner's selectivity is destroyed.  L1
-        # prox at default lambda is too weak to pin (would need
-        # lambda~3 to overcome the Adam step).  The hard freeze is
-        # cleaner and matches the user's intent: the probe winner
-        # SELECTED a sparse pattern; the optimiser should polish the
-        # non-zero amps without re-activating the zeros.
-        probe_freeze_mask = np.abs(amps_init_vec) < 1e-9
-        adam_res = run_rect_optimization(
-            fiber_statics_batch=seed_in["fs_batch"],
-            state0_batch=seed_in["s0_batch"],
-            Ve_unit=seed_in["Ve_unit"],
-            pulse_mask=seed_in["pulse_mask"],
-            node_indices=seed_in["node_indices"],
-            target_mask=seed_in["target_mask"],
-            weights=seed_in["weights"],
-            dt=DT, n_steps=n_iters,
-            amps_init_vector=amps_init_vec,
-            amp_clip=AMP_CLIP,
-            lr=ADAM_LR_MA, fd_eps=FD_EPS_SMART_MA,
-            freeze_zero_mask=probe_freeze_mask,
-            early_stop_si=EARLY_STOP_SI,
-            verbose=verbose,
-        )
+        if _autodiff:
+            # Autodiff (headline): all contacts FREE, charge-balanced.  No
+            # freeze — the Kirchhoff sum=0 projection (balance_currents) is
+            # what prevents the unbalanced-monopole runaway the FD path pins
+            # with freeze_zero_mask; the exact gradient steers within that
+            # constraint and still converges to the sparse tripole.
+            probe_freeze_mask = np.zeros_like(amps_init_vec, dtype=bool)
+            adam_res = run_rect_optimization_autodiff(
+                fiber_statics_batch=seed_in["fs_batch"],
+                state0_batch=seed_in["s0_batch"],
+                Ve_unit=seed_in["Ve_unit"],
+                pulse_mask=seed_in["pulse_mask"],
+                node_indices=seed_in["node_indices"],
+                target_mask=seed_in["target_mask"],
+                weights=seed_in["weights"],
+                dt=DT, n_steps=n_iters,
+                amps_init_vector=amps_init_vec,
+                amp_clip=AMP_CLIP,
+                lr=ADAM_LR_MA,
+                balance_currents=bool(SWEEP_BALANCE),
+                early_stop_si=EARLY_STOP_SI,
+                verbose=verbose,
+            )
+        else:
+            # Hard freeze on contacts the probe winner left at exactly zero.
+            # Without this the Adam-FD step drifts the zeros by ~lr=0.005 mA
+            # per iter in a coherent direction (since the FD gradient sees
+            # tiny apparent improvements from adding global drive) -- after
+            # ~5 iters the accumulated unbalanced current floods every nt
+            # fibre and the probe winner's selectivity is destroyed.  L1
+            # prox at default lambda is too weak to pin (would need
+            # lambda~3 to overcome the Adam step).  The hard freeze is
+            # cleaner and matches the user's intent: the probe winner
+            # SELECTED a sparse pattern; the optimiser should polish the
+            # non-zero amps without re-activating the zeros.
+            probe_freeze_mask = np.abs(amps_init_vec) < 1e-9
+            adam_res = run_rect_optimization(
+                fiber_statics_batch=seed_in["fs_batch"],
+                state0_batch=seed_in["s0_batch"],
+                Ve_unit=seed_in["Ve_unit"],
+                pulse_mask=seed_in["pulse_mask"],
+                node_indices=seed_in["node_indices"],
+                target_mask=seed_in["target_mask"],
+                weights=seed_in["weights"],
+                dt=DT, n_steps=n_iters,
+                amps_init_vector=amps_init_vec,
+                amp_clip=AMP_CLIP,
+                lr=ADAM_LR_MA, fd_eps=FD_EPS_SMART_MA,
+                freeze_zero_mask=probe_freeze_mask,
+                early_stop_si=EARLY_STOP_SI,
+                verbose=verbose,
+            )
         loss_hist = np.asarray(adam_res["history"]["loss"])
         best_iter = int(np.argmin(loss_hist))
         best_amps = np.asarray(adam_res["history"]["amps"][best_iter])
         best_acts = np.asarray(adam_res["history"]["acts"][best_iter])
         rect_res = {
-            "optimizer":         "Adam-FD-smart",
+            "optimizer":         "Autodiff-smart" if _autodiff else "Adam-FD-smart",
+            "grad_source":       "autodiff" if _autodiff else "finite_difference",
+            "balanced":          bool(_autodiff and SWEEP_BALANCE),
             "amps":              best_amps,
             "loss_history":      loss_hist,
             "final_loss":        float(loss_hist[best_iter]),
@@ -1215,7 +1259,7 @@ def _run_one_seed(seed_in: dict, verbose: bool = True) -> dict:
             "all_final_losses": np.asarray([float(loss_hist[-1])]),
         }
         if verbose:
-            print(f"{label} Smart-init Adam-FD done: best_loss="
+            print(f"{label} Smart-init {_grad_label} done: best_loss="
                   f"{float(loss_hist[best_iter]):.4f} @ iter {best_iter}",
                   flush=True)
     elif RECT_OPTIMIZER == "adam_fd":

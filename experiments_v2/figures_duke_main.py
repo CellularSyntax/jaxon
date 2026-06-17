@@ -17,6 +17,7 @@ Run from project root:
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 from collections import defaultdict
@@ -44,7 +45,10 @@ from experiments_v2.figures_sparse_sampling import (
 )
 
 ROOT     = Path(__file__).resolve().parent.parent
-SWEEP    = ROOT / "outputs" / "duke_sweeps"
+# Sweep tree (env-overridable): point DUKE_SWEEP_ROOT at outputs/duke_sweeps_autodiff
+# to render the figure from the autodiff re-run instead of the FD outputs.
+_SW      = os.environ.get("DUKE_SWEEP_ROOT", "").strip() or "outputs/duke_sweeps"
+SWEEP    = Path(_SW) if Path(_SW).is_absolute() else ROOT / _SW
 OUT_DIR  = ROOT / "manuscript" / "figures" / "main"
 ICON_DIR = ROOT / "manuscript" / "figures" / "assets" / "electrode_config_icons"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -58,10 +62,29 @@ PALETTE = {
 }
 SP_MARKER = {"swine": "s", "human": "o"}
 
-# Validity filter shared by panels b and d: seeds whose dense optimisation failed
-# to converge (dense SI below this) are excluded — they are neither a fair
-# performance sample (panel b) nor a valid ceiling for the transfer penalty (d).
-_DENSE_MIN = 0.5
+# Validity filter shared by panels b, c and d.  We exclude DEGENERATE TARGETS
+# (a target cluster so large it spans most of the nerve — there is no selective
+# solution to find), NOT low-SI outcomes.  This is target-geometry based, so it
+# does not hide solver failures on genuinely-selectable targets: a hard-but-
+# selectable position with low achieved SI stays IN the distribution.  A seed is
+# degenerate if the target fraction (target fibres / all fibres) exceeds this.
+# Matches the frozen_vs_relaxed headline run's FVR_MAX_TGT_FRAC=0.6.
+_MAX_TGT_FRAC = float(os.environ.get("DUKE_MAX_TGT_FRAC", "0.6"))
+
+
+def _target_fraction(raw: dict) -> float:
+    """Fraction of all fibres that are target, from the dense JSON's saved
+    full-population mask (raw['nerve']['target_mask'])."""
+    tm = (raw.get("nerve") or {}).get("target_mask")
+    if not tm:
+        return float("nan")
+    a = np.asarray(tm, dtype=float)
+    return float(a.sum()) / max(a.size, 1)
+
+
+def _is_degenerate(raw: dict) -> bool:
+    frac = _target_fraction(raw)
+    return bool(np.isfinite(frac) and frac > _MAX_TGT_FRAC)
 
 FS    = 8
 FS_SM = 7
@@ -204,7 +227,7 @@ def _load_dense_transfer_pairs() -> list[dict]:
                 continue
             rect = dense.get("rect") or {}
             dsi = float(rect.get("achievable_si", abs(rect.get("final_si", float("nan")))))
-            if not np.isfinite(dsi) or dsi < _DENSE_MIN:
+            if not np.isfinite(dsi) or _is_degenerate(dense):
                 continue
             res = _sparse_result(spd)
             if res is None:
@@ -290,9 +313,9 @@ def _load_contact_amplitudes() -> list[dict]:
             except Exception:
                 continue
             rect = raw.get("rect") or {}
-            # Same dense-validity filter as panels b/d: skip non-converged seeds.
+            # Same degenerate-target filter as panels b/d.
             _dsi = float(rect.get("achievable_si", abs(rect.get("final_si", float("nan")))))
-            if not np.isfinite(_dsi) or _dsi < _DENSE_MIN:
+            if not np.isfinite(_dsi) or _is_degenerate(raw):
                 continue
             amps = np.asarray(rect.get("amps_mA", []), dtype=float)
             cluster = raw.get("cluster") or {}
@@ -900,11 +923,13 @@ def _mean_transfer(r) -> float:
 def _panel_d(gs, fig, sparse_rows: list[dict]) -> plt.Axes:
     """Sparse fiber-sampling, per nerve: dense ceiling vs sparse-optimised
     transfer SI (swine | human), and the mechanism — penalty vs target-fascicle
-    size.  Seeds whose dense optimisation failed (dense_si < _DENSE_MIN) are
-    excluded (no valid ceiling).  Stars: transfer vs dense (two-sided per-nerve
-    Wilcoxon, Holm-corrected across the 8 cells)."""
+    size.  Degenerate-target seeds (target_fraction > _MAX_TGT_FRAC) are excluded
+    — there is no selective ceiling to fall from.  Stars: transfer vs dense
+    (two-sided per-nerve Wilcoxon, Holm-corrected across the 8 cells)."""
     rows = [r for r in sparse_rows
-            if np.isfinite(r.get("dense_si", np.nan)) and r["dense_si"] >= _DENSE_MIN]
+            if np.isfinite(r.get("dense_si", np.nan))
+            and not (np.isfinite(r.get("target_fraction", np.nan))
+                     and r["target_fraction"] > _MAX_TGT_FRAC)]
 
     gs_inner = gridspec.GridSpecFromSubplotSpec(
         1, 3, subplot_spec=gs, wspace=0.42, width_ratios=[1.0, 1.0, 1.25])

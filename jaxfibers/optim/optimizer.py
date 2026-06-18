@@ -556,6 +556,11 @@ def run_rect_optimization_autodiff(
     # Charge-balance (Kirchhoff) constraint: project amps onto sum=0 each step.
     # See run_rect_optimization for the full rationale.  Default off.
     balance_currents: bool = False,
+    # Hard freeze: contacts where this mask is True are pinned at exactly 0 mA
+    # for the whole run (init, gradient, and post-update), mirroring the FD path.
+    # This is what reproduces the FROZEN sparse-tripole result the smart-init
+    # probe selects -- without it the free optimiser drifts on hard nerves.
+    freeze_zero_mask: jnp.ndarray | np.ndarray | None = None,
     verbose: bool = True,
     early_stop_si:          float = 1.0,
     early_stop_patience:    int   = 20,
@@ -641,9 +646,24 @@ def run_rect_optimization_autodiff(
     opt_state = optimizer.init(amps0)
     amps      = amps0
 
-    # Charge-balance projection onto sum(amps)=0 (see run_rect_optimization).
+    # Apply the freeze mask to the init too (mirror run_rect_optimization).
+    if freeze_zero_mask is not None:
+        freeze_mask_j = jnp.asarray(freeze_zero_mask, dtype=jnp.bool_)
+        amps = jnp.where(freeze_mask_j, 0.0, amps)
+    else:
+        freeze_mask_j = None
+
+    # Charge-balance projection onto sum(amps)=0, over the NON-frozen contacts
+    # only so a frozen contact stays at 0 mA (mirror run_rect_optimization).
     def _balance(a):
-        return a - jnp.mean(a) if balance_currents else a
+        if not balance_currents:
+            return a
+        if freeze_mask_j is not None:
+            free   = ~freeze_mask_j
+            n_free = jnp.maximum(jnp.sum(free), 1.0)
+            mean_f = jnp.sum(jnp.where(free, a, 0.0)) / n_free
+            return jnp.where(free, a - mean_f, a)
+        return a - jnp.mean(a)
     amps = _balance(amps)
 
     history   = {"loss": [], "bce": [], "si": [], "amps": [], "acts": [], "dt_ms": []}
@@ -668,11 +688,19 @@ def run_rect_optimization_autodiff(
     for i in range(n_steps):
         t0 = time.time()
         (loss_val, acts_val), grads = loss_and_grad(amps)
+        # Zero gradients at frozen indices before the optimizer step so Adam's
+        # moment estimates never accumulate on frozen contacts (mirror FD path).
+        if freeze_mask_j is not None:
+            grads = jnp.where(freeze_mask_j, 0.0, grads)
         updates, opt_state = optimizer.update(grads, opt_state)
         if _PLATEAU:
             updates = jax.tree_util.tree_map(
                 lambda u, p: -lr_cur * (u + weight_decay * p), updates, amps)
-        amps = jnp.clip(optax.apply_updates(amps, updates), amp_clip[0], amp_clip[1])
+        amps = optax.apply_updates(amps, updates)
+        # Hard zero-freeze (belt and suspenders after the optax rescale).
+        if freeze_mask_j is not None:
+            amps = jnp.where(freeze_mask_j, 0.0, amps)
+        amps = jnp.clip(amps, amp_clip[0], amp_clip[1])
         amps = _balance(amps)   # re-impose sum(amps)=0 after the update
 
         acts_np = np.array(acts_val)

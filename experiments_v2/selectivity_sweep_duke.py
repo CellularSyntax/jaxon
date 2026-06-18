@@ -128,10 +128,12 @@ N_OPT_WAVE      = _env_int("N_OPT_WAVE", 100)
 WAVE_LR         = _env_flt("WAVE_LR", 5e-4)
 WAVE_PATIENCE   = _env_int("WAVE_PATIENCE", 20)
 RECT_OPTIMIZER  = os.environ.get("RECT_OPTIMIZER", "adam_fd")  # adam_fd | autodiff | lbfgs
-# Charge-balance (Kirchhoff sum(I)=0) projection for the autodiff path.  ON by
-# default to match the frozen_vs_relaxed headline run (warm_quotient_bal1).  The
-# FD-frozen path pins sparsity with freeze_zero_mask instead and ignores this.
-SWEEP_BALANCE   = _env_int("SWEEP_BALANCE", 1)
+# Charge-balance (Kirchhoff sum(I)=0) projection for the autodiff path.  OFF by
+# default: the autodiff path now uses the SAME hard freeze as FD to pin the
+# sparse tripole, so balance is redundant and we mirror FD exactly.  (A FREE
+# autodiff run, SWEEP_BALANCE=1 + no freeze, drifts to lower SI on hard nerves
+# and erases the deployment penalty -- see the frozen-vs-free analysis.)
+SWEEP_BALANCE   = _env_int("SWEEP_BALANCE", 0)
 
 # Pulse shape (env-overrideable).  Charge-balanced biphasic is the
 # clinical default for any chronic implant -- monophasic deposits net
@@ -1175,12 +1177,15 @@ def _run_one_seed(seed_in: dict, verbose: bool = True) -> dict:
                   f"init  [{init_str}] mA ...", flush=True)
 
         if _autodiff:
-            # Autodiff (headline): all contacts FREE, charge-balanced.  No
-            # freeze — the Kirchhoff sum=0 projection (balance_currents) is
-            # what prevents the unbalanced-monopole runaway the FD path pins
-            # with freeze_zero_mask; the exact gradient steers within that
-            # constraint and still converges to the sparse tripole.
-            probe_freeze_mask = np.zeros_like(amps_init_vec, dtype=bool)
+            # Autodiff but with the SAME hard freeze as the FD path: the probe
+            # winner selected a sparse tripole; we polish its non-zero amps with
+            # the exact reverse-mode gradient while the probe-zero contacts stay
+            # pinned at 0 mA.  This reproduces the FROZEN result (high SI + the
+            # deployment-penalty story) at the autodiff per-iter speedup -- as
+            # opposed to a FREE autodiff run, which drifts into lower-selectivity
+            # co-activating solutions on hard nerves.  Freeze pins sparsity, so
+            # balance is off by default (SWEEP_BALANCE=0) to mirror FD exactly.
+            probe_freeze_mask = np.abs(amps_init_vec) < 1e-9
             adam_res = run_rect_optimization_autodiff(
                 fiber_statics_batch=seed_in["fs_batch"],
                 state0_batch=seed_in["s0_batch"],
@@ -1193,6 +1198,7 @@ def _run_one_seed(seed_in: dict, verbose: bool = True) -> dict:
                 amps_init_vector=amps_init_vec,
                 amp_clip=AMP_CLIP,
                 lr=ADAM_LR_MA,
+                freeze_zero_mask=probe_freeze_mask,
                 balance_currents=bool(SWEEP_BALANCE),
                 early_stop_si=EARLY_STOP_SI,
                 verbose=verbose,

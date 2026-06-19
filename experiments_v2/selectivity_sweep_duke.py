@@ -134,6 +134,12 @@ RECT_OPTIMIZER  = os.environ.get("RECT_OPTIMIZER", "adam_fd")  # adam_fd | autod
 # autodiff run, SWEEP_BALANCE=1 + no freeze, drifts to lower SI on hard nerves
 # and erases the deployment penalty -- see the frozen-vs-free analysis.)
 SWEEP_BALANCE   = _env_int("SWEEP_BALANCE", 0)
+# Early-stop control for the autodiff path.  Default ON (matches FD).  Set
+# SWEEP_EARLY_STOP=0 to run a FIXED number of iterations with no early-stop and
+# best-iter selection -- the exact-parity condition the 6+6 speed run used, so
+# frozen-AD converges to the frozen-FD optimum rather than stopping ~0.05 SI
+# short on the rugged firing landscape.  Best-iter selection still caps overshoot.
+SWEEP_EARLY_STOP = _env_int("SWEEP_EARLY_STOP", 1)
 
 # Pulse shape (env-overrideable).  Charge-balanced biphasic is the
 # clinical default for any chronic implant -- monophasic deposits net
@@ -1186,6 +1192,15 @@ def _run_one_seed(seed_in: dict, verbose: bool = True) -> dict:
             # co-activating solutions on hard nerves.  Freeze pins sparsity, so
             # balance is off by default (SWEEP_BALANCE=0) to mirror FD exactly.
             probe_freeze_mask = np.abs(amps_init_vec) < 1e-9
+            # Early-stop kwargs: ON mirrors FD; OFF runs all n_iters (no SI- or
+            # loss-plateau stop) so AD converges to the FD optimum (best-iter
+            # selection below still picks the lowest-loss iteration).
+            if SWEEP_EARLY_STOP:
+                _es_kwargs = dict(early_stop_si=EARLY_STOP_SI)
+            else:
+                _es_kwargs = dict(early_stop_si=2.0,
+                                  early_stop_patience=10**9,
+                                  early_stop_si_patience=10**9)
             adam_res = run_rect_optimization_autodiff(
                 fiber_statics_batch=seed_in["fs_batch"],
                 state0_batch=seed_in["s0_batch"],
@@ -1200,7 +1215,7 @@ def _run_one_seed(seed_in: dict, verbose: bool = True) -> dict:
                 lr=ADAM_LR_MA,
                 freeze_zero_mask=probe_freeze_mask,
                 balance_currents=bool(SWEEP_BALANCE),
-                early_stop_si=EARLY_STOP_SI,
+                **_es_kwargs,
                 verbose=verbose,
             )
         else:

@@ -83,7 +83,10 @@ export N_NODES="${N_NODES:-21}"
 #                                    DUKE_SWEEP_ROOT=outputs/duke_sweeps_autodiff
 #                                    so it never clobbers the FD tree.
 export RECT_OPTIMIZER="${RECT_OPTIMIZER:-adam_fd}"
-export SWEEP_BALANCE="${SWEEP_BALANCE:-1}"
+export SWEEP_BALANCE="${SWEEP_BALANCE:-0}"
+# SWEEP_EARLY_STOP=0 -> fixed-iteration autodiff (no early-stop) so frozen-AD
+# converges to the frozen-FD optimum.  Default 1 (early-stop, matches FD).
+export SWEEP_EARLY_STOP="${SWEEP_EARLY_STOP:-1}"
 export DUKE_SWEEP_ROOT="${DUKE_SWEEP_ROOT:-outputs/duke_sweeps}"
 export N_OPT_RECT="${N_OPT_RECT:-30}"
 export N_OPT_WAVE="${N_OPT_WAVE:-100}"
@@ -291,6 +294,7 @@ export FIBER_DIAMETER_UM=\"${FIBER_DIAMETER_UM}\"
 export N_NODES=\"${N_NODES}\"
 export RECT_OPTIMIZER=\"${RECT_OPTIMIZER}\"
 export SWEEP_BALANCE=\"${SWEEP_BALANCE}\"
+export SWEEP_EARLY_STOP=\"${SWEEP_EARLY_STOP}\"
 export DUKE_SWEEP_ROOT=\"${DUKE_SWEEP_ROOT}\"
 export N_OPT_RECT=\"${N_OPT_RECT}\" N_OPT_WAVE=\"${N_OPT_WAVE}\"
 export WAVE_LR=\"${WAVE_LR}\" WAVE_PATIENCE=\"${WAVE_PATIENCE}\"

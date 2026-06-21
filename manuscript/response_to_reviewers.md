@@ -201,20 +201,16 @@ fascicle-size account the data support.)
 
 ## Minor comments
 
-1. **Placeholder / incomplete references** ⏳ — the `musselman2023` entry carries
-   a literal "placeholder citation" note and inconsistent metadata: its title
-   ("Computational modeling of autonomic nerve stimulation: Vagus et al.")
-   exactly matches **Grill & Pelot, *Current Opinion in Biomedical Engineering*
-   32:100557, 2024 (doi:10.1016/j.cobme.2024.100557)**, but its author field
-   lists Musselman and it is cited for Sweeney-model calibration — which instead
-   points to **Musselman, Pelot & Grill, *J. Neural Eng.* 20(3), 2023**
-   (validated computational models). We will set the entry to the intended paper
-   (confirming which from the citation context) and remove the placeholder note.
-   The remaining flagged entries are either legitimately DOI-less (arXiv
-   preprints `chen2018neuralode`, `kingma2015adam`, `jax2018`,
-   `schoenholz2020jaxmd`; the software release `haberbusch2026golgi`; the 1987
-   Sweeney conference paper) or need only volume/pages added
-   (`kumbhar2019coreneuron`, `vissamsetti2025cap`); all will be completed before
+1. **Placeholder / incomplete references** ✍️/⏳ — the `musselman2023` placeholder
+   is resolved: it is now **Musselman, Pelot & Grill, "Validated computational
+   models predict vagus nerve stimulation thresholds in preclinical animals and
+   humans," *J. Neural Eng.* 20(3):036030, 2023 (doi:10.1088/1741-2552/acda64)**,
+   the source for the Sweeney/fiber-model calibration it is cited for; the
+   placeholder note has been removed. The remaining flagged entries are either
+   legitimately DOI-less (arXiv preprints `chen2018neuralode`, `kingma2015adam`,
+   `jax2018`, `schoenholz2020jaxmd`; the software release `haberbusch2026golgi`;
+   the 1987 Sweeney conference paper) or need only volume/pages added
+   (`kumbhar2019coreneuron`, `vissamsetti2025cap`); these are completed before
    resubmission.
 2. **Unpublished Golgi dependency [26]** ✍️ — we have ensured the FEM construction
    needed to reproduce the fields used here is fully specified in this paper's

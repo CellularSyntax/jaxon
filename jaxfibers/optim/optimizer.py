@@ -400,6 +400,13 @@ def run_rect_optimization(
     for i in range(n_steps):
         t0 = time.time()
         (loss_val, acts_val), grads = _step(amps)
+        # ``amps`` here is exactly the configuration _step evaluated, so
+        # loss_val/acts_val/si_now correspond to it.  Record THIS as the
+        # iteration's amps; appending the post-update amps below misaligns
+        # history['amps'][i] from history['acts'][i] by one optimizer step,
+        # which silently breaks reproducibility for near-threshold
+        # (knife-edge) solutions where a single step flips firing state.
+        amps_eval = amps
         # Zero out gradients at frozen indices BEFORE the optimizer step
         # so Adam's moment estimates (m, v) never accumulate momentum on
         # the frozen contacts -- otherwise they would re-emerge as soon
@@ -438,7 +445,7 @@ def run_rect_optimization(
         history["loss"].append(float(loss_val))
         history["bce"].append(float(wbce(acts_val, tgt_j, w)))
         history["si"].append(si_now)
-        history["amps"].append(np.array(amps))
+        history["amps"].append(np.array(amps_eval))   # config that produced acts/loss
         history["acts"].append(acts_np)
         history["dt_ms"].append((time.time() - t0) * 1000.0)  # per-iter wall time
         # ReduceLROnPlateau-style anneal: hold lr_cur until selective
@@ -458,7 +465,7 @@ def run_rect_optimization(
                     plat_bad = 0
         if float(loss_val) < best_loss - early_stop_loss_tol:
             best_loss = float(loss_val)
-            best_amps = np.array(amps)
+            best_amps = np.array(amps_eval)   # amps that produced this loss/acts
             stale_iters = 0
         else:
             stale_iters += 1
@@ -688,6 +695,7 @@ def run_rect_optimization_autodiff(
     for i in range(n_steps):
         t0 = time.time()
         (loss_val, acts_val), grads = loss_and_grad(amps)
+        amps_eval = amps   # config that produced loss_val/acts_val (see FD path)
         # Zero gradients at frozen indices before the optimizer step so Adam's
         # moment estimates never accumulate on frozen contacts (mirror FD path).
         if freeze_mask_j is not None:
@@ -708,7 +716,7 @@ def run_rect_optimization_autodiff(
         history["loss"].append(float(loss_val))
         history["bce"].append(float(wbce(acts_val, tgt_j, w)))
         history["si"].append(si_now)
-        history["amps"].append(np.array(amps))
+        history["amps"].append(np.array(amps_eval))   # config that produced acts/loss
         history["acts"].append(acts_np)
         history["dt_ms"].append((time.time() - t0) * 1000.0)  # per-iter wall time
         if _PLATEAU and si_now >= plateau_si_floor:
@@ -725,7 +733,7 @@ def run_rect_optimization_autodiff(
                     plat_bad = 0
         if float(loss_val) < best_loss - early_stop_loss_tol:
             best_loss = float(loss_val)
-            best_amps = np.array(amps)
+            best_amps = np.array(amps_eval)   # amps that produced this loss/acts
             stale_iters = 0
         else:
             stale_iters += 1

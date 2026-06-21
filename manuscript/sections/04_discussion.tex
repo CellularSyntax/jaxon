@@ -103,12 +103,13 @@ diameter-stratified parameter distributions estimated from
 electrophysiological recordings.
 
 \paragraph{Activation proxy versus full spike detection.}
-The activation proxy
+Recruitment is scored by a sigmoid-smoothed activation proxy
+(Section~\ref{sec:methods-opt}) whose binary limit is
 \begin{equation*}
   a_f = \min\!\bigl(\max_t \mathbf{m}_{\mathrm{Na}}(t)\big|_{\text{first node}},\
-                    \max_t \mathbf{m}_{\mathrm{Na}}(t)\big|_{\text{last node}}\bigr)
+                    \max_t \mathbf{m}_{\mathrm{Na}}(t)\big|_{\text{last node}}\bigr).
 \end{equation*}
-correctly classifies recruitment when an action potential
+It correctly classifies recruitment when an action potential
 propagates to both ends.  It is approximate in pathological regimes
 (failed propagation, partial recruitment in dendrites with branching
 or blocked nodes).  None of these regimes was encountered in the

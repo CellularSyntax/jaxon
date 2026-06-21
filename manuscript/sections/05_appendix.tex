@@ -297,21 +297,31 @@ as packaged in \texttt{pyfibers}.
 
 \begin{table}[h]
   \centering
-  \caption{Per-model rectangular-pulse optimizer defaults
-    (Section~\ref{sec:methods-opt}).  All four knobs scale together
-    with the single-contact extracellular activation threshold of each
-    model and are overridable via the \texttt{AMP\_INIT\_MA},
-    \texttt{AMP\_CLIP\_\{LO,HI\}}, \texttt{ADAM\_LR\_MA} and
-    \texttt{FD\_EPS\_MA} environment variables.}
+  \caption{Selectivity-optimizer settings for the histology cohort
+    (MRG, $5.7\,\mu$m; Section~\ref{sec:methods-opt}).  These are the
+    only fibers optimized in this study; the other three models appear
+    solely in the NEURON validation
+    (Section~\ref{sec:methods-validation}) and are not optimized.  All
+    values are overridable via environment variables
+    (\texttt{AMP\_CLIP\_\{LO,HI\}}, \texttt{ADAM\_LR\_MA},
+    \texttt{FD\_EPS\_MA}, \texttt{N\_OPT\_RECT}, \texttt{EARLY\_STOP\_SI},
+    \dots).}
   \label{tab:opt-hparams}
-  \begin{tabular}{lrrrr}
+  \small
+  \begin{tabular}{ll}
     \toprule
-    Model    & $|I_{\mathrm{init}}|$ (mA) & amp clip (mA) & Adam $\eta$ (mA/step) & FD $\epsilon$ (mA) \\
+    Setting & Value \\
     \midrule
-    MRG     &  1.5 & $\pm 3$   & 0.08 & 0.05 \\
-    Sweeney &  1.5 & $\pm 3$   & 0.08 & 0.05 \\
-    Rattay  & 50.0 & $\pm 150$ & 3.0  & 1.0  \\
-    Sundt   & 80.0 & $\pm 200$ & 5.0  & 2.0  \\
+    Amplitude clip                      & $\pm 2.0$\,mA \\
+    Adam learning rate $\eta$           & $0.005$\,mA/step \\
+    Finite-difference step $\epsilon$   & $0.010$\,mA \\
+    Maximum iterations                  & $90$ \\
+    Early-stop hard SI                  & $0.95$ \\
+    Loss / SI plateau patience          & $20$ / $10$ iters \\
+    Soft-proxy temperature $\tau$       & $0.1$ \\
+    Energy regularizer $\lambda$        & $10^{-3}$ \\
+    Probe magnitudes                    & $\{0.02, 0.05, 0.1, 0.2, 0.4, 0.8, 1.2, 1.5\}$\,mA, both polarities \\
+    Stimulus waveform                   & biphasic-asym., $0.5\,$ms cathodic $+\,2.0\,$ms anodic ($\tfrac14$ amp.) \\
     \bottomrule
   \end{tabular}
 \end{table}

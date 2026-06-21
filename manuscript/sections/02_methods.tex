@@ -71,11 +71,20 @@ integrate at $\Delta t = 5\,\mu\mathrm{s}$.
 \label{sec:methods-opt}
 
 \paragraph{Loss function.}
-For each fiber $f$, the differentiable activation proxy
-$a_f \in [0,1]$ is the minimum of $\max_t \mathbf{m}_{\mathrm{Na}}(t)$
-at the two terminal compartments --- near 1 when an action potential
-propagates to both ends, near 0 otherwise.  We use the weighted
-quality (WQ) loss
+For each fiber $f$ we form a differentiable activation proxy
+$a_f \in [0,1]$ from the per-compartment maximum over time of the
+Na$^+$ activation gate, $\mu_c = \max_t \mathbf{m}_{\mathrm{Na}}(t)|_c$.
+At each of the two terminal nodes $\mu$ is passed through a sigmoid,
+$\sigma\!\bigl((\mu - \tfrac12)/\tau\bigr)$ with temperature
+$\tau = 0.1$, and $a_f$ is the smaller of the two ends --- so
+$a_f \to 1$ when an action potential propagates to both ends and
+$a_f \to 0$ otherwise.  The sigmoid smoothing keeps the gradient
+informative away from threshold; its binary limit
+($\tau\!\to\!0$) is $a_f = \min(\mu_{\mathrm{first}},
+\mu_{\mathrm{last}})$, whose gradient vanishes except in a narrow
+window at threshold.  Recruitment counts and the reported selectivity
+index threshold $a_f$ at $0.5$.  We minimize the weighted-quality (WQ)
+loss
 \begin{equation}
   L_{\mathrm{WQ}} = \sum_f w_f \left[ y_f (1 - a_f) + (1 - y_f) a_f \right]
                  + \lambda \cdot \frac{1}{K} \sum_k I_k^2,
@@ -83,27 +92,37 @@ quality (WQ) loss
 \end{equation}
 where $y_f \in \{0,1\}$ is the target/off-target indicator
 (constructed per nerve by the peripheral-cluster selector of
-Section~\ref{sec:methods-duke}), $w_f$ are per-fiber weights, and the
-second term is an optional amplitude-energy regularizer; we set
-$\lambda = 0$ for all results reported here.
+Section~\ref{sec:methods-duke}) and the $w_f$ are class-balancing
+weights (each of the target and off-target populations carries total
+weight $\tfrac12$, so neither dominates the imbalanced split).  The
+second term is a small amplitude-energy regularizer that discourages
+the trivial ``fire-everything'' optimum; we set $\lambda = 10^{-3}$ for
+all results reported here, small enough to leave the single-diameter
+selectivity outcomes unchanged.
 
 \paragraph{Amplitude optimization.}
-The design variable is the per-contact rectangular-pulse amplitude
-vector $\mathbf{I} \in \mathbb{R}^K$ ($K=12$).  All selectivity results
-use Adam~\cite{kingma2015adam} with finite-difference gradients: each
-step needs only $K{+}1$ forward passes and avoids back-propagating
-through the long integration, so it runs on the full
-${\sim}1000$-fiber population --- the regime prior NEURON pipelines
-could not afford.  Amplitude scales track each model's
-single-contact activation threshold (defaults in Supplementary
-Table~\ref{tab:opt-hparams}), and the loop early-stops when the hard SI
-reaches target or the loss stalls for $20$ iterations.  On the histology
-cohort the trajectory is warm-started by a discrete probe of physically
-meaningful spatial patterns --- one bipolar and four single-column
-tripolar (cathode at each column's $z$-middle contact with
-charge-balancing anodes) --- scored at eight magnitudes ($80$ forward
-passes per seed); the best initializes the trajectory, the probe's
-zero contacts frozen to preserve sparsity.  (jaxon also exposes exact
+The design variable is the per-contact amplitude vector
+$\mathbf{I} \in \mathbb{R}^K$ ($K=12$); each contact scales a fixed,
+charge-balanced asymmetric-biphasic rectangular pulse ($0.5\,$ms
+cathodic phase followed by a $2.0\,$ms anodic recharge at one-quarter
+amplitude, so net charge is zero --- the clinical convention for
+chronic implants).  All selectivity results use
+Adam~\cite{kingma2015adam} with finite-difference gradients: each step
+needs only $K{+}1$ forward passes and avoids back-propagating through
+the long integration, so it runs on the full ${\sim}1000$-fiber
+population --- the regime prior NEURON pipelines could not afford.  The
+amplitude clip, learning rate and finite-difference step are listed in
+Supplementary Table~\ref{tab:opt-hparams}; the loop runs for up to $90$
+iterations and early-stops when the hard SI reaches $0.95$ (the
+experimental selectivity noise floor, beyond which further iterations
+are indistinguishable from the $1.0$ ceiling) or when the loss and hard
+SI both plateau.  On the histology cohort the trajectory is
+warm-started by a discrete probe of physically meaningful spatial
+patterns --- one bipolar and four single-column tripolar (cathode at
+each column's $z$-middle contact with charge-balancing anodes) --- each
+scored at eight magnitudes in both polarities ($80$ forward passes per
+seed); the best initializes the trajectory, with the probe's zero
+contacts frozen to preserve sparsity.  (jaxon also exposes exact
 autodiff gradients, used for waveform-shape optimization; future work.)
 
 \subsection{Subject-specific Duke FEM cohort}

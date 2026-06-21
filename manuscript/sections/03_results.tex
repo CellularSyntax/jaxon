@@ -205,9 +205,9 @@ status (target/off-target $\times$ fired/silent).
 The rectangular optimizer uses a probe-based smart initialization
 (Section~\ref{sec:methods-opt}): a small set of bipolar and
 single-column tripolar spatial patterns is scored at eight magnitudes
-in 80 forward passes per seed, and the best initializes a single
-gradient (Adam-FD) trajectory with the probe's zero contacts frozen to
-preserve sparsity.  Across the cohort ($111$ selectable-target seeds
+in both polarities (80 forward passes per seed), and the best
+initializes a single gradient (Adam-FD) trajectory with the probe's
+zero contacts frozen to preserve sparsity.  Across the cohort ($111$ selectable-target seeds
 over 29 nerves; five degenerate-target seeds excluded, see below) this
 achieves mean $\mathrm{SI} = 0.90$ (median $0.95$), with $70\,\%$ of
 seeds reaching the $\mathrm{SI} \geq 0.90$ noise-floor threshold.
@@ -223,8 +223,9 @@ Table~\ref{tab:duke-cohort}.  Per-sample dense and
 sparse-transfer activation maps with their cuff
 patterns, for every nerve and seed, are provided as Supplementary
 Figures~\ref{fig:supp-sub-4-sam-3}--\ref{fig:supp-human-sub-58-sam-3}.
-All results here use optimized rectangular pulses; waveform-shape
-optimization is left to future work (Section~\ref{sec:discussion}).
+All results here use the fixed charge-balanced biphasic pulse with
+optimized per-contact amplitudes; waveform-shape optimization is left
+to future work (Section~\ref{sec:discussion}).
 
 \begin{table}[h]
   \centering

@@ -99,6 +99,9 @@ distribution sits below the $1\,\%$ acceptance criterion.
   \figmaybe[width=0.98\textwidth]{main/fig1_validation.png}
   \caption{Validation of jaxon against \texttt{pyfibers}-wrapped NEURON
     and computational-efficacy benchmark, all four fiber models.
+    (\texttt{pyfibers} wraps NEURON; the reference is labelled
+    ``PyFibers'' in panel annotations and ``NEURON'' in the text
+    interchangeably.)
     \textbf{(a)} Membrane-potential and gating-variable response to a
     single extracellular cathodic stimulus (overlaid as the solid
     black step at resting potential), one column per model; jaxon
@@ -145,7 +148,12 @@ $N \approx 10$ for every model and the advantage grows with $N$
 $544\times$ for MRG, $1\,377\times$ for Sweeney (smaller per-fiber
 state) and ${\sim}1\,000\times$ for the C-fibers, a geometric mean of
 $\sim\!820\times$ --- taking what would be multiple CPU-hours per
-forward pass down to under twenty seconds.  This is what brings the
+forward pass down to under twenty seconds.  This is a GPU-versus-eight-thread-CPU
+comparison against the field-standard \texttt{pyfibers} workflow; against
+many-core CPU or GPU-accelerated NEURON variants the multiplier would be
+smaller, but the order-of-magnitude advantage from \texttt{vmap}-batching the
+forward pass persists, and CPU NEURON is the established baseline a new solver
+must beat.  This is what brings the
 population-scale optimize-and-re-score analysis below
 ($\sim\!1\,000$ fibers per nerve, simulated thousands of times per
 optimization, across 29 anatomies and five sampling levels) within
@@ -210,7 +218,7 @@ initializes a single gradient (Adam-FD) trajectory with the probe's
 zero contacts frozen to preserve sparsity.  Across the cohort ($111$ selectable-target seeds
 over 29 nerves; five degenerate-target seeds excluded, see below) this
 achieves mean $\mathrm{SI} = 0.90$ (median $0.95$), with $70\,\%$ of
-seeds reaching the $\mathrm{SI} \geq 0.90$ noise-floor threshold.
+seeds reaching $\mathrm{SI} \geq 0.90$.
 Swine and human reach a near-identical median ($0.946$ vs.\ $0.964$),
 but the human \emph{mean} is lower ($0.845$ vs.\ $0.926$) because a
 heavy tail of geometric-ceiling anatomies (below) pulls it down rather

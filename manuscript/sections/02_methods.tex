@@ -113,10 +113,10 @@ the long integration, so it runs on the full ${\sim}1000$-fiber
 population --- the regime prior NEURON pipelines could not afford.  The
 amplitude clip, learning rate and finite-difference step are listed in
 Supplementary Table~\ref{tab:opt-hparams}; the loop runs for up to $90$
-iterations and early-stops when the hard SI reaches $0.95$ (the
-experimental selectivity noise floor, beyond which further iterations
-are indistinguishable from the $1.0$ ceiling) or when the loss and hard
-SI both plateau.  On the histology cohort the trajectory is
+iterations and early-stops when the hard SI reaches $0.95$ (a
+convergence floor: an SI within $0.05$ of the perfect-selectivity
+ceiling, the resolution below which additional iterations no longer
+change which fibers fire) or when the loss and hard SI both plateau.  On the histology cohort the trajectory is
 warm-started by a discrete probe of physically meaningful spatial
 patterns --- one bipolar and four single-column tripolar (cathode at
 each column's $z$-middle contact with charge-balancing anodes) --- each

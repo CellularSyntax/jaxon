@@ -76,6 +76,9 @@ export SEED_START="${SEED_START:-0}"
 export SEED_END="${SEED_END:-4}"
 export FIBER_DIAMETER_UM="${FIBER_DIAMETER_UM:-5.7}"
 export N_NODES="${N_NODES:-21}"
+# Inter-fibre diameter variability (reviewer #3); 0 = identical fibres (default).
+export FIBER_DIAM_CV="${FIBER_DIAM_CV:-0.0}"
+export FIBER_DIAM_SEED="${FIBER_DIAM_SEED:-0}"
 # RECT_OPTIMIZER=adam_fd (default) → FD gradient, probe-zeros frozen (sparse).
 # RECT_OPTIMIZER=autodiff          → exact reverse-mode grad, all contacts free,
 #                                    charge-balanced (SWEEP_BALANCE).  This is the
@@ -292,6 +295,7 @@ export SEED_START=\"${SEED_START}\"
 export SEED_END=\"${SEED_END}\"
 export FIBER_DIAMETER_UM=\"${FIBER_DIAMETER_UM}\"
 export N_NODES=\"${N_NODES}\"
+export FIBER_DIAM_CV=\"${FIBER_DIAM_CV}\" FIBER_DIAM_SEED=\"${FIBER_DIAM_SEED}\"
 export RECT_OPTIMIZER=\"${RECT_OPTIMIZER}\"
 export SWEEP_BALANCE=\"${SWEEP_BALANCE}\"
 export SWEEP_EARLY_STOP=\"${SWEEP_EARLY_STOP}\"

@@ -113,6 +113,12 @@ FIBER_DIAMETER_UM = _env_flt("FIBER_DIAMETER_UM", 5.7)
 N_NODES         = _env_int("N_NODES", 21)
 MAX_FIBERS      = _env_int("MAX_FIBERS", 0)  # 0 = no subsample (full ~1000 fibres)
 SUBSAMPLE_SEED  = _env_int("SUBSAMPLE_SEED", 0)
+# Inter-fibre variability (reviewer #3): with FIBER_DIAM_CV>0 each fibre's MRG
+# diameter is drawn from a truncated normal about FIBER_DIAMETER_UM with this
+# coefficient of variation, so a per-fascicle centroid is no longer maximally
+# representative.  Default 0 = identical fibres (the canonical cohort run).
+FIBER_DIAM_CV   = _env_flt("FIBER_DIAM_CV", 0.0)
+FIBER_DIAM_SEED = _env_int("FIBER_DIAM_SEED", 0)
 DT              = _env_flt("DT", 0.005)
 T_STOP          = _env_flt("T_STOP", 3.0)
 DELAY_MS        = _env_flt("DELAY_MS", 1.0)
@@ -1592,6 +1598,7 @@ def main():
         SAMPLE_PATH, fiber_diam_um=FIBER_DIAMETER_UM, n_nodes=N_NODES,
         max_fibers=(MAX_FIBERS if MAX_FIBERS > 0 else None),
         subsample_seed=SUBSAMPLE_SEED,
+        diam_cv=FIBER_DIAM_CV, diam_seed=FIBER_DIAM_SEED,
         verbose=True,
     )
     print(f"[duke sweep] Loaded {SAMPLE_NAME} in {time.time() - t_load:.1f}s. "

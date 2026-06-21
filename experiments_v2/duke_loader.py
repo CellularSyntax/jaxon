@@ -43,7 +43,8 @@ from pathlib import Path
 import numpy as np
 
 from jaxfibers.nerve.geometry import NerveGeometry, FascicleOutline
-from jaxfibers.fibers.mrg import _mrg_geometry, section_centers_um
+from jaxfibers.fibers.mrg import (
+    _mrg_geometry, _mrg_interp_geometry, section_centers_um)
 
 
 def _fill_nan_along_z(z: np.ndarray, v: np.ndarray) -> np.ndarray:
@@ -109,6 +110,8 @@ def load_duke_sample(
     max_fibers: int | None = None,
     subsample_seed: int = 0,
     verbose: bool = True,
+    diam_cv: float = 0.0,
+    diam_seed: int = 0,
 ) -> dict:
     """Load a Duke FEM bundle and produce jaxon-compatible solver inputs.
 
@@ -186,7 +189,21 @@ def load_duke_sample(
         fiber_xy = fiber_xy_all
         fasc_id  = fasc_id_all
     n_fibers = fiber_xy.shape[0]
-    fiber_diam = np.full(n_fibers, fiber_diam_um, dtype=np.float64)
+    # Per-fibre diameter.  Default (diam_cv=0): every fibre takes ``fiber_diam_um``
+    # (the FEM bundle provides no individual diameters).  With diam_cv>0 we sample
+    # each fibre's diameter from a truncated normal about ``fiber_diam_um`` with
+    # that coefficient of variation — the inter-fibre-variability check (reviewer
+    # #3): heterogeneous diameters make a per-fascicle centroid less representative.
+    # Clipped to a physiological A-fibre range so the MRG geometry interpolation
+    # stays valid.
+    if diam_cv > 0.0:
+        _drng = np.random.default_rng(int(diam_seed))
+        _dlo, _dhi = max(2.0, fiber_diam_um * 0.5), min(16.0, fiber_diam_um * 1.6)
+        fiber_diam = np.clip(
+            _drng.normal(fiber_diam_um, diam_cv * fiber_diam_um, n_fibers), _dlo, _dhi,
+        ).astype(np.float64)
+    else:
+        fiber_diam = np.full(n_fibers, fiber_diam_um, dtype=np.float64)
 
     fascicles_meta = []
     fascicles = []
@@ -218,14 +235,30 @@ def load_duke_sample(
         divider_angle_deg=None,
     )
 
-    # ── Per-fibre MRG geometry (identical for all since same diameter) ──────
-    geoms = [_mrg_geometry(fiber_diam_um, n_nodes) for _ in range(n_fibers)]
+    # ── Per-fibre MRG geometry ──────────────────────────────────────────────
+    # Identical structure for all fibres; with diam_cv>0 the per-fibre diameter
+    # differs, so each fibre's internode length (and thus its compartment z-grid)
+    # differs slightly and its Ve is sampled on its own grid below.  n_comp is set
+    # by n_nodes and is uniform across diameters (only lengths scale).
+    if diam_cv > 0.0:
+        # Continuous per-fibre diameters need the polynomial-interpolated MRG
+        # geometry (the discrete builder only accepts table diameters).
+        geoms = [_mrg_interp_geometry(float(fiber_diam[f]), n_nodes) for f in range(n_fibers)]
+    else:
+        geoms = [_mrg_geometry(fiber_diam_um, n_nodes) for _ in range(n_fibers)]
     n_comp = geoms[0].n_comp
-    centers_z_um_raw = np.asarray(section_centers_um(geoms[0]))  # µm
-    # Centre the fibre about z=0 (cuff midplane) so we can directly align
-    # with the FEM data which is also in cuff-local coordinates.
-    centers_z_um = centers_z_um_raw - centers_z_um_raw.mean()
-    centers_z_m = centers_z_um * 1e-6
+
+    def _centers_m(g):
+        c = np.asarray(section_centers_um(g))   # µm; centre about z=0 (cuff midplane)
+        return (c - c.mean()) * 1e-6
+    if diam_cv > 0.0:
+        assert all(g.n_comp == n_comp for g in geoms), \
+            "MRG n_comp must be uniform across diameters for the batched solver"
+        centers_z_m_all = [_centers_m(geoms[f]) for f in range(n_fibers)]
+        centers_z_m = centers_z_m_all[0]   # shared-grid alias (unused when per-fibre)
+    else:
+        centers_z_m = _centers_m(geoms[0])
+        centers_z_m_all = None
 
     node_indices = np.array(
         [[i for i, b in enumerate(geoms[f].is_node) if b] for f in range(n_fibers)],
@@ -266,7 +299,8 @@ def load_duke_sample(
             if not finite.any():
                 continue
             v_filled = np.interp(z_fem_s, z_fem_s[finite], v[finite])
-            Ve_unit[k, fi, :] = np.interp(centers_z_m, z_fem_s, v_filled)
+            cz = centers_z_m_all[fi] if centers_z_m_all is not None else centers_z_m
+            Ve_unit[k, fi, :] = np.interp(cz, z_fem_s, v_filled)
 
     # ── Contact positions in µm (for plotting/diagnostic only — solver
     #    doesn't need them since Ve_unit already encodes them) ──────────────

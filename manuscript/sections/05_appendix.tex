@@ -404,3 +404,28 @@ yields the lead field $V_e^{(k)}$ in V/A for each of the 12 contacts.
     \bottomrule
   \end{tabular}
 \end{table}
+
+\begin{figure}[h]
+  \centering
+  \figmaybe[width=0.98\textwidth]{supp/figS_optimizer_validation.png}
+  \caption{Optimizer and gradient validation.
+    \textbf{(a)} The exact reverse-mode (autodiff) gradient of the
+    selectivity objective with respect to the per-contact amplitudes
+    agrees with a central finite-difference estimate (cosine similarity
+    $1.0000$, relative $L_2$ error $3.7\times10^{-3}$; components pooled
+    over points along an optimization trajectory), confirming the
+    analytic gradient is correct.
+    \textbf{(b)} A selectivity optimization driven purely by the analytic
+    gradient raises the selectivity index from $-0.67$ to $+0.88$,
+    exercising the differentiable capability end-to-end (the
+    finite-difference optimizer is used for the cohort results because
+    its forward pass on the full population is the binding cost; the
+    exact gradient is intended for the high-dimensional waveform design
+    left to future work).
+    \textbf{(c)} Running-best loss versus iteration for six representative
+    nerves (final selectivity index annotated): the probe-based warm
+    start places the trajectory near the optimum and the optimizer
+    converges within a few iterations, so the dense selectivity ceiling
+    is a stable quantity rather than an optimizer-dependent artifact.}
+  \label{fig:optimizer-validation}
+\end{figure}

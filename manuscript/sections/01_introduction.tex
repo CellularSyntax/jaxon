@@ -97,12 +97,19 @@ contributions are:
         (Sections~\ref{sec:results-validation}--\ref{sec:results-scaling}).
   \item \textbf{The pipeline.}  A selectivity-optimization pipeline
         over per-contact amplitudes whose GPU-fast forward pass makes
-        gradient-based optimization tractable on full fiber populations
-        --- not the per-fascicle centroids prior pipelines are limited
-        to --- demonstrated on 29 histology-derived vagus anatomies (to
-        our knowledge the first cross-species gradient-based selectivity
-        optimization on real histology geometry); jaxon further exposes
-        exact gradients that NEURON-wrapped pipelines cannot
+        optimization tractable directly on the \emph{full fiber
+        population} --- not the per-fascicle centroids prior pipelines
+        are limited to --- demonstrated on 29 histology-derived vagus
+        anatomies (to our knowledge the first full-population, as opposed
+        to per-fascicle-centroid, selectivity optimization on real
+        cross-species histology geometry).  The selectivity results here
+        use finite-difference gradients over the contacts, as in
+        \texttt{pyfibers}~\cite{hussain2024}: the enabling capability is
+        the fast forward pass on the whole population, not the gradient
+        type.  jaxon additionally exposes \emph{exact} end-to-end
+        gradients --- verified against finite differences and
+        unavailable to NEURON-wrapped pipelines --- for the
+        waveform-shape optimization left to future work
         (Section~\ref{sec:results-duke}).
 \end{enumerate}
 

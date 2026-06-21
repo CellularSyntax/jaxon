@@ -181,9 +181,11 @@ strategy with two-sided Wilcoxon signed-rank tests, Holm-corrected
 across the eight species $\times$ strategy cells; the species
 difference in penalty is tested with the Mann--Whitney $U$ test, and its
 anatomical driver --- the number of fibers per target fascicle --- with
-Spearman rank correlation.  Seeds whose dense optimization did not
-converge (dense $\mathrm{SI} < 0.5$; 4 of 116) are excluded from the
-dense-versus-sparse comparisons as they provide no valid ceiling.  We
+Spearman rank correlation.  Seeds whose target cluster is degenerate
+(target fraction $> 0.6$ --- spanning most of the nerve, so no selective
+solution exists by construction; $5$ of $116$, all human) are excluded
+from all analyses; low-SI outcomes on selectable targets are retained as
+genuine geometric-ceiling cases rather than solver failures.  We
 report medians with inter-quartile ranges alongside means throughout,
 because the SI distributions are bounded at $1.0$ and right-skewed by
 the geometric-ceiling subset, so the median is the more representative

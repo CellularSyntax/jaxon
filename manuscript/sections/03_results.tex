@@ -207,14 +207,15 @@ The rectangular optimizer uses a probe-based smart initialization
 single-column tripolar spatial patterns is scored at eight magnitudes
 in 80 forward passes per seed, and the best initializes a single
 gradient (Adam-FD) trajectory with the probe's zero contacts frozen to
-preserve sparsity.  Across the cohort (116 seeds over 29 nerves) this
+preserve sparsity.  Across the cohort ($111$ selectable-target seeds
+over 29 nerves; five degenerate-target seeds excluded, see below) this
 achieves mean $\mathrm{SI} = 0.90$ (median $0.95$), with $70\,\%$ of
 seeds reaching the $\mathrm{SI} \geq 0.90$ noise-floor threshold.
-Swine and human reach a near-identical median ($0.946$ vs.\ $0.965$),
-but the human \emph{mean} is lower ($0.857$ vs.\ $0.926$) because a
+Swine and human reach a near-identical median ($0.946$ vs.\ $0.964$),
+but the human \emph{mean} is lower ($0.845$ vs.\ $0.926$) because a
 heavy tail of geometric-ceiling anatomies (below) pulls it down rather
 than a uniform downward shift.  The optimizer converges to a focal,
-sparse drive: $105$ of $116$ seeds ($91\,\%$) use exactly three active
+sparse drive: $103$ of $111$ seeds ($93\,\%$) use exactly three active
 contacts --- a single-column tripolar configuration (cathode at the
 column's $z$-middle contact, charge-balancing anodes at $z$-top and
 $z$-bottom); per-species figures are summarized in
@@ -228,13 +229,13 @@ optimization is left to future work (Section~\ref{sec:discussion}).
 \begin{table}[h]
   \centering
   \small
-  \caption{Per-species summary of the histology cohort.  Dense
-    $\mathrm{SI}$ and the $\mathrm{SI}\ge0.90$ rate are over all
-    target-cluster seeds; the deployment penalty
+  \caption{Per-species summary of the histology cohort.  All metrics
+    are over the $111$ selectable-target seeds (target fraction
+    $\le 0.6$; five degenerate-target seeds, all human, excluded --- see
+    text).  The deployment penalty
     ($\mathrm{SI_{dense}} - \mathrm{SI_{transfer}}$, averaged over the
     four sparse strategies) and fibers per target fascicle are per
-    nerve, over the $112$ seeds whose dense optimization converged
-    ($\mathrm{SI}\ge0.5$; $4$ human seeds excluded).}
+    nerve.}
   \label{tab:duke-cohort}
   \setlength{\tabcolsep}{5pt}
   \begin{tabular}{lcccccc}
@@ -245,9 +246,9 @@ optimization is left to future work (Section~\ref{sec:discussion}).
     & nerves & seeds & mean (med.) & $\ge0.90$ & med.\ (mean) & median \\
     \midrule
     Swine        & 18 &  72 & 0.926 (0.946) & 72\,\% & 0.03 (0.04) & 30 \\
-    Human        & 11 &  44 & 0.857 (0.965) & 66\,\% & 0.27 (0.31) & 92 \\
+    Human        & 11 &  39 & 0.845 (0.964) & 67\,\% & 0.17 (0.23) & 151 \\
     \midrule
-    \textbf{All} & \textbf{29} & \textbf{116} & \textbf{0.900 (0.948)}
+    \textbf{All} & \textbf{29} & \textbf{111} & \textbf{0.897 (0.948)}
                  & \textbf{70\,\%} & --- & --- \\
     \bottomrule
   \end{tabular}
@@ -255,7 +256,7 @@ optimization is left to future work (Section~\ref{sec:discussion}).
   \vspace{2pt}
   {\footnotesize Species penalty difference: two-sided Mann--Whitney
    $p < 0.001$.  Penalty vs.\ fibers per target fascicle: Spearman
-   $r = +0.72$, $p < 0.001$ ($n = 29$ nerves).}
+   $r = +0.73$, $p < 0.001$ ($n = 29$ nerves).}
 \end{table}
 
 \paragraph{Emergent stimulation strategy.}
@@ -273,20 +274,26 @@ tripolar configurations that the selectivity literature arrives at by
 design.
 
 \paragraph{Geometric-ceiling cases.}
-A minority of anatomies cannot be steered at all: when off-target
+A minority of human anatomies cannot be steered well: when off-target
 fascicles sit as close to the contacts as the target
 (minimum-distance ratio near unity), no per-contact configuration has a
-gradient to exploit and the optimizer either co-activates off-target
-fascicles or fails to reach threshold.  Four of the $116$ seeds (all
-human) fall below $\mathrm{SI} = 0.5$ and are excluded from the
-dense-versus-sparse comparison as invalid ceilings.
+gradient to exploit and the optimizer co-activates off-target
+fascicles.  These geometric-ceiling cases form the heavy lower tail of
+the human distribution and are \emph{retained} in all statistics ---
+they are genuine selectivity outcomes on selectable targets, not solver
+artifacts.  Separately, we exclude five seeds (all human) whose target
+cluster spans more than $60\,\%$ of the nerve cross-section (target
+fraction $> 0.6$): such targets are degenerate by construction --- no
+selective solution exists --- so they are uninformative about achievable
+selectivity.
 
 \begin{figure}[h]
   \centering
   \figmaybe[width=0.98\textwidth]{main/fig3_duke.png}
   \caption{Selectivity optimization on the Duke histology-derived
-    vagus-nerve cohort (29 nerves: 18 swine, 11 human; 116
-    target-cluster seeds).  ``Sparse'' throughout denotes a
+    vagus-nerve cohort (29 nerves: 18 swine, 11 human; 111
+    selectable-target seeds, degenerate targets excluded).  ``Sparse''
+    throughout denotes a
     configuration optimized on one randomly-sampled fiber per fascicle
     and evaluated on the full ${\sim}1000$-fiber population (transfer).
     \textbf{(a)} Dense- versus sparse-optimized activation for a
@@ -336,18 +343,18 @@ $\mathrm{SI_{dense}} - \mathrm{SI_{transfer}}$
 (Figure~\ref{fig:duke}\textbf{d}).
 
 The penalty is small in swine but large in human.  Per nerve it is a
-median $0.03$ in swine (mean $0.04$) versus $0.27$ in human (mean
-$0.31$; Mann--Whitney $p < 0.001$), and the transfer SI lies
+median $0.03$ in swine (mean $0.04$) versus $0.17$ in human (mean
+$0.23$; Mann--Whitney $p < 0.001$), and the transfer SI lies
 significantly below the dense ceiling for every sampling strategy in
 both species (two-sided per-nerve Wilcoxon, Holm-corrected; all
-$p \le 0.008$).  Sampling \emph{density} barely matters: ten fibers per
+$p \le 0.005$).  Sampling \emph{density} barely matters: ten fibers per
 fascicle transfer no better than one, or than the centroid, so the
 shortfall is not closed by sampling a few more fibers.
 
 What drives it is fascicle \emph{size}.  The per-nerve penalty scales
-with the number of fibers per target fascicle (Spearman $r = +0.72$,
+with the number of fibers per target fascicle (Spearman $r = +0.73$,
 $p < 0.001$, $n = 29$ nerves), which has median $30$ in swine versus
-$92$ in human.  This mediates the species gap: swine vagus nerves carry
+$151$ in human.  This mediates the species gap: swine vagus nerves carry
 many small fascicles, so a handful of sampled fibers represents the
 target well and the optimized field transfers; human nerves carry a few
 large fascicles, so a field tuned to one sampled fiber does not cover
@@ -357,9 +364,9 @@ nerve (swine) is the more forgiving one.
 The recruitment signature confirms the mechanism
 (Figure~\ref{fig:duke}\textbf{b}).  Relative to the dense optimum, the
 sparse-transfer configuration in human loses on-target recruitment
-(median $100\,\% \rightarrow 65\,\%$; $p = 0.023$) and selectivity
-($p = 0.014$), whereas off-target recruitment and total delivered
-current are statistically unchanged ($p > 0.4$).  The penalty is thus a
+(median $100\,\% \rightarrow 65\,\%$; $p = 0.012$) and selectivity
+($p = 0.007$), whereas off-target recruitment and total delivered
+current are statistically unchanged ($p > 0.7$).  The penalty is thus a
 failure to recruit the large target fascicle, not off-target spill or
 reduced drive.  The practical implication is that centroid-only fiber
 sampling --- standard in GPU-accelerated selectivity

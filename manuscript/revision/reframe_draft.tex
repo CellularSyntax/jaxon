@@ -1,0 +1,182 @@
+% =====================================================================
+% REFRAME DRAFT (narrow + honest) — staging only, NOT \input by main.
+% Numbers in ⟦TOKENS⟧ are re-run-dependent; populate from outputs/duke_sweeps_fixed
+% once the corrected sweep lands.  Legend at the bottom gives each token's
+% CURRENT (pre-correction) value so you can sanity-check the drop-in.
+% Addresses reviewer Major #2 (within-species / fraction), #5 (optimize-then-
+% validate), and the #7-driven geometric-ceiling rewording.
+% =====================================================================
+
+% ---------------------------------------------------------------------
+% (A) ABSTRACT — replace the deployment-penalty sentences.
+% ---------------------------------------------------------------------
+Using FEM-derived fields over a 12-contact cuff on 29 histology-segmented
+vagus nerves (18 swine, 11 human), we find that configurations optimized on
+sparsely-sampled fibers and \emph{deployed without re-scoring on the full
+population} lose substantial selectivity --- a \emph{deployment penalty}
+invisible to reduced-order models.  The penalty is small in swine
+(median ⟦PEN_SW_MED⟧) but large in human (⟦PEN_HU_MED⟧; Mann--Whitney
+⟦P_SPECIES⟧), tracking the number of fibers per target fascicle
+(Spearman $r=$⟦RHO_POOL⟧ across nerves), which differs systematically
+between species; it manifests as failure to recruit the large human target
+fascicle (⟦P_RECRUIT⟧) rather than off-target spill (n.s.).  Crucially, the
+loss is a cost of \emph{not} validating on the population: re-scoring the
+sparse-optimized design on the full population --- which our simulator makes
+cheap --- recovers most of it (residual human penalty ⟦PEN_HU_OTV⟧), so the
+practical prescription is to optimize and/or validate at population scale,
+now feasible.  Reduced-order fascicular sampling therefore overstates the
+selectivity that will actually be delivered when used the standard way, most
+severely on the human vagus geometry most relevant to clinical translation.
+
+% ---------------------------------------------------------------------
+% (B) RESULTS §3.5 — reframed sparse-sampling subsection.
+% ---------------------------------------------------------------------
+\subsection{Reduced-order fiber sampling overestimates deliverable
+  selectivity unless the design is re-scored on the population}
+\label{sec:results-sparse}
+
+Prior GPU-accelerated selectivity work reduces each fascicle to a single
+centroid fiber to keep the population tractable~\cite{hussain2024}: a design
+is optimized on the reduced set and the reported selectivity is read off that
+same reduced set, without re-scoring on the fibers that are not simulated.
+Because jaxon simulates the full ${\sim}1000$-fiber population directly, we
+can ask what that approximation costs at deployment.  For each nerve $\times$
+seed we re-ran the identical optimization on four sparse fiber-sampling levels
+(one centroid fiber per fascicle, and $1$, $3$ or $10$ randomly-sampled fibers
+per fascicle) by pure row-subsampling of the precomputed $V_e$ lead-field, and
+re-scored each sparse-optimized amplitude vector on the full population
+\emph{without re-optimizing}, giving the transfer selectivity
+$\mathrm{SI_{transfer}}$ --- the selectivity actually delivered.  The
+deployment penalty is the drop from the dense ceiling,
+$\mathrm{SI_{dense}} - \mathrm{SI_{transfer}}$
+(Figure~\ref{fig:duke}\textbf{d}).
+
+\paragraph{The penalty is small in swine, large in human.}
+Per nerve it is a median ⟦PEN_SW_MED⟧ in swine (mean ⟦PEN_SW_MEAN⟧) versus
+⟦PEN_HU_MED⟧ in human (mean ⟦PEN_HU_MEAN⟧; Mann--Whitney ⟦P_SPECIES⟧), and the
+transfer SI lies significantly below the dense ceiling for every sampling
+strategy in both species (two-sided per-nerve Wilcoxon, Holm-corrected; all
+⟦P_TRANSFER⟧).
+
+\paragraph{Adding fibers does not close the gap; sampling \emph{fraction}
+  does.}
+Sampling \emph{density} in absolute counts barely matters: ten fibers per
+fascicle transfer no better than one, or than the centroid.  Re-expressed as
+the fraction of each target fascicle that is sampled --- the species-fair axis,
+since ten fibers is ${\sim}\!⟦FRAC_SW⟧$ of a typical swine fascicle but only
+${\sim}\!⟦FRAC_HU⟧$ of a human one --- the penalty is concentrated below
+${\sim}⟦FRAC_KNEE⟧$ of the fascicle population and is essentially closed above
+it; the species gap persists at matched low fraction (human ⟦PEN_HU_LOWFRAC⟧
+vs swine ⟦PEN_SW_LOWFRAC⟧), so the effect is not merely a sampling-fraction
+artifact: a large human fascicle needs a larger \emph{absolute} number of
+sampled fibers to be represented.
+
+\paragraph{Fascicle size sets the between-species difference.}
+The per-nerve penalty correlates with the number of fibers per target fascicle
+across the cohort (Spearman $r=$⟦RHO_POOL⟧, ⟦P_POOL⟧, $n=29$ nerves), which has
+median ⟦FPF_SW⟧ in swine versus ⟦FPF_HU⟧ in human.  This anatomical axis
+explains the \emph{between-species} difference; within each species the
+correlation is directionally consistent but not individually significant at
+these sample sizes (swine $r=$⟦RHO_SW⟧, ⟦P_RHO_SW⟧, $n=18$; human
+$r=$⟦RHO_HU⟧, ⟦P_RHO_HU⟧, $n=11$), so we frame fibers-per-fascicle as the
+driver of the species gap rather than as a within-species predictor.  Swine
+vagus nerves carry many small fascicles, so a handful of sampled fibers
+represents the target well and the optimized field transfers; human nerves
+carry a few large fascicles, so a field tuned to one sampled fiber does not
+cover the rest of that fascicle.  Counterintuitively, the more fascicular
+nerve (swine) is the more forgiving one.
+
+\paragraph{The mechanism is failure to recruit, not off-target spill.}
+Relative to the dense optimum, the sparse-transfer configuration in human loses
+on-target recruitment (median ⟦REC_HU_DENSE⟧ $\rightarrow$ ⟦REC_HU_TRANS⟧;
+⟦P_RECRUIT⟧) and selectivity (⟦P_SI_LOSS⟧), whereas off-target recruitment and
+total delivered current are statistically unchanged (⟦P_OFF⟧)
+(Figure~\ref{fig:duke}\textbf{b}).
+
+\paragraph{Re-scoring on the population recovers most of the penalty.}
+The penalty above is the cost of the standard workflow --- optimize on few
+fibers, deploy without re-scoring.  Because jaxon can re-score a candidate on
+the full population cheaply, we asked what remains if one instead selects, per
+nerve, the sparse-optimized design that scores best on the full population
+(optimize-then-validate).  The penalty then largely collapses: swine
+⟦PEN_SW_MED⟧ $\rightarrow$ ⟦PEN_SW_OTV⟧ and human ⟦PEN_HU_MED⟧ $\rightarrow$
+⟦PEN_HU_OTV⟧.  The honest conclusion is therefore narrower than ``reduced-order
+models are wrong'': centroid-only sampling \emph{as standardly used} ---
+optimized and reported on the reduced set~\cite{hussain2024} --- materially
+overstates deliverable selectivity on large-fascicle (human) anatomies, but a
+practitioner who re-scores or selects on the full population, which is now
+computationally feasible, recovers most of it.  A residual species-dependent
+penalty (${\sim}⟦PEN_HU_OTV⟧$ in human) survives even optimize-then-validate,
+because no sparse design fully covers a large fascicle.  The practical
+prescription is to bring the full population into the loop --- at optimization
+or at least at validation --- precisely the regime jaxon's throughput opens up.
+
+% ---------------------------------------------------------------------
+% (C) RESULTS §3.4 — reworded "Geometric-ceiling cases" paragraph.
+% (#7: euclidean fascicle–contact distance is only a weak SI predictor, ρ≈−0.13
+%  n.s.; the hard cases are large-fascicle, not equidistant-fascicle.)
+% ---------------------------------------------------------------------
+\paragraph{Geometric-ceiling cases.}
+A minority of human anatomies cannot be steered well even on the full
+population.  These are not primarily cases where off-target fascicles happen to
+sit as close to the contacts as the target --- across the cohort the minimum
+fascicle-to-contact distance is only a weak predictor of achieved selectivity
+(Spearman ⟦RHO_DIST⟧, n.s.) --- but cases where the target fascicle is large
+relative to the steerable field, so that sparing every off-target fiber while
+recruiting the whole target is geometrically impossible.  These
+geometric-ceiling cases form the heavy lower tail of the human distribution and
+are \emph{retained} in all statistics --- they are genuine selectivity outcomes
+on selectable targets, not solver artifacts.  Separately, we exclude five seeds
+(all human) whose target cluster spans more than $60\,\%$ of the nerve
+cross-section (target fraction $> 0.6$): such targets are degenerate by
+construction --- no selective solution exists --- so they are uninformative
+about achievable selectivity.
+
+% ---------------------------------------------------------------------
+% (D) DISCUSSION — reworded opening deployment-penalty framing.
+% ---------------------------------------------------------------------
+Using population-scale differentiable simulation, we have shown that the
+reduced-order fiber sampling standard in GPU-accelerated selectivity modeling
+--- reducing each fascicle to one or a few representative fibers and reading
+selectivity off that reduced set --- overstates the selectivity actually
+delivered to the nerve when used that way.  The error is not a fixed offset:
+this \emph{deployment penalty} is governed by fascicular architecture --- the
+number of fibers per target fascicle --- and is therefore small in swine
+(median ⟦PEN_SW_MED⟧) but large in human (median ⟦PEN_HU_MED⟧), a
+between-species translational bias that reduced-order models cannot detect
+because they never simulate the fibers the bias acts on.  Mechanistically the
+penalty is a failure to recruit the large human target fascicle from a field
+tuned to a few sampled fibers, not off-target spill or reduced drive.  It is
+also largely \emph{recoverable}: because the full-population forward pass is
+cheap in jaxon, re-scoring or selecting a sparse-optimized design on the
+population removes most of the penalty (residual human ${\sim}⟦PEN_HU_OTV⟧$),
+so the actionable message is that population-scale validation --- not a
+different optimizer --- is what reduced-order pipelines lack.  This was
+measurable only because jaxon simulates the full ${\sim}1000$-fiber population
+\dots
+
+% =====================================================================
+% PLACEHOLDER LEGEND — token : current (pre-correction) value / source.
+% Repopulate ALL from outputs/duke_sweeps_fixed via the reviewer re-analysis.
+% =====================================================================
+% ⟦PEN_SW_MED⟧   swine penalty median        current 0.03  (likely ~unchanged)
+% ⟦PEN_SW_MEAN⟧  swine penalty mean          current 0.04
+% ⟦PEN_HU_MED⟧   human penalty median        current 0.17  (EXPECTED TO DROP)
+% ⟦PEN_HU_MEAN⟧  human penalty mean          current 0.23  (EXPECTED TO DROP)
+% ⟦PEN_SW_OTV⟧   swine optimize-then-validate current 0.001
+% ⟦PEN_HU_OTV⟧   human optimize-then-validate current 0.067
+% ⟦P_SPECIES⟧    species MWU p               current p<0.001
+% ⟦P_TRANSFER⟧   all-cells Wilcoxon          current p<=0.005
+% ⟦RHO_POOL⟧     pooled Spearman             current +0.73
+% ⟦P_POOL⟧       pooled p                    current p<0.001
+% ⟦RHO_SW⟧/⟦P_RHO_SW⟧  within swine          current +0.28 / p=0.26
+% ⟦RHO_HU⟧/⟦P_RHO_HU⟧  within human          current +0.44 / p=0.18
+% ⟦FPF_SW⟧/⟦FPF_HU⟧    fibers/target fasc median  current 30 / 151
+% ⟦FRAC_SW⟧/⟦FRAC_HU⟧  10-fiber fraction      current ~33% / ~7%
+% ⟦FRAC_KNEE⟧    fraction where penalty closes current ~2%
+% ⟦PEN_HU_LOWFRAC⟧/⟦PEN_SW_LOWFRAC⟧  penalty at matched low fraction  current ~0.10 / ~0.00
+% ⟦REC_HU_DENSE⟧/⟦REC_HU_TRANS⟧  human on-target recruit  current 100% / 65%
+% ⟦P_RECRUIT⟧    recruit-loss p             current p=0.012 (abstract uses 0.01)
+% ⟦P_SI_LOSS⟧    SI-loss p                  current p=0.007
+% ⟦P_OFF⟧        off-target/current p       current p>0.7
+% ⟦RHO_DIST⟧     SI vs min fasc-contact dist Spearman  current -0.13 (n.s., n=111)

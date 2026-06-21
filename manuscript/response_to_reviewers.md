@@ -62,7 +62,11 @@ converged, supra-threshold solutions this is negligible (6/8 configs reproduce
 exactly); for knife-edge near-threshold solutions a single step flips firing.
 Because the transfer SI (and hence the deployment penalty) is computed by
 re-evaluating the saved *sparse* amplitudes on the full population, this inflated
-the penalty for knife-edge nerves. We have **fixed the recording in both the
+the penalty for knife-edge nerves. Across the cohort the recording error materially affects (saved amplitudes not
+reproducing the saved dense SI to within 0.1) **15 of 111 seeds (~13%; 9 swine,
+6 human)**, all near-threshold solutions; the median seed is unaffected (the
+dense-SI distribution, computed from activations rather than from the re-applied
+amplitudes, is unchanged). We have **fixed the recording in both the
 finite-difference and autodiff optimizers** and are **re-running the full Duke
 sweep** with the fix. The optimization trajectory is deterministic and unchanged,
 so the dense-SI distribution is preserved (verified: re-derived dense SI matches
@@ -197,8 +201,21 @@ fascicle-size account the data support.)
 
 ## Minor comments
 
-1. **Placeholder / incomplete references** ⏳ — resolving [9] (Musselman) and
-   completing [24], [25], [32], [33] (volume/page/DOI) before resubmission.
+1. **Placeholder / incomplete references** ⏳ — the `musselman2023` entry carries
+   a literal "placeholder citation" note and inconsistent metadata: its title
+   ("Computational modeling of autonomic nerve stimulation: Vagus et al.")
+   exactly matches **Grill & Pelot, *Current Opinion in Biomedical Engineering*
+   32:100557, 2024 (doi:10.1016/j.cobme.2024.100557)**, but its author field
+   lists Musselman and it is cited for Sweeney-model calibration — which instead
+   points to **Musselman, Pelot & Grill, *J. Neural Eng.* 20(3), 2023**
+   (validated computational models). We will set the entry to the intended paper
+   (confirming which from the citation context) and remove the placeholder note.
+   The remaining flagged entries are either legitimately DOI-less (arXiv
+   preprints `chen2018neuralode`, `kingma2015adam`, `jax2018`,
+   `schoenholz2020jaxmd`; the software release `haberbusch2026golgi`; the 1987
+   Sweeney conference paper) or need only volume/pages added
+   (`kumbhar2019coreneuron`, `vissamsetti2025cap`); all will be completed before
+   resubmission.
 2. **Unpublished Golgi dependency [26]** ✍️ — we have ensured the FEM construction
    needed to reproduce the fields used here is fully specified in this paper's
    supplement (conductivities, perineurium contact impedance, mesh, solve);

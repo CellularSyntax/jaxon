@@ -172,7 +172,9 @@ Material).
 \label{sec:methods-validation}
 
 For each model we drove jaxon and \texttt{pyfibers}-wrapped NEURON with
-identical stimuli and compared three quantities against NEURON: the
+identical stimuli, at a matched fixed time step ($\Delta t = 5\,\mu$s;
+NEURON integrated with its default backward-Euler method), and compared
+three quantities against NEURON: the
 strength--duration threshold (terminal node, $\mathrm{PW} \in
 [0.02,1.0]\,\mathrm{ms}$), the conduction velocity over the published
 diameter range, and the full center-node intracellular trace; agreement

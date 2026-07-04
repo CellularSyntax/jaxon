@@ -45,7 +45,7 @@ NEURON-level precision (Figure~\ref{fig:validation}\textbf{a}).
     Sweeney is evaluated at $D=10\,\mu\mathrm{m}$ only because Sweeney's
     original parameterization~\cite{sweeney1987} was derived and
     validated at $D=10\,\mu\mathrm{m}$ and the pyfibers reference
-    implementation~\cite{hussain2024} follows the same convention;
+    implementation~\cite{marshall2025pyfibers} follows the same convention;
     the 17 cells dropped from Sweeney's 48-cell sweep at $D=10$ are
     NEURON \texttt{extracellular}-mechanism singular-solve failures
     under anodic-leading pulses, not jaxon errors.
@@ -339,7 +339,7 @@ selectivity.
 
 Prior GPU-accelerated selectivity work reduces each fascicle to a
 single centroid fiber to keep the population
-tractable~\cite{hussain2024}.  Because jaxon simulates the full
+tractable~\cite{hussain2024axonml}.  Because jaxon simulates the full
 ${\sim}1000$-fiber population directly, we can ask what this
 approximation costs at deployment.  For each nerve $\times$ seed we
 re-ran the identical optimization on four sparse fiber-sampling levels
@@ -399,7 +399,7 @@ candidate on the full population cheaply, selecting per nerve the
 sparse-optimized design that scores best on the full population
 (optimize-then-validate) collapses the penalty to a median $0.000$ in
 swine and $0.016$ in human.  The honest conclusion is therefore narrow:
-centroid-only sampling \emph{as standardly used}~\cite{hussain2024}
+centroid-only sampling \emph{as standardly used}~\cite{hussain2024axonml}
 over-states deliverable selectivity on the large-fascicle human anatomies
 most relevant to clinical translation, but a practitioner who brings the
 full population into the loop --- at optimization or at least at

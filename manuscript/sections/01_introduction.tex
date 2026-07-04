@@ -31,19 +31,19 @@ unmyelinated C-fibers~\cite{sundt2015}---with
 parameter scanning to map activation thresholds across fascicles.
 Open-source pipelines such as ASCENT~\cite{musselman2021ascent},
 NRV~\cite{couppey2024nrv}, PyPNS~\cite{lubba2019pypns} and
-pyfibers~\cite{hussain2024} have made this workflow accessible, but
+pyfibers~\cite{marshall2025pyfibers} have made this workflow accessible, but
 they share a fundamental cost: every candidate design requires
 \emph{thousands} of independent NEURON forward simulations, run
 serially over CPU cores, with no mechanism to compute the gradient of
 a selectivity objective with respect to design variables.  Optimization
 over the resulting cost landscape is consequently restricted to
 gradient-free methods---grid sweeps, finite-difference
-approximations~\cite{hussain2024} or evolutionary
+approximations~\cite{marshall2025pyfibers} or evolutionary
 search~\cite{aristovich2021}---scaling poorly to the high-dimensional
 spaces opened up by waveform shaping or many-contact cuffs.
 A second, less-examined economy compounds the first: to keep the fiber
 count manageable, these pipelines typically reduce each fascicle to a
-single representative (centroid) fiber~\cite{hussain2024}.  Whether
+single representative (centroid) fiber~\cite{hussain2024axonml}.  Whether
 this reduction preserves the selectivity of candidate designs --- or
 quietly biases it --- has not been tested, because testing it demands
 simulating the full fiber population under the very fields the reduced
@@ -78,7 +78,7 @@ contributions are:
         histology-segmented vagus nerves, stimulation configurations
         optimized on sparsely-sampled fibers --- the per-fascicle
         reduction used in GPU-accelerated selectivity
-        work~\cite{hussain2024} --- lose substantial selectivity when
+        work~\cite{hussain2024axonml} --- lose substantial selectivity when
         deployed on the full fiber population.  This \emph{deployment
         penalty} scales with the number of fibers per target fascicle
         and thereby differs systematically between species (small in
@@ -104,7 +104,7 @@ contributions are:
         to per-fascicle-centroid, selectivity optimization on real
         cross-species histology geometry).  The selectivity results here
         use finite-difference gradients over the contacts, as in
-        \texttt{pyfibers}~\cite{hussain2024}: the enabling capability is
+        \texttt{pyfibers}~\cite{marshall2025pyfibers}: the enabling capability is
         the fast forward pass on the whole population, not the gradient
         type.  jaxon additionally exposes \emph{exact} end-to-end
         gradients --- verified against finite differences and

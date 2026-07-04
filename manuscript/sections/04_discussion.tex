@@ -39,16 +39,22 @@ to future work.
 
 \subsection{Comparison with prior work}
 
-The closest comparator is pyfibers~\cite{hussain2024}, which wraps
-NEURON axon models in Python with random-search / FD-gradient
+The closest NEURON-based comparator is pyfibers~\cite{marshall2025pyfibers},
+which wraps NEURON axon models in Python with random-search / FD-gradient
 optimization.  jaxon's contribution is twofold: it removes the
 Python--NEURON overhead, making vmap-batched GPU forward passes
 possible, and it admits end-to-end gradients that pyfibers lacks ---
 without loss of fidelity (Section~\ref{sec:results-validation}).  The
 wider open-source PNS-modeling ecosystem --- ASCENT, NRV~\cite{couppey2024nrv}
 and PyPNS~\cite{lubba2019pypns} --- shares the same gradient-free,
-CPU-NEURON basis, so a differentiable, GPU-native forward solver is, to
-our knowledge, new to peripheral nerve modeling.
+CPU-NEURON basis.  The one GPU-accelerated exception is
+AxonML~\cite{hussain2024axonml}, a fast surrogate model of the fiber
+response built for high-throughput optimization; jaxon instead integrates
+the \emph{exact} biophysical equations on the GPU, so it retains
+NEURON-level fidelity (Section~\ref{sec:results-validation}) and exposes
+exact gradients without a learned approximation.  It is AxonML's
+centroid-per-fascicle sampling whose deployment penalty we quantify
+(Section~\ref{sec:results-sparse}).
 jaxon is complementary to this ecosystem rather than a replacement for
 it: the subject-specific finite-element fields used here are produced by
 our companion open platform, golgi~\cite{haberbusch2026golgi}, which

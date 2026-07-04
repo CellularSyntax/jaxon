@@ -218,7 +218,13 @@ fascicle-size account the data support.)
    `jax2018`, `schoenholz2020jaxmd`; the software release `haberbusch2026golgi`;
    the 1987 Sweeney conference paper) or need only volume/pages added
    (`kumbhar2019coreneuron`, `vissamsetti2025cap`); these are completed before
-   resubmission.
+   resubmission. We also corrected a citation conflation: a single reference had
+   been used both for the validation software (PyFibers, Marshall et al. 2025,
+   PLOS Comput. Biol.) and for the GPU-accelerated centroid-sampling optimizer we
+   critique; these are now two distinct references, with the deployment-penalty
+   critique correctly attributed to **AxonML (Hussain, Grill & Pelot,
+   *Nat. Commun.* 15:7597, 2024)**, and the Discussion contrasts jaxon (exact
+   differentiable GPU solver) with AxonML (fast surrogate).
 2. **Golgi dependency [26]** ✍️ — the companion platform paper (golgi) is now a
    complete manuscript that fully documents the FEM pipeline (conductivities,
    perineurium contact impedance, mesh, solve, and cross-validation against a

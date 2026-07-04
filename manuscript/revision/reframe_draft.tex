@@ -36,7 +36,7 @@ severely on the human vagus geometry most relevant to clinical translation.
 \label{sec:results-sparse}
 
 Prior GPU-accelerated selectivity work reduces each fascicle to a single
-centroid fiber to keep the population tractable~\cite{hussain2024}: a design
+centroid fiber to keep the population tractable~\cite{hussain2024axonml}: a design
 is optimized on the reduced set and the reported selectivity is read off that
 same reduced set, without re-scoring on the fibers that are not simulated.
 Because jaxon simulates the full ${\sim}1000$-fiber population directly, we
@@ -102,7 +102,7 @@ nerve, the sparse-optimized design that scores best on the full population
 ⟦PEN_SW_MED⟧ $\rightarrow$ ⟦PEN_SW_OTV⟧ and human ⟦PEN_HU_MED⟧ $\rightarrow$
 ⟦PEN_HU_OTV⟧.  The honest conclusion is therefore narrower than ``reduced-order
 models are wrong'': centroid-only sampling \emph{as standardly used} ---
-optimized and reported on the reduced set~\cite{hussain2024} --- materially
+optimized and reported on the reduced set~\cite{hussain2024axonml} --- materially
 overstates deliverable selectivity on large-fascicle (human) anatomies, but a
 practitioner who re-scores or selects on the full population, which is now
 computationally feasible, recovers most of it.  A residual species-dependent

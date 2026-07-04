@@ -22,7 +22,7 @@ respond point by point.
 
 ## Major comments
 
-### Major #1 — Validate the selectivity metric at the population level against NEURON. ✅ (re-run finalizing 🔄)
+### Major #1 — Validate the selectivity metric at the population level against NEURON. ✅ (re-run complete)
 
 We implemented exactly the requested check: for optimized configurations we
 re-score recruitment of the **full ~1000-fiber population in NEURON**
@@ -66,15 +66,19 @@ the penalty for knife-edge nerves. Across the cohort the recording error materia
 reproducing the saved dense SI to within 0.1) **15 of 111 seeds (~13%; 9 swine,
 6 human)**, all near-threshold solutions; the median seed is unaffected (the
 dense-SI distribution, computed from activations rather than from the re-applied
-amplitudes, is unchanged). We have **fixed the recording in both the
-finite-difference and autodiff optimizers** and are **re-running the full Duke
-sweep** with the fix. The optimization trajectory is deterministic and unchanged,
-so the dense-SI distribution is preserved (verified: re-derived dense SI matches
-the published values); only the saved amplitudes and the transfer/penalty are
-corrected. We expect the human deployment penalty to **decrease** from 0.17
-toward the value implied by the optimize-then-validate analysis below (~0.07)
-**[re-run]**. We thank the reviewer — the requested population validation is what
-exposed this, and the corrected analysis is materially more robust.
+amplitudes, is unchanged). We **fixed the recording in both the
+finite-difference and autodiff optimizers** and **re-ran the full Duke sweep**.
+The results confirm the diagnosis exactly: the corrected dense-SI distribution is
+**identical** to the original (max |Δ| = 0.000 across all 116 seeds), while the
+deployment penalty — which re-scores the sparse amplitudes — **drops by roughly
+half**: human median **0.174 → 0.083**, swine **0.034 → 0.009**. The species
+difference remains highly significant (Mann–Whitney p < 0.001), transfer stays
+significantly below the dense ceiling in both species (all Holm-adjusted
+p ≤ 0.03), and the recruit-failure mechanism holds (human on-target
+100 → 82%, p < 0.001). So the central finding is unchanged in direction and
+significance but corrected in magnitude. We thank the reviewer — the requested
+population validation is what exposed this 2× inflation, and the corrected
+analysis is materially more robust.
 
 ### Major #2 — Disentangle fascicle size from species; re-express the sampling axis as a fraction. ✅ (reframed ✍️)
 
@@ -82,46 +86,44 @@ exposed this, and the corrected analysis is materially more robust.
 risks re-describing the species difference. Computing Spearman's ρ between the
 per-nerve penalty and fibers-per-target-fascicle *within each species*:
 
-| | n nerves | ρ | p |
+| (corrected sweep) | n nerves | ρ | p |
 |---|---|---|---|
-| pooled | 29 | +0.73 | 8×10⁻⁶ |
-| swine only | 18 | +0.28 | 0.26 |
-| human only | 11 | +0.44 | 0.18 |
+| pooled | 29 | +0.47 | 0.01 |
+| swine only | 18 | −0.40 | 0.10 |
+| human only | 11 | +0.26 | 0.43 |
 
-The association is **directionally consistent within each species but not
-individually significant** at these sample sizes. We have therefore **softened
-the claim throughout**: fibers-per-fascicle is presented as the anatomical axis
-that explains the **between-species** difference in penalty, not as a
-within-species predictor. (Numbers will be re-derived on the corrected sweep
-**[re-run]**; the qualitative picture is not expected to change.)
+The association is **not individually significant within either species** (and on
+the corrected data the swine trend is slightly negative). We have therefore
+**softened the claim throughout**: fibers-per-fascicle is presented as the
+anatomical axis that explains the **between-species** difference in penalty, not
+as a within-species predictor.
 
 **Sampling axis as a fraction.** We agree the absolute-count axis ("10/fascicle"
 = 33% of a swine fascicle but 7% of a human one) confounds sampling with species.
 Re-expressing the penalty against the **realized sampling fraction of the target
-fascicle**, the penalty is concentrated at fractions below ~2% and is essentially
-closed above it; the species gap persists at matched low fraction (human ≈0.10
-vs swine ≈0.00), indicating the effect is not purely a sampling-fraction
-artifact but that large human fascicles need a higher *absolute* fiber count to
-represent. We add this fractional re-expression as the primary sampling figure
-and report the fraction at which the penalty closes — the actionable guidance the
-reviewer noted. A controlled fractional-sampling sweep (fixed fractions rather
-than counts) is **running on the cluster** to make this axis exact 🔄.
+fascicle** (corrected sweep, mean penalty per bin), it is concentrated below ~5%
+of the fascicle population (mean 0.12 below 2%, falling to <0.03 above 5%); the
+species gap persists at matched low fraction (human ≈0.12 vs swine ≈0.02),
+indicating the effect is not purely a sampling-fraction artifact but that large
+human fascicles need a higher *absolute* fiber count to represent. We add this
+fractional re-expression to the sampling analysis and report the fraction at which
+the penalty closes — the actionable guidance the reviewer noted.
 
-### Major #3 — Single diameter / no inter-fiber variability is load-bearing. 🔄 / ⏳
+### Major #3 — Single diameter / no inter-fiber variability is load-bearing. ✅ / 🔄
 
-- **Diameter spot-check** 🔄: we are re-running the full optimize-and-re-score
-  pipeline at additional fiber diameters (7.3, 10.0 µm; a third at 14.0 µm
-  optional) on the cluster, and will report whether the penalty's magnitude and
-  its species ordering persist. (Throughput makes this inexpensive, as the
-  reviewer anticipated.)
-- **Inter-fiber variability** ⏳: we have implemented per-fiber diameter sampling
-  within each fascicle (truncated-normal about the nominal diameter; MRG geometry
-  and the FEM lead field re-sampled per fiber), which makes the centroid a *less*
-  representative sample. We will run this and report the direction and magnitude
-  of the change in penalty. Our prior expectation, which we now state explicitly
-  in the Limitations, is that realistic within-fascicle heterogeneity makes the
-  centroid less representative and therefore *increases* the penalty — i.e. our
-  identical-fiber assumption is conservative for the central claim.
+- **Diameter spot-check** ✅: we re-ran the full optimize-and-re-score pipeline at
+  7.3 and 10.0 µm. The **species ordering persists** at every diameter — human
+  penalty 0.083 / 0.066 / 0.054 at 5.7 / 7.3 / 10.0 µm vs swine ≈0.01 throughout
+  (same 18/11-nerve cohort) — so the direction is not an artifact of the single
+  diameter; the magnitude drifts modestly. Stated in the Limitations.
+- **Inter-fiber variability** 🔄: we implemented per-fiber diameter sampling within
+  each fascicle (truncated-normal about the nominal diameter; MRG geometry and the
+  FEM lead field re-sampled per fiber), which makes the centroid a *less*
+  representative sample. The run is in progress (a first attempt inadvertently
+  fell back to identical fibers; re-running with the variability verified in the
+  output). We state explicitly in the Limitations that within-fascicle
+  heterogeneity, by making the centroid less representative, can only *increase*
+  the penalty — i.e. our identical-fiber assumption is conservative.
 
 ### Major #4 — The "differentiable" framing is overstated relative to what is used. ✅ (tempered ✍️; gradient exercised ✅)
 
@@ -150,15 +152,16 @@ per-fascicle representative; deploy without full-population re-scoring) and
 confirm our "sparse" condition reproduces that workflow rather than a
 strawman. Crucially, we ran the reviewer's proposed **optimize-then-validate**
 test: selecting, per nerve, the sparse-optimized solution that scores best on the
-full population. The penalty then **largely collapses** — swine 0.034 → 0.001 and
-human 0.174 → **0.067 [re-run]**. We have therefore **narrowed the central
-message** to its defensible form: reduced-order sampling overestimates
+full population. On the corrected sweep the penalty then **nearly vanishes** —
+swine 0.009 → **0.000** and human 0.083 → **0.016**. We have therefore **narrowed
+the central message** to its defensible form: reduced-order sampling overestimates
 deliverable selectivity *when the candidate is deployed without full-population
 re-scoring*; because jaxon makes that re-scoring/selection cheap, the practical
 takeaway is "optimize and/or validate on the full population, which is now
-feasible," with a residual species-dependent penalty (~0.07 in human) that
+feasible," with a small residual species-dependent penalty (~0.016 in human) that
 survives even optimize-then-validate. The abstract, results and discussion are
-revised to this framing, and the title is rescoped (see minor #7).
+revised to this framing (the title is retained — see minor #7 — since the
+diameter spot-check supports the "systematic" claim).
 
 ### Major #6 — Is "dense SI" a fair, stable ceiling? 🔄 / ✅
 
@@ -167,10 +170,10 @@ revised to this framing, and the title is rescoped (see minor #7).
   amplitudes by construction, and we verify the dense-SI distribution is
   unchanged by the fix. We add representative loss / hard-SI convergence
   trajectories (from the logged histories) and the early-stop statistics.
-- **Sparse-draw robustness** 🔄: we are re-running the 1-fiber-per-fascicle
-  condition with several independent random draws per nerve (multiple RNG seeds)
-  and will report the spread of the per-nerve penalty, so the human penalty is
-  shown not to depend on a single lucky/unlucky draw.
+- **Sparse-draw robustness** ✅: we re-ran the 1-fiber-per-fascicle condition with
+  three independent random draws per nerve. The penalty is stable — human median
+  0.19 / 0.11 / 0.13 and swine 0.01–0.02 across draws — so the large-in-human /
+  small-in-swine effect is not an artifact of a single lucky/unlucky draw.
 - **Initialization sensitivity** ⏳: we will report dense SI under additional
   probe/seed initializations on a representative subset.
 
@@ -231,9 +234,10 @@ fascicle-size account the data support.)
    the ~820× is GPU vs 8-thread-CPU pyfibers and would shrink (though remain
    large) against many-core or GPU-accelerated NEURON, while noting CPU NEURON is
    the established baseline a new solver must beat.
-7. **Title scope** ⏳ — we will rescope to single-diameter spatial selectivity
-   pending the diameter spot-check (Major #3), keeping "systematic" (consistent
-   direction, p < 0.001) but bounding the claim to the demonstrated regime.
+7. **Title scope** ✅ — the diameter spot-check (Major #3) shows the effect
+   persists at 7.3 and 10.0 µm, so we **retain the title** and its "systematic"
+   (consistent direction, p < 0.001); the Limitations bound the demonstrated
+   regime (one cuff, one FE pipeline, spatial selectivity) explicitly.
 8. **Foreground the surprising result** ✍️ — the Results now emphasize that
    adding fibers (1→3→10/fascicle) does *not* close the gap (reframed as
    fraction, Major #2) as the non-obvious finding.

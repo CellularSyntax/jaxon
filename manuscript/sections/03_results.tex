@@ -254,8 +254,8 @@ to future work (Section~\ref{sec:discussion}).
     \cmidrule(lr){2-3}\cmidrule(lr){4-5}
     & nerves & seeds & mean (med.) & $\ge0.90$ & med.\ (mean) & median \\
     \midrule
-    Swine        & 18 &  72 & 0.926 (0.946) & 72\,\% & 0.03 (0.04) & 30 \\
-    Human        & 11 &  39 & 0.845 (0.964) & 67\,\% & 0.17 (0.23) & 151 \\
+    Swine        & 18 &  72 & 0.926 (0.946) & 72\,\% & 0.009 (0.013) & 30 \\
+    Human        & 11 &  39 & 0.845 (0.964) & 67\,\% & 0.083 (0.116) & 151 \\
     \midrule
     \textbf{All} & \textbf{29} & \textbf{111} & \textbf{0.897 (0.948)}
                  & \textbf{70\,\%} & --- & --- \\
@@ -265,7 +265,8 @@ to future work (Section~\ref{sec:discussion}).
   \vspace{2pt}
   {\footnotesize Species penalty difference: two-sided Mann--Whitney
    $p < 0.001$.  Penalty vs.\ fibers per target fascicle: Spearman
-   $r = +0.73$, $p < 0.001$ ($n = 29$ nerves).}
+   $r = +0.47$, $p = 0.01$ ($n = 29$ nerves; within-species not
+   significant, see text).}
 \end{table}
 
 \paragraph{Emergent stimulation strategy.}
@@ -283,11 +284,14 @@ tripolar configurations that the selectivity literature arrives at by
 design.
 
 \paragraph{Geometric-ceiling cases.}
-A minority of human anatomies cannot be steered well: when off-target
-fascicles sit as close to the contacts as the target
-(minimum-distance ratio near unity), no per-contact configuration has a
-gradient to exploit and the optimizer co-activates off-target
-fascicles.  These geometric-ceiling cases form the heavy lower tail of
+A minority of human anatomies cannot be steered well.  These are not
+primarily cases where off-target fascicles happen to sit as close to the
+contacts as the target --- across the cohort the minimum
+fascicle-to-contact distance is only a weak predictor of achieved
+selectivity (Spearman $r \approx -0.13$, n.s.) --- but cases where the
+target fascicle is large relative to the steerable field, so that sparing
+every off-target fiber while recruiting the whole target is geometrically
+impossible.  These geometric-ceiling cases form the heavy lower tail of
 the human distribution and are \emph{retained} in all statistics ---
 they are genuine selectivity outcomes on selectable targets, not solver
 artifacts.  Separately, we exclude five seeds (all human) whose target
@@ -330,7 +334,7 @@ selectivity.
 \end{figure}
 
 \subsection{Reduced-order fiber sampling overestimates deliverable
-  selectivity}
+  selectivity unless the design is re-scored on the population}
 \label{sec:results-sparse}
 
 Prior GPU-accelerated selectivity work reduces each fascicle to a
@@ -352,18 +356,29 @@ $\mathrm{SI_{dense}} - \mathrm{SI_{transfer}}$
 (Figure~\ref{fig:duke}\textbf{d}).
 
 The penalty is small in swine but large in human.  Per nerve it is a
-median $0.03$ in swine (mean $0.04$) versus $0.17$ in human (mean
-$0.23$; Mann--Whitney $p < 0.001$), and the transfer SI lies
+median $0.009$ in swine (mean $0.013$) versus $0.083$ in human (mean
+$0.116$; Mann--Whitney $p < 0.001$), and the transfer SI lies
 significantly below the dense ceiling for every sampling strategy in
 both species (two-sided per-nerve Wilcoxon, Holm-corrected; all
-$p \le 0.005$).  Sampling \emph{density} barely matters: ten fibers per
-fascicle transfer no better than one, or than the centroid, so the
-shortfall is not closed by sampling a few more fibers.
+$p \le 0.03$).  Sampling \emph{density} barely matters: ten fibers per
+fascicle transfer no better than one, or than the centroid.  Re-expressed
+as the fraction of each target fascicle that is sampled --- the
+species-fair axis, since ten fibers is ${\sim}33\,\%$ of a typical swine
+fascicle but only ${\sim}7\,\%$ of a human one --- the penalty is
+concentrated below ${\sim}5\,\%$ of the fascicle population (mean $0.12$
+below $2\,\%$, falling to ${<}0.03$ above $5\,\%$), and the species gap
+persists at matched low fraction (human $0.12$ vs swine $0.02$): the
+shortfall is not a sampling-fraction artifact but reflects the larger
+\emph{absolute} number of fibers a big fascicle needs to be represented.
 
-What drives it is fascicle \emph{size}.  The per-nerve penalty scales
-with the number of fibers per target fascicle (Spearman $r = +0.73$,
-$p < 0.001$, $n = 29$ nerves), which has median $30$ in swine versus
-$151$ in human.  This mediates the species gap: swine vagus nerves carry
+What sets the species difference is fascicle \emph{size}.  The per-nerve
+penalty scales with the number of fibers per target fascicle across the
+cohort (Spearman $r = +0.47$, $p = 0.01$, $n = 29$ nerves), which has
+median $30$ in swine versus $151$ in human; within each species the
+correlation is directionally consistent but not individually significant
+at these sample sizes, so we read fibers-per-fascicle as the driver of the
+\emph{between-species} difference rather than a within-species predictor.
+This explains the species gap: swine vagus nerves carry
 many small fascicles, so a handful of sampled fibers represents the
 target well and the optimized field transfers; human nerves carry a few
 large fascicles, so a field tuned to one sampled fiber does not cover
@@ -373,13 +388,21 @@ nerve (swine) is the more forgiving one.
 The recruitment signature confirms the mechanism
 (Figure~\ref{fig:duke}\textbf{b}).  Relative to the dense optimum, the
 sparse-transfer configuration in human loses on-target recruitment
-(median $100\,\% \rightarrow 65\,\%$; $p = 0.012$) and selectivity
-($p = 0.007$), whereas off-target recruitment and total delivered
-current are statistically unchanged ($p > 0.7$).  The penalty is thus a
+(median $100\,\% \rightarrow 82\,\%$; $p < 0.001$) and selectivity
+($p < 0.001$), whereas off-target recruitment and total delivered
+current are statistically unchanged ($p > 0.2$).  The penalty is thus a
 failure to recruit the large target fascicle, not off-target spill or
-reduced drive.  The practical implication is that centroid-only fiber
-sampling --- standard in GPU-accelerated selectivity
-work~\cite{hussain2024} --- recovers most of the achievable selectivity
-on small-fascicle anatomies but materially over-states the selectivity
-that will actually be delivered on large-fascicle nerves, precisely the
-human vagus geometry most relevant to clinical translation.
+reduced drive.  It is, however, largely a cost of the \emph{standard
+workflow} --- optimizing on the reduced set and reading selectivity off
+it, without re-scoring on the population.  Because jaxon re-scores a
+candidate on the full population cheaply, selecting per nerve the
+sparse-optimized design that scores best on the full population
+(optimize-then-validate) collapses the penalty to a median $0.000$ in
+swine and $0.016$ in human.  The honest conclusion is therefore narrow:
+centroid-only sampling \emph{as standardly used}~\cite{hussain2024}
+over-states deliverable selectivity on the large-fascicle human anatomies
+most relevant to clinical translation, but a practitioner who brings the
+full population into the loop --- at optimization or at least at
+validation, now computationally feasible --- recovers most of it, leaving
+only a small residual (${\sim}0.02$ in human) that no sparse design fully
+closes.

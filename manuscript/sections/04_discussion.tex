@@ -4,15 +4,22 @@
 Using population-scale differentiable simulation, we have shown that
 the reduced-order fiber sampling standard in GPU-accelerated
 selectivity modeling --- reducing each fascicle to one or a few
-representative fibers --- systematically overestimates the selectivity
-actually delivered to the nerve.  The error is not a fixed offset: this
-\emph{deployment penalty} is governed by fascicular architecture, the
-number of fibers per target fascicle, and is therefore small in swine
-(median $0.03$) but large in human (median $0.17$), a translational
+representative fibers and reading selectivity off that reduced set ---
+overestimates the selectivity actually delivered to the nerve when used
+that way.  The error is not a fixed offset: this \emph{deployment
+penalty} is governed by fascicular architecture --- the number of fibers
+per target fascicle --- and is therefore small in swine (median $0.009$)
+but larger in human (median $0.083$), a between-species translational
 bias that reduced-order models cannot detect because they never
 simulate the fibers the bias acts on.  Mechanistically the penalty is
 a failure to recruit the large human target fascicle from a field
 tuned to a few sampled fibers, not off-target spill or reduced drive.
+It is also largely \emph{recoverable}: because the full-population forward
+pass is cheap in jaxon, re-scoring or selecting a sparse-optimized design
+on the population removes most of the penalty (residual human
+${\sim}0.02$), so the actionable message is that population-scale
+validation --- not a different optimizer --- is what reduced-order
+pipelines lack.
 This was measurable only because jaxon simulates the full
 ${\sim}1000$-fiber population: a GPU-native, fully differentiable
 reimplementation of the canonical MRG, Sweeney, Sundt and Rattay axon
@@ -64,17 +71,20 @@ that the existing tools do not fill.
 \subsection{Limitations}
 
 \paragraph{Scope of the deployment-penalty finding.}
-The penalty is established \emph{in silico}, at a single fiber diameter
-($5.7\,\mu\mathrm{m}$ MRG), with one cuff and one FE pipeline, on 29
-nerves (11 human).  We therefore frame fascicular architecture as the
-\emph{driver} the penalty scales with (per-nerve Spearman
-$r = +0.73$; fibers-per-fascicle mediates the species gap), not as a
-manipulated cause, and we expect the magnitude --- though not the
-direction --- to depend on diameter, fiber-type mix, cuff geometry and
-the conductivity model.  Confirming the effect across diameters and
-fiber populations, and anchoring it experimentally, is the natural next
-step; jaxon's throughput makes the required population-scale sweeps
-tractable.
+The penalty is established \emph{in silico}, with one cuff and one FE
+pipeline, on 29 nerves (11 human).  We therefore frame fascicular
+architecture as the \emph{driver} the between-species penalty difference
+scales with (cohort Spearman $r = +0.47$; the within-species trend is
+directionally consistent but under-powered), not as a manipulated cause.
+A diameter spot-check confirms the species ordering persists at $5.7$,
+$7.3$ and $10\,\mu\mathrm{m}$ (human penalty $0.083$, $0.066$ and $0.054$
+vs swine ${\sim}0.01$ throughout), so the direction is not an artifact of
+the single diameter; we still expect the magnitude --- not the direction
+--- to depend on fiber-type mix, cuff geometry, the conductivity model,
+and on within-fascicle heterogeneity in fiber diameter, which by making a
+per-fascicle centroid less representative can only widen the penalty.
+Anchoring the effect experimentally is the natural next step; jaxon's
+throughput makes the required population-scale sweeps tractable.
 
 \paragraph{Single-cuff geometry.}
 The histology selectivity results use a single 12-contact MultiContact

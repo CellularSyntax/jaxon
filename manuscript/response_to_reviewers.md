@@ -219,10 +219,16 @@ fascicle-size account the data support.)
    the 1987 Sweeney conference paper) or need only volume/pages added
    (`kumbhar2019coreneuron`, `vissamsetti2025cap`); these are completed before
    resubmission.
-2. **Unpublished Golgi dependency [26]** ✍️ — we have ensured the FEM construction
-   needed to reproduce the fields used here is fully specified in this paper's
-   supplement (conductivities, perineurium contact impedance, mesh, solve);
-   nothing required depends on [26] being available.
+2. **Golgi dependency [26]** ✍️ — the companion platform paper (golgi) is now a
+   complete manuscript that fully documents the FEM pipeline (conductivities,
+   perineurium contact impedance, mesh, solve, and cross-validation against a
+   commercial reference), and the study bundles are deposited publicly; the
+   reference is updated from "in preparation" accordingly. Independently, the FEM
+   construction needed to reproduce the fields used here is also specified in this
+   paper's supplement, so nothing required depends on [26] being available. golgi
+   analyzes the same nerves for anatomical and fiber-type selectivity with
+   threshold models — an axis orthogonal to jaxon's sampling-penalty analysis —
+   and the Discussion now delineates the two explicitly.
 3. **Histology vs µCT inconsistency** ✍️ — corrected: the data are histology
    (SPARC quantified-morphology releases, anti-claudin-1 perineurium). The
    supplement header "microCT cohort" is fixed to "histology cohort"; the

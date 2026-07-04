@@ -49,6 +49,15 @@ wider open-source PNS-modeling ecosystem --- ASCENT, NRV~\cite{couppey2024nrv}
 and PyPNS~\cite{lubba2019pypns} --- shares the same gradient-free,
 CPU-NEURON basis, so a differentiable, GPU-native forward solver is, to
 our knowledge, new to peripheral nerve modeling.
+jaxon is complementary to this ecosystem rather than a replacement for
+it: the subject-specific finite-element fields used here are produced by
+our companion open platform, golgi~\cite{haberbusch2026golgi}, which
+builds the anatomy, meshes and solves the extracellular field, and
+characterizes fascicular and fiber-type selectivity with threshold-based
+NEURON and surrogate backends.  jaxon contributes the differentiable,
+GPU-native fiber solver and the population-scale sampling-penalty analysis
+that those threshold pipelines do not perform, and drops in as an
+additional backend.
 Within the JAX ecosystem, \texttt{jaxley}~\cite{deistler2024} supplies
 the multi-compartment Hodgkin--Huxley machinery but ships only
 canonical CNS channels; jaxon adds the peripheral specialization --- the
@@ -104,13 +113,26 @@ $[K, n_{\mathrm{fiber}}, n_{\mathrm{comp}}]$ tensor and so is agnostic
 to its origin, so a higher-fidelity FEM can be substituted without
 touching the optimization pipeline.
 
-\paragraph{No biological variability in fiber parameters.}
-All fibers in a given diameter share identical channel densities,
-geometric ratios and resting state.  Inter-fiber variability is known
-to broaden activation distributions and lower achievable
-selectivity~\cite{aristovich2021}.  Future work will sample from
-diameter-stratified parameter distributions estimated from
-electrophysiological recordings.
+\paragraph{Single fiber type, no biological variability.}
+The selectivity results use one myelinated fiber type at a single
+diameter, and all fibers of that diameter share identical channel
+densities, geometric ratios and resting state.  This isolates the
+sampling effect we set out to quantify, but it is an optimistic setting
+for selectivity: with identical fibers a per-fascicle centroid is
+maximally representative, so the deployment penalty we report is a
+conservative lower bound, and inter-fiber variability is known to
+broaden activation distributions and lower achievable
+selectivity~\cite{aristovich2021}.  A distinct and, on the vagus, larger
+limit on deliverable selectivity comes from the realistic \emph{mix} of
+fiber types: our companion open platform~\cite{haberbusch2026golgi},
+which supplies the finite-element fields used here, shows on these same
+nerves that moving from a single-diameter idealization to a morphometry-based
+A/B/C population collapses the selectivity of the small, high-threshold
+cardiac fibers, whose recruitment forces currents that also engage
+off-target fibers.  That fiber-type axis is orthogonal to the sampling
+axis studied here and compounds it; jaxon's throughput makes the
+population-averaged, multi-type sweeps needed to characterize their
+interaction tractable, which we leave to future work.
 
 \paragraph{Activation proxy versus full spike detection.}
 Recruitment is scored by a sigmoid-smoothed activation proxy

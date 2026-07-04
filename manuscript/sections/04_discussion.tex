@@ -13,7 +13,11 @@ but larger in human (median $0.083$), a between-species translational
 bias that reduced-order models cannot detect because they never
 simulate the fibers the bias acts on.  Mechanistically the penalty is
 a failure to recruit the large human target fascicle from a field
-tuned to a few sampled fibers, not off-target spill or reduced drive.
+tuned to a few sampled fibers, not off-target spill or reduced drive;
+it extends to the within-fascicle scale the established dependence of
+cuff-electrode thresholds on fascicle perineurium and cross-sectional
+area~\cite{davis2023fascicle}, a spread that a single centroid fiber
+cannot capture.
 It is also largely \emph{recoverable}: because the full-population forward
 pass is cheap in jaxon, re-scoring or selecting a sparse-optimized design
 on the population removes most of the penalty (residual human

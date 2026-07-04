@@ -15,18 +15,17 @@ configurations within $1\,\%$ threshold error}) and reaching a
 fibers on one NVIDIA A100, fast enough to optimize and re-score
 whole-nerve populations.  Using FEM-derived fields over a 12-contact
 cuff on 29 histology-segmented vagus nerves (18 swine, 11 human),
-we find that configurations optimized on sparsely-sampled fibers and
-deployed on the full population without re-scoring lose selectivity ---
-a \emph{deployment penalty} invisible to reduced-order models.  The
-penalty is small in swine (median $0.009$) but large in human
-($0.083$; Mann--Whitney $p < 0.001$) and tracks the number of
-fibers per target fascicle (Spearman $r = +0.47$, $p = 0.01$), which
-differs systematically between species; it manifests as failure to
-recruit the large human target fascicle ($p < 0.001$) rather than
-off-target spill (n.s.).  Re-scoring the sparse design on the full
-population --- cheap in our simulator --- recovers most of it (human
-residual $0.016$), so reduced-order fascicular sampling overstates
-deliverable selectivity chiefly when validated only on the fibers it
-samples, most severely on the human vagus geometry most relevant to
-clinical translation.  jaxon is open-source and slots into existing pipelines as
+we use it to show that the standard reduced-order shortcut ---
+optimizing on one representative fiber per fascicle --- overestimates
+the selectivity actually deliverable to the full population.  The
+overestimate is negligible in swine (median ${\sim}0.01$) but substantial
+and heavy-tailed in human (median $0.14$, up to $0.45$ on the
+largest-fascicle nerves; Mann--Whitney $p = 0.01$), because human
+fascicles are large; it appears as a failure to recruit the target
+fascicle, not off-target spill.  Sampling more fibers helps but does
+not close it on the biggest fascicles.  Re-scoring the candidate on the
+full population --- cheap in jaxon --- recovers most of it (human
+residual ${\sim}0.02$), so the actionable gap in reduced-order pipelines
+is population-scale validation, now feasible, rather than a different
+optimizer.  jaxon is open-source and slots into existing pipelines as
 a gradient-enabled replacement for the NEURON forward solver.

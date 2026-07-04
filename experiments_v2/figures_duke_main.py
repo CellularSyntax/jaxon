@@ -173,10 +173,11 @@ def _load_all_seeds() -> list[dict]:
 
 
 # ── Data: dense + sparse-transfer pairing ─────────────────────────────────────
-# Representative sparse strategy used for panels a & b: 1 fibre per fascicle,
-# random draw — a realistic single-fibre-per-fascicle sample (panel d shows the
-# penalty is driven by fascicle size, not sampling density, so this is typical).
-_A_STRAT, _A_NPER = "random", 1
+# Representative sparse strategy used for panels a & b: the single centroid
+# fibre per fascicle — the exact reduced-order workflow we critique (as in
+# AxonML).  Panel d shows the full density series: more fibres reduce the
+# penalty (Friedman p=0.002) but do not close it on the largest human fascicles.
+_A_STRAT, _A_NPER = "centroid", 1
 
 
 def _sparse_result(spd: dict, strat: str = _A_STRAT, nper: int = _A_NPER) -> dict | None:

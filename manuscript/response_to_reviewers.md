@@ -70,13 +70,21 @@ amplitudes, is unchanged). We **fixed the recording in both the
 finite-difference and autodiff optimizers** and **re-ran the full Duke sweep**.
 The results confirm the diagnosis exactly: the corrected dense-SI distribution is
 **identical** to the original (max |Δ| = 0.000 across all 116 seeds), while the
-deployment penalty — which re-scores the sparse amplitudes — **drops by roughly
-half**: human median **0.174 → 0.083**, swine **0.034 → 0.009**. The species
-difference remains highly significant (Mann–Whitney p < 0.001), transfer stays
-significantly below the dense ceiling in both species (all Holm-adjusted
-p ≤ 0.03), and the recruit-failure mechanism holds (human on-target
-100 → 82%, p < 0.001). So the central finding is unchanged in direction and
-significance but corrected in magnitude. Re-validating the two knife-edge configurations in NEURON with the *corrected*
+deployment penalty — which re-scores the sparse amplitudes — **roughly halves**.
+We now report it for the single-representative-fiber (centroid) reduction that
+reduced-order pipelines actually use: human median **0.136** (mean 0.128, up to
+**0.45** on the largest-fascicle nerves), swine **≈0.01**; averaged over the four
+sampling densities the human figure is 0.083 (down from 0.174 pre-fix). The
+species difference remains significant (Mann–Whitney p = 0.01), transfer stays
+below the dense ceiling, and the recruit-failure mechanism holds (human on-target
+100 → 83%, p = 0.004). So the central finding is unchanged in direction and
+significance but corrected — and de-emphasised — in magnitude. **We also corrected
+an over-statement from the earlier draft**: sampling more fibers *does* reduce the
+penalty (one to ten fibers per fascicle, median 0.19 → 0.03; Friedman p = 0.002),
+but the largest human fascicles remain undersampled even at ten fibers (~7% of the
+fascicle), so the penalty persists in the heavy tail rather than being independent
+of density. The manuscript now leads with the tool and presents the penalty as a
+bounded, honestly-scoped demonstration of what population-scale simulation reveals. Re-validating the two knife-edge configurations in NEURON with the *corrected*
 amplitudes now gives exact agreement (jaxon and NEURON both 0.659 and 0.818,
 100% per-fiber recruitment) — where the buggy amplitudes had given ~0 — so the
 population-level validation is complete across the full SI range in both species,
@@ -116,8 +124,8 @@ the penalty closes — the actionable guidance the reviewer noted.
 ### Major #3 — Single diameter / no inter-fiber variability is load-bearing. ✅ / 🔄
 
 - **Diameter spot-check** ✅: we re-ran the full optimize-and-re-score pipeline at
-  7.3 and 10.0 µm. The **species ordering persists** at every diameter — human
-  penalty 0.083 / 0.066 / 0.054 at 5.7 / 7.3 / 10.0 µm vs swine ≈0.01 throughout
+  7.3 and 10.0 µm. The **species ordering persists** at every diameter —
+  strategy-averaged human penalty 0.083 / 0.066 / 0.054 at 5.7 / 7.3 / 10.0 µm vs swine ≈0.01 throughout
   (same 18/11-nerve cohort) — so the direction is not an artifact of the single
   diameter; the magnitude drifts modestly. Stated in the Limitations.
 - **Inter-fiber variability** 🔄: we implemented per-fiber diameter sampling within

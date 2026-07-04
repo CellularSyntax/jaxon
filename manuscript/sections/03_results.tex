@@ -242,9 +242,9 @@ to future work (Section~\ref{sec:discussion}).
     are over the $111$ selectable-target seeds (target fraction
     $\le 0.6$; five degenerate-target seeds, all human, excluded --- see
     text).  The deployment penalty
-    ($\mathrm{SI_{dense}} - \mathrm{SI_{transfer}}$, averaged over the
-    four sparse strategies) and fibers per target fascicle are per
-    nerve.}
+    ($\mathrm{SI_{dense}} - \mathrm{SI_{transfer}}$, for the
+    single-representative-fiber (centroid) reduction) and fibers per
+    target fascicle are per nerve.}
   \label{tab:duke-cohort}
   \setlength{\tabcolsep}{5pt}
   \begin{tabular}{lcccccc}
@@ -254,8 +254,8 @@ to future work (Section~\ref{sec:discussion}).
     \cmidrule(lr){2-3}\cmidrule(lr){4-5}
     & nerves & seeds & mean (med.) & $\ge0.90$ & med.\ (mean) & median \\
     \midrule
-    Swine        & 18 &  72 & 0.926 (0.946) & 72\,\% & 0.009 (0.013) & 30 \\
-    Human        & 11 &  39 & 0.845 (0.964) & 67\,\% & 0.083 (0.116) & 151 \\
+    Swine        & 18 &  72 & 0.926 (0.946) & 72\,\% & 0.011 (0.013) & 30 \\
+    Human        & 11 &  39 & 0.845 (0.964) & 67\,\% & 0.136 (0.128) & 151 \\
     \midrule
     \textbf{All} & \textbf{29} & \textbf{111} & \textbf{0.897 (0.948)}
                  & \textbf{70\,\%} & --- & --- \\
@@ -263,10 +263,10 @@ to future work (Section~\ref{sec:discussion}).
   \end{tabular}
 
   \vspace{2pt}
-  {\footnotesize Species penalty difference: two-sided Mann--Whitney
-   $p < 0.001$.  Penalty vs.\ fibers per target fascicle: Spearman
-   $r = +0.47$, $p = 0.01$ ($n = 29$ nerves; within-species not
-   significant, see text).}
+  {\footnotesize Species penalty difference (centroid reduction):
+   two-sided Mann--Whitney $p = 0.01$.  Strategy-averaged penalty vs.\
+   fibers per target fascicle: Spearman $r = +0.47$, $p = 0.01$
+   ($n = 29$ nerves; within-species not significant, see text).}
 \end{table}
 
 \paragraph{Emergent stimulation strategy.}
@@ -306,9 +306,11 @@ selectivity.
   \caption{Selectivity optimization on the Duke histology-derived
     vagus-nerve cohort (29 nerves: 18 swine, 11 human; 111
     selectable-target seeds, degenerate targets excluded).  ``Sparse''
-    throughout denotes a
-    configuration optimized on one randomly-sampled fiber per fascicle
-    and evaluated on the full ${\sim}1000$-fiber population (transfer).
+    in panels \textbf{a}--\textbf{b} denotes a
+    configuration optimized on the single centroid fiber per fascicle ---
+    the standard reduced-order workflow --- and evaluated on the full
+    ${\sim}1000$-fiber population (transfer); panel \textbf{d} sweeps the
+    sampling density.
     \textbf{(a)} Dense- versus sparse-optimized activation for a
     representative swine and human nerve, matched on target size
     ($\sim$28\,\% of fibers) and dense $\mathrm{SI}$ ($\sim$0.97);
@@ -355,29 +357,36 @@ delivered.  The deployment penalty is the drop from the dense ceiling,
 $\mathrm{SI_{dense}} - \mathrm{SI_{transfer}}$
 (Figure~\ref{fig:duke}\textbf{d}).
 
-The penalty is small in swine but large in human.  Per nerve it is a
-median $0.009$ in swine (mean $0.013$) versus $0.083$ in human (mean
-$0.116$; Mann--Whitney $p < 0.001$), and the transfer SI lies
-significantly below the dense ceiling for every sampling strategy in
-both species (two-sided per-nerve Wilcoxon, Holm-corrected; all
-$p \le 0.03$).  Sampling \emph{density} barely matters: ten fibers per
-fascicle transfer no better than one, or than the centroid.  Re-expressed
-as the fraction of each target fascicle that is sampled --- the
-species-fair axis, since ten fibers is ${\sim}33\,\%$ of a typical swine
-fascicle but only ${\sim}7\,\%$ of a human one --- the penalty is
-concentrated below ${\sim}5\,\%$ of the fascicle population (mean $0.12$
-below $2\,\%$, falling to ${<}0.03$ above $5\,\%$), and the species gap
-persists at matched low fraction (human $0.12$ vs swine $0.02$): the
-shortfall is not a sampling-fraction artifact but reflects the larger
-\emph{absolute} number of fibers a big fascicle needs to be represented.
+The penalty is negligible in swine but substantial and heavy-tailed in
+human.  For the single-representative-fiber reduction that reduced-order
+pipelines actually use --- one fiber at each fascicle centroid --- the
+per-nerve penalty is a median $0.011$ in swine (mean $0.013$, maximum
+$0.05$) versus $0.136$ in human (mean $0.128$; Mann--Whitney
+$p = 0.01$), against a dense ceiling of ${\sim}0.95$.  The human
+distribution is right-skewed: nearly half of the human nerves lose more
+than $0.10$ and the worst loses $0.45$, whereas no swine nerve loses more
+than $0.05$.  Sampling \emph{more} fibers reduces the penalty --- across
+the four strategies it falls significantly as density rises (one to ten
+random fibers per target fascicle, median $0.19 \rightarrow 0.03$;
+Friedman $p = 0.002$; averaged over strategies the human penalty is
+$0.083$) --- but it does not close on the largest fascicles.  Re-expressed
+as the fraction of each target fascicle sampled --- the species-fair
+axis, since ten fibers is ${\sim}33\,\%$ of a typical swine fascicle but
+only ${\sim}7\,\%$ of a human one --- the penalty concentrates below
+${\sim}5\,\%$ sampling and the species gap persists at matched low
+fraction (human ${\sim}0.10$ vs swine ${\sim}0.00$): a large fascicle
+needs a proportionally larger sample to be represented, and on the human
+vagus the standard single-fiber reduction rarely provides it.
 
-What sets the species difference is fascicle \emph{size}.  The per-nerve
-penalty scales with the number of fibers per target fascicle across the
-cohort (Spearman $r = +0.47$, $p = 0.01$, $n = 29$ nerves), which has
-median $30$ in swine versus $151$ in human; within each species the
-correlation is directionally consistent but not individually significant
-at these sample sizes, so we read fibers-per-fascicle as the driver of the
-\emph{between-species} difference rather than a within-species predictor.
+What sets the species difference is fascicle \emph{size}.  The penalty is
+essentially a between-species step --- negligible in swine, sizeable in
+human --- tracking the number of fibers per target fascicle, which has
+median $30$ in swine versus $151$ in human.  The strategy-averaged penalty
+correlates with fibers-per-fascicle across the cohort (Spearman
+$r = +0.47$, $p = 0.01$, $n = 29$ nerves), though within each species the
+trend is only directional at these sample sizes; we therefore read
+fibers-per-fascicle as a \emph{between-species} driver rather than a
+graded within-species predictor.
 This explains the species gap: swine vagus nerves carry
 many small fascicles, so a handful of sampled fibers represents the
 target well and the optimized field transfers; human nerves carry a few
@@ -392,9 +401,9 @@ more fascicular nerve (swine) is the more forgiving one.
 
 The recruitment signature confirms the mechanism
 (Figure~\ref{fig:duke}\textbf{b}).  Relative to the dense optimum, the
-sparse-transfer configuration in human loses on-target recruitment
-(median $100\,\% \rightarrow 82\,\%$; $p < 0.001$) and selectivity
-($p < 0.001$), whereas off-target recruitment and total delivered
+centroid-transfer configuration in human loses on-target recruitment
+(median $100\,\% \rightarrow 83\,\%$; $p = 0.004$) and selectivity
+($p = 0.002$), whereas off-target recruitment and total delivered
 current are statistically unchanged ($p > 0.2$).  The penalty is thus a
 failure to recruit the large target fascicle, not off-target spill or
 reduced drive.  It is, however, largely a cost of the \emph{standard

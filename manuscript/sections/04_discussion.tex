@@ -8,10 +8,12 @@ representative fibers and reading selectivity off that reduced set ---
 overestimates the selectivity actually delivered to the nerve when used
 that way.  The error is not a fixed offset: this \emph{deployment
 penalty} is governed by fascicular architecture --- the number of fibers
-per target fascicle --- and is therefore small in swine (median $0.009$)
-but larger in human (median $0.083$), a between-species translational
-bias that reduced-order models cannot detect because they never
-simulate the fibers the bias acts on.  Mechanistically the penalty is
+per target fascicle --- and is therefore negligible in swine (median
+${\sim}0.01$) but sizeable and heavy-tailed in human (median $0.14$ for the
+standard single-representative-fiber reduction, reaching $0.45$ on the
+largest-fascicle nerves), a between-species translational bias that
+reduced-order models cannot detect because they never simulate the
+fibers the bias acts on.  Mechanistically the penalty is
 a failure to recruit the large human target fascicle from a field
 tuned to a few sampled fibers, not off-target spill or reduced drive;
 it extends to the within-fascicle scale the established dependence of
@@ -96,9 +98,9 @@ architecture as the \emph{driver} the between-species penalty difference
 scales with (cohort Spearman $r = +0.47$; the within-species trend is
 directionally consistent but under-powered), not as a manipulated cause.
 A diameter spot-check confirms the species ordering persists at $5.7$,
-$7.3$ and $10\,\mu\mathrm{m}$ (human penalty $0.083$, $0.066$ and $0.054$
-vs swine ${\sim}0.01$ throughout), so the direction is not an artifact of
-the single diameter; we still expect the magnitude --- not the direction
+$7.3$ and $10\,\mu\mathrm{m}$ (strategy-averaged human penalty $0.083$,
+$0.066$ and $0.054$ vs swine ${\sim}0.01$ throughout), so the direction
+is not an artifact of the single diameter; we still expect the magnitude --- not the direction
 --- to depend on fiber-type mix, cuff geometry, the conductivity model,
 and on within-fascicle heterogeneity in fiber diameter, which by making a
 per-fascicle centroid less representative can only widen the penalty.

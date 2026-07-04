@@ -76,7 +76,11 @@ difference remains highly significant (Mann–Whitney p < 0.001), transfer stays
 significantly below the dense ceiling in both species (all Holm-adjusted
 p ≤ 0.03), and the recruit-failure mechanism holds (human on-target
 100 → 82%, p < 0.001). So the central finding is unchanged in direction and
-significance but corrected in magnitude. We thank the reviewer — the requested
+significance but corrected in magnitude. Re-validating the two knife-edge configurations in NEURON with the *corrected*
+amplitudes now gives exact agreement (jaxon and NEURON both 0.659 and 0.818,
+100% per-fiber recruitment) — where the buggy amplitudes had given ~0 — so the
+population-level validation is complete across the full SI range in both species,
+including the hardest near-threshold cases. We thank the reviewer — the requested
 population validation is what exposed this 2× inflation, and the corrected
 analysis is materially more robust.
 

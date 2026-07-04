@@ -5,7 +5,7 @@ each fascicle to one or a few representative fibers.  Whether this
 reduction biases the selectivity it predicts has been untestable,
 because testing it requires simulating entire fiber populations under
 optimized extracellular fields.  We built \emph{jaxon}, a fully
-differentiable, GPU-native reimplementation in JAX of the canonical
+differentiable, GPU-native reimplementation in JAX of canonical
 peripheral nerve fiber models --- the myelinated
 McIntyre--Richardson--Grill and Sweeney axons and the unmyelinated
 Sundt and Rattay C-fibers --- validated against
@@ -15,9 +15,9 @@ configurations within $1\,\%$ threshold error}) and reaching a
 fibers on one NVIDIA A100, fast enough to optimize and re-score
 whole-nerve populations.  Using FEM-derived fields over a 12-contact
 cuff on 29 histology-segmented vagus nerves (18 swine, 11 human),
-we use it to show that the standard reduced-order shortcut ---
+we use it to show that a standard reduced-order shortcut ---
 optimizing on one representative fiber per fascicle --- overestimates
-the selectivity actually deliverable to the full population.  The
+how much selectivity is actually deliverable to the full population.  The
 overestimate is negligible in swine (median ${\sim}0.01$) but substantial
 and heavy-tailed in human (median $0.14$, up to $0.45$ on the
 largest-fascicle nerves; Mann--Whitney $p = 0.01$), because human

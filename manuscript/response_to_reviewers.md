@@ -151,10 +151,23 @@ We accept this and have made two changes.
 
 ### Major #5 — Faithfulness of the "sparse" baseline; does the penalty survive optimize-then-validate? ✅ (reframed ✍️)
 
-We document precisely what the centroid reduction in [20] does (optimize on a
-per-fascicle representative; deploy without full-population re-scoring) and
-confirm our "sparse" condition reproduces that workflow rather than a
-strawman. Crucially, we ran the reviewer's proposed **optimize-then-validate**
+We document precisely what the centroid reduction in AxonML (Hussain et al.
+2024) does, verified against its Methods. For selective-stimulation
+optimization it places a **single 5.7 µm fiber at the centroid of each
+fascicle** ("Optimization for spatial selectivity: tasks"), optimizes the
+contact amplitudes on those centroid fibers, and reports selectivity as
+**"% fascicular area activated"** obtained by **assuming all fibers of a given
+diameter within a fascicle share the centroid fiber's threshold** (their Fig. 4e/5d
+captions; Davis et al. 2023). It therefore never scores the design on the
+spatially-distributed within-fascicle population — exactly the reduction whose
+cost we quantify. (AxonML *does* re-check optimized amplitudes in NEURON, but on
+the same centroid fibers, so this validates surrogate accuracy, not
+population-fidelity.) Our "sparse" condition reproduces this workflow rather than a
+strawman: the AxonML group's own prior work (Davis et al. 2023) established that
+within-fascicle thresholds vary with fiber position, so quantifying what the
+equal-threshold assumption costs — and showing it is species-dependent (small in
+swine, large in the large-fascicle human vagus) — is a fair, novel contribution
+that builds on, rather than contradicts, that literature. Crucially, we ran the reviewer's proposed **optimize-then-validate**
 test: selecting, per nerve, the sparse-optimized solution that scores best on the
 full population. On the corrected sweep the penalty then **nearly vanishes** —
 swine 0.009 → **0.000** and human 0.083 → **0.016**. We have therefore **narrowed

@@ -74,7 +74,17 @@ does, systematically and in a species-dependent way.  Our
 contributions are:
 
 \begin{enumerate}
-  \item \textbf{The central finding.}  On a cross-species cohort of
+  \item \textbf{The simulator.}  \emph{jaxon}, a fully
+        differentiable, GPU-native reimplementation in JAX of four
+        canonical axon models (myelinated MRG double-cable and Sweeney;
+        unmyelinated Sundt and Rattay), validated against NEURON on
+        strength--duration, conduction-velocity and intracellular-trace
+        benchmarks ($99.6\,\%$ of 943 configurations within $1\,\%$)
+        and $\sim\!820\times$ faster than \texttt{pyfibers} at
+        $N=100{,}000$ fibers on a single A100 --- fast enough to
+        optimize and re-score whole-nerve populations
+        (Sections~\ref{sec:results-validation}--\ref{sec:results-scaling}).
+  \item \textbf{The finding it enables.}  On a cross-species cohort of
         histology-segmented vagus nerves, stimulation configurations
         optimized on sparsely-sampled fibers --- the per-fascicle
         reduction used in GPU-accelerated selectivity
@@ -85,16 +95,6 @@ contributions are:
         swine, large in human), exposing a translational bias that
         reduced-order models cannot detect
         (Section~\ref{sec:results-sparse}).
-  \item \textbf{The enabling simulator.}  \emph{jaxon}, a fully
-        differentiable, GPU-native reimplementation in JAX of four
-        canonical axon models (myelinated MRG double-cable and Sweeney;
-        unmyelinated Sundt and Rattay), validated against NEURON on
-        strength--duration, conduction-velocity and intracellular-trace
-        benchmarks ($99.6\,\%$ of 943 configurations within $1\,\%$)
-        and $\sim\!820\times$ faster than \texttt{pyfibers} at
-        $N=100{,}000$ fibers on a single A100 --- fast enough to
-        optimize and re-score whole-nerve populations
-        (Sections~\ref{sec:results-validation}--\ref{sec:results-scaling}).
   \item \textbf{The pipeline.}  A selectivity-optimization pipeline
         over per-contact amplitudes whose GPU-fast forward pass makes
         optimization tractable directly on the \emph{full fiber

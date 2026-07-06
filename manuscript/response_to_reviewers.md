@@ -121,21 +121,30 @@ human fascicles need a higher *absolute* fiber count to represent. We add this
 fractional re-expression to the sampling analysis and report the fraction at which
 the penalty closes — the actionable guidance the reviewer noted.
 
-### Major #3 — Single diameter / no inter-fiber variability is load-bearing. ✅ / 🔄
+### Major #3 — Single diameter / no inter-fiber variability is load-bearing. ✅
 
 - **Diameter spot-check** ✅: we re-ran the full optimize-and-re-score pipeline at
   7.3 and 10.0 µm. The **species ordering persists** at every diameter —
   strategy-averaged human penalty 0.083 / 0.066 / 0.054 at 5.7 / 7.3 / 10.0 µm vs swine ≈0.01 throughout
   (same 18/11-nerve cohort) — so the direction is not an artifact of the single
   diameter; the magnitude drifts modestly. Stated in the Limitations.
-- **Inter-fiber variability** 🔄: we implemented per-fiber diameter sampling within
-  each fascicle (truncated-normal about the nominal diameter; MRG geometry and the
-  FEM lead field re-sampled per fiber), which makes the centroid a *less*
-  representative sample. The run is in progress (a first attempt inadvertently
-  fell back to identical fibers; re-running with the variability verified in the
-  output). We state explicitly in the Limitations that within-fascicle
-  heterogeneity, by making the centroid less representative, can only *increase*
-  the penalty — i.e. our identical-fiber assumption is conservative.
+- **Inter-fiber variability** ✅: we implemented per-fiber diameter sampling within
+  each fascicle (CV = 0.15 about the nominal 5.7 µm; MRG geometry and the FEM lead
+  field re-sampled per fiber — verified in the output, fiber-diameter std ≈ 0.84)
+  and re-ran the full optimize-and-re-score pipeline on the same 18/11-nerve
+  cohort. **The finding is robust to realistic heterogeneity.** The
+  species-dependent penalty persists (single-centroid reduction: swine median
+  0.011 → 0.040, human median 0.136 → 0.088; species Mann–Whitney **p = 0.011**),
+  and heterogeneity does *not* shrink it — if anything it worsens the human tail
+  (mean 0.13 → 0.21, worst nerve 0.45 → **0.66**, fraction of human nerves losing
+  > 0.2 doubling from 18 % to 36 %). The per-nerve change is not statistically
+  significant (Wilcoxon p = 0.28), so we frame single-diameter as a **conservative,
+  robust** representation rather than claiming heterogeneity strictly amplifies the
+  penalty (we have corrected the earlier "can only increase" wording accordingly).
+  Notably the achievable dense ceiling itself falls under variability (human 0.95 →
+  0.88): heterogeneous fibers are intrinsically harder to select, consistent with
+  the companion platform's fiber-population analysis (golgi). Stated in the
+  Limitations.
 
 ### Major #4 — The "differentiable" framing is overstated relative to what is used. ✅ (tempered ✍️; gradient exercised ✅)
 

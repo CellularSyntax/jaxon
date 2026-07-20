@@ -42,6 +42,7 @@ dependencies:
       - "pandas==2.3.3"
       - "optax==0.2.8"
       - "tqdm"
+      - "neuron==9.0.1"
 
       # --- NEURON baseline (PyFibers wraps it) ---
       # neuron: NOT pip-installable on Windows. Install NEURON separately (e.g. c:\nrn826)

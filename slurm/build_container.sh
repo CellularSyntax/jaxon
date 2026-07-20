@@ -3,7 +3,7 @@
 #
 # Starts from nvcr.io#nvidia/pytorch:25.03-py3, runs the same pip install
 # steps that setup_env.sh would have run on every job, and saves the
-# result to $HOME/containers/jaxfibers.sqsh.  All sbatch files in slurm/
+# result to $HOME/containers/jaxon.sqsh.  All sbatch files in slurm/
 # auto-detect that path and prefer it over the nvcr.io reference, so
 # subsequent jobs start in seconds with deps already in place.
 #
@@ -22,7 +22,7 @@
 #
 # Environment overrides (optional):
 #   QOS, PARTITION, GRES   pass to srun (defaults: a16/gpu/gpu:a16:1).
-#   OUT                    output path (default: $HOME/containers/jaxfibers.sqsh).
+#   OUT                    output path (default: $HOME/containers/jaxon.sqsh).
 #   PROJECT_ROOT           project root mount (default: $PWD).
 #   BASE_IMAGE             starting container (default: the nvcr PyTorch image).
 #   TIME_LIMIT             srun -t value (default: 1:00:00).
@@ -30,7 +30,7 @@
 set -euo pipefail
 
 PROJECT_ROOT="${PROJECT_ROOT:-$(pwd)}"
-OUT="${OUT:-${HOME}/containers/jaxfibers.sqsh}"
+OUT="${OUT:-${HOME}/containers/jaxon.sqsh}"
 BASE_IMAGE="${BASE_IMAGE:-nvcr.io#nvidia/pytorch:25.03-py3}"
 PARTITION="${PARTITION:-gpu}"
 QOS="${QOS:-a16}"

@@ -14,7 +14,7 @@ stays identical.  Each result's recomputed SI is checked against the stored
 ``si_transfer`` as a sanity gate.
 
 Run:
-  conda activate jaxley_fibers
+  conda activate jaxon
   python -m experiments_v2.backfill_sparse_transfer            # all samples
   python -m experiments_v2.backfill_sparse_transfer sub-10_sam-1 human_sub-56_sam-1
 """
@@ -36,7 +36,7 @@ import jax.numpy as jnp
 
 jax.config.update("jax_enable_x64", True)
 
-from jaxfibers.stim.batch_solve import stack_fiber_statics, initial_states_batch
+from jaxon.stim.batch_solve import stack_fiber_statics, initial_states_batch
 from experiments_v2.utils import save_json
 from experiments_v2.duke_loader import load_duke_sample, cluster_target_mask
 from experiments_v2.selectivity_sweep_duke import (

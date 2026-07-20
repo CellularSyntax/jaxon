@@ -23,7 +23,7 @@ from dataclasses import dataclass
 
 import jaxley as jx
 
-from jaxfibers.channels.schild_channels import (
+from jaxon.channels.schild_channels import (
     SchildCombined94,
     SchildCombined97,
     ca_geometry,

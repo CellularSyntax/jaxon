@@ -3,7 +3,7 @@
 # They will run in parallel (subject to cluster availability).
 #
 # Run from the project root:
-#   cd /path/to/jaxley_fibers
+#   cd /path/to/jaxon
 #   bash slurm/submit_all.sh
 
 set -euo pipefail

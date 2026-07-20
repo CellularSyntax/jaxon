@@ -73,13 +73,13 @@ CPU by default; a single edit switches it to CUDA.
 
 ```bash
 # 1. enter the project directory
-cd jaxley_fibers
+cd jaxon
 
 # 2. create the env (CPU by default; uncomment jax[cuda12] in environment.yml for GPU)
 conda env create -f environment.yml
 
 # 3. activate and compile the NEURON .mod files used by the PyFibers reference
-conda activate jaxley_fibers
+conda activate jaxon
 pyfibers_compile
 ```
 
@@ -94,7 +94,7 @@ python -c "import jax; print(jax.devices())"   # should list CudaDevice
 **Run the validation suite** (CPU, minutes):
 
 ```bash
-conda activate jaxley_fibers
+conda activate jaxon
 
 python experiments_v2/mrg_validation.py        # thresholds, CV, traces (MRG)
 python experiments_v2/sundt_validation.py      # ditto, Sundt
@@ -157,14 +157,14 @@ via the golgi platform and the underlying SPARC datasets (swine
 ## Repository layout
 
 ```text
-jaxley_fibers/
+jaxon/
 ├── README.md               this file
 ├── AUDIT.md                state-of-the-project + roadmap
 ├── CHANGELOG.md            chronological changes
 ├── REPRODUCE.md            step-by-step paper reproduction
 ├── reproduce_figures.sh    one-command figure driver (processed data)
 ├── environment.yml         pinned conda env
-├── jaxfibers/              core package
+├── jaxon/              core package
 │   ├── channels/           Jaxley Channel translations (MRG, Sundt, Rattay,
 │   │                       Sweeney, Schild94, Schild97)
 │   ├── fibers/             morphology builders, one per model

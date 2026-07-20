@@ -17,7 +17,7 @@ Setup
 * Point-source extracellular at y=1 mm above the fiber centre.
 * Cathodic monophasic pulse, PW=0.1 ms.
 * 4 amplitudes (rows): 0.5×, 1.05×, 1.5×, 3.0× threshold.
-* Each panel: waterfall plot, jaxfibers vs pyfibers.
+* Each panel: waterfall plot, jaxon vs pyfibers.
 
 Outputs (outputs/dc_block/)
 ---------------------------
@@ -49,13 +49,13 @@ from jaxley.solver_gate import solve_gate_exponential
 
 jax.config.update("jax_enable_x64", True)
 
-from jaxfibers.fibers.mrg import (
+from jaxon.fibers.mrg import (
     build_mrg, build_mrg_interp, node_indices, section_centers_um,
     V_REST, CM_AXON, G_PAS_MYSA, G_PAS_FLUT, G_PAS_STIN,
 )
-from jaxfibers.channels.mrg_axnode import AxnodeMyel
-from jaxfibers.stim.extracellular import point_source_potentials_mV
-from jaxfibers.stim.extracellular_coupled import arrays_from_geometry, integrate
+from jaxon.channels.mrg_axnode import AxnodeMyel
+from jaxon.stim.extracellular import point_source_potentials_mV
+from jaxon.stim.extracellular_coupled import arrays_from_geometry, integrate
 from neuron import h
 from pyfibers import build_fiber, FiberModel, ScaledStim
 from scipy.interpolate import interp1d
@@ -241,7 +241,7 @@ def main():
             ax.plot(res["jax_t_ms"],
                     node_y + (res["jax_vm_nodes"][:, i] - V_REST) * scale_mm_per_mV,
                     color="C1", lw=0.9, alpha=0.9,
-                    label="jaxfibers" if i == 0 else None)
+                    label="jaxon" if i == 0 else None)
             # PyFibers trace
             ax.plot(res["pf_t_ms"],
                     node_y + (res["pf_vm_nodes"][:, i] - V_REST) * scale_mm_per_mV,

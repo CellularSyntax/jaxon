@@ -10,7 +10,7 @@ The FEniCSx FEM pipeline produces, per Duke vagus-nerve sample, a directory
 
 This loader returns the same triplet
 ``(nerve_geom, Ve_unit, node_indices, geoms, extra)``
-that ``jaxfibers.stim.multichannel_field.precompute_ve_unit`` returns for the
+that ``jaxon.stim.multichannel_field.precompute_ve_unit`` returns for the
 synthetic Hussain-style pipeline, so the rest of the optimisation stack
 (``run_rect_optimization`` / ``run_waveform_optimization``) is unchanged.
 
@@ -42,8 +42,8 @@ from pathlib import Path
 
 import numpy as np
 
-from jaxfibers.nerve.geometry import NerveGeometry, FascicleOutline
-from jaxfibers.fibers.mrg import (
+from jaxon.nerve.geometry import NerveGeometry, FascicleOutline
+from jaxon.fibers.mrg import (
     _mrg_geometry, _mrg_interp_geometry, section_centers_um)
 
 

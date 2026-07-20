@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -J jaxfibers-mrginterp-val
+#SBATCH -J jaxon-mrginterp-val
 #SBATCH -N 1
 #SBATCH -n 1
 #SBATCH -p gpu
@@ -15,7 +15,7 @@
 # Outputs: outputs/mrg_interp_validation/
 #
 # Submit from the project root:
-#   cd /path/to/jaxley_fibers
+#   cd /path/to/jaxon
 #   sbatch slurm/run_mrg_interp_validation.sbatch
 
 set -euo pipefail
@@ -23,12 +23,12 @@ set -euo pipefail
 PROJECT_ROOT="${PROJECT_ROOT:-$SLURM_SUBMIT_DIR}"
 # Resolve the container image once at submit time:
 #   1. Honour an explicit CONTAINER_IMAGE env-var override.
-#   2. Else prefer the project SquashFS at $HOME/containers/jaxfibers.sqsh
+#   2. Else prefer the project SquashFS at $HOME/containers/jaxon.sqsh
 #      (built once via slurm/build_container.sh; has pip deps baked in,
 #      so setup_env.sh skips its pip install step).
 #   3. Else fall back to nvcr.io#nvidia/pytorch:25.03-py3 (Pyxis pulls +
 #      caches it on the assigned node; setup_env.sh installs deps).
-DEFAULT_SQSH="${HOME}/containers/jaxfibers.sqsh"
+DEFAULT_SQSH="${HOME}/containers/jaxon.sqsh"
 DEFAULT_IMAGE="nvcr.io#nvidia/pytorch:25.03-py3"
 if [ -z "${CONTAINER_IMAGE:-}" ]; then
   if [ -f "${DEFAULT_SQSH}" ]; then

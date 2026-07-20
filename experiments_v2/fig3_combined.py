@@ -6,7 +6,7 @@ Reads the JSON outputs produced by:
   ap_collision.py   → Panel c  (AP collision spatial snapshots)
   spike_desync.py   → Panel d  (state-dependent effects, SPIKE synchronisation)
 
-In all panels NEURON / PyFibers is blue solid and jaxfibers / S-MF is orange
+In all panels NEURON / PyFibers is blue solid and jaxon / S-MF is orange
 dashed (matching Hussain et al. Nat. Commun. 15:7597 (2024) Fig 3 colour
 convention).
 
@@ -36,7 +36,7 @@ V_REST = -80.0
 
 # Colourblind-safe palette (Wong / Okabe — matches Hussain Fig 3)
 C_NEURON  = "#0072B2"   # blue  — NEURON / PyFibers
-C_SMF     = "#E69F00"   # amber — S-MF   / jaxfibers
+C_SMF     = "#E69F00"   # amber — S-MF   / jaxon
 C_GREY    = "#555555"
 
 

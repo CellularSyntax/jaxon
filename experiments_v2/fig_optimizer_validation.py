@@ -3,11 +3,11 @@
     selectivity objective (pooled over points along a trajectory);
 (b) selectivity optimization driven purely by the analytic gradient;
 (c) loss-convergence trajectories for representative nerves (existing runs).
-Run (jaxley_fibers env): python -m experiments_v2.fig_optimizer_validation
+Run (jaxon env): python -m experiments_v2.fig_optimizer_validation
 """
 import os, sys
-os.environ.setdefault("JAXLEY_FIBERS_SOFT_TEMPERATURE", "0.1")
-os.environ.setdefault("JAXLEY_FIBERS_ENERGY_LAMBDA", "1e-3")
+os.environ.setdefault("JAXON_SOFT_TEMPERATURE", "0.1")
+os.environ.setdefault("JAXON_ENERGY_LAMBDA", "1e-3")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
@@ -18,11 +18,11 @@ import jax.numpy as jnp
 import matplotlib as mpl; mpl.use("Agg")
 import matplotlib.pyplot as plt
 
-from jaxfibers.stim.batch_solve import (stack_fiber_statics, initial_states_batch,
+from jaxon.stim.batch_solve import (stack_fiber_statics, initial_states_batch,
     batch_integrate_m_max_fd)
-from jaxfibers.optim.optimizer import (selectivity_loss_from_mmax,
+from jaxon.optim.optimizer import (selectivity_loss_from_mmax,
     run_rect_optimization_autodiff)
-from jaxfibers.optim.losses import activation_proxy_batch, selectivity_index
+from jaxon.optim.losses import activation_proxy_batch, selectivity_index
 from experiments_v2.duke_loader import (load_duke_sample, select_random_cluster_targets,
     cluster_target_mask)
 

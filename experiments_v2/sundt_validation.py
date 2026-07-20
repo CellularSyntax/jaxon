@@ -42,15 +42,15 @@ from jaxley.solver_gate import solve_gate_exponential
 
 jax.config.update("jax_enable_x64", True)
 
-from jaxfibers.fibers.sundt import (
+from jaxon.fibers.sundt import (
     build_sundt, node_indices, section_centers_um,
     V_REST, CM,
 )
-from jaxfibers.channels.sundt_channels import SundtAxon
-from jaxfibers.stim.extracellular import point_source_potentials_mV
-from jaxfibers.stim.intracellular import rectangular_pulse, attach_intra_pulse
-from jaxfibers.nrn_baseline import run_intracellular_sundt, run_extracellular_sundt
-from jaxfibers.stim.extracellular_coupled import arrays_from_geometry, integrate, _be_step
+from jaxon.channels.sundt_channels import SundtAxon
+from jaxon.stim.extracellular import point_source_potentials_mV
+from jaxon.stim.intracellular import rectangular_pulse, attach_intra_pulse
+from jaxon.nrn_baseline import run_intracellular_sundt, run_extracellular_sundt
+from jaxon.stim.extracellular_coupled import arrays_from_geometry, integrate, _be_step
 
 from experiments_v2.utils import (
     PULSES, make_pulse_array, pf_find_threshold,

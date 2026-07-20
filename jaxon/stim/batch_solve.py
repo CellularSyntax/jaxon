@@ -22,9 +22,9 @@ import jax.numpy as jnp
 import numpy as np
 from jaxley.solver_gate import solve_gate_exponential
 
-from jaxfibers.stim.extracellular_coupled import _be_step, arrays_from_geometry
-from jaxfibers.channels.mrg_axnode import AxnodeMyel
-from jaxfibers.fibers.mrg import V_REST, CM_AXON, G_PAS_MYSA, G_PAS_FLUT, G_PAS_STIN
+from jaxon.stim.extracellular_coupled import _be_step, arrays_from_geometry
+from jaxon.channels.mrg_axnode import AxnodeMyel
+from jaxon.fibers.mrg import V_REST, CM_AXON, G_PAS_MYSA, G_PAS_FLUT, G_PAS_STIN
 
 jax.config.update("jax_enable_x64", True)
 
@@ -249,7 +249,7 @@ def _integrate_one_fiber_m_max_fd(
     n = fs.is_node.shape[0]
     T = pulse_seq.shape[0]
 
-    # Checkpoint policy selectable per job via JAXLEY_FIBERS_FD_CHECKPOINT.
+    # Checkpoint policy selectable per job via JAXON_FD_CHECKPOINT.
     #   "1" (default) — wrap step in @jax.checkpoint.  Caps memory at the
     #     forward-only footprint when this scan runs under autodiff
     #     (LBFGS rect path); essential for N_FIBERS≥~100 on A16.
@@ -261,7 +261,7 @@ def _integrate_one_fiber_m_max_fd(
     #     remat, or for the Adam-FD path (which has no backward and is
     #     insensitive to this flag).
     import os as _os
-    _use_checkpoint = _os.environ.get("JAXLEY_FIBERS_FD_CHECKPOINT", "1") != "0"
+    _use_checkpoint = _os.environ.get("JAXON_FD_CHECKPOINT", "1") != "0"
 
     def step(carry, s):
         Vi, Vp, st, m_max = carry

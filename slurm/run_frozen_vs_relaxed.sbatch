@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -J jaxfibers-fvr
+#SBATCH -J jaxon-fvr
 #SBATCH -N 1
 #SBATCH -n 1
 #SBATCH -p gpu
@@ -37,7 +37,7 @@
 set -euo pipefail
 
 PROJECT_ROOT="${PROJECT_ROOT:-$SLURM_SUBMIT_DIR}"
-DEFAULT_SQSH="${HOME}/containers/jaxfibers.sqsh"
+DEFAULT_SQSH="${HOME}/containers/jaxon.sqsh"
 DEFAULT_IMAGE="nvcr.io#nvidia/pytorch:25.03-py3"
 if [ -z "${CONTAINER_IMAGE:-}" ]; then
   if [ -f "${DEFAULT_SQSH}" ]; then CONTAINER_IMAGE="${DEFAULT_SQSH}";
@@ -114,10 +114,10 @@ export AMP_CLIP_HI=\"${AMP_CLIP_HI:-2.00}\"
 export ADAM_LR_MA=\"${ADAM_LR_MA:-0.005}\"
 export FD_EPS_MA=\"${FD_EPS_MA:-0.030}\"
 export PROBE_MAGS_MA=\"${PROBE_MAGS_MA:--0.02,-0.05,-0.10,-0.20,-0.40,-0.80,-1.20,-1.50}\"
-export JAXLEY_FIBERS_SOFT_TEMPERATURE=\"${JAXLEY_FIBERS_SOFT_TEMPERATURE:-0.15}\"
-export JAXLEY_FIBERS_ENERGY_LAMBDA=\"${JAXLEY_FIBERS_ENERGY_LAMBDA:-1e-3}\"
-export JAXLEY_FIBERS_LOSS=\"${JAXLEY_FIBERS_LOSS:-linear}\"
-export JAXLEY_FIBERS_WQ_END_NODES=\"${JAXLEY_FIBERS_WQ_END_NODES:-3}\"
+export JAXON_SOFT_TEMPERATURE=\"${JAXON_SOFT_TEMPERATURE:-0.15}\"
+export JAXON_ENERGY_LAMBDA=\"${JAXON_ENERGY_LAMBDA:-1e-3}\"
+export JAXON_LOSS=\"${JAXON_LOSS:-linear}\"
+export JAXON_WQ_END_NODES=\"${JAXON_WQ_END_NODES:-3}\"
 export INIT_MODE=\"${INIT_MODE:-warm}\"
 export ZERO_LR_MA=\"${ZERO_LR_MA:-0.1}\"
 export ZERO_STEPS=\"${ZERO_STEPS:-200}\"

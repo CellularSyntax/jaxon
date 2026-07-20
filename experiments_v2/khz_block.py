@@ -1,4 +1,4 @@
-"""Kilohertz frequency block — PyFibers tutorial reproduction + jaxfibers comparison.
+"""Kilohertz frequency block — PyFibers tutorial reproduction + jaxon comparison.
 
 Mirrors pyfibers/tutorials/5_block_threshold:
   * MRG_INTERPOLATION, D=10 µm, N=25 nodes
@@ -46,14 +46,14 @@ from jaxley.solver_gate import solve_gate_exponential
 
 jax.config.update("jax_enable_x64", True)
 
-from jaxfibers.fibers.mrg import (
+from jaxon.fibers.mrg import (
     build_mrg_interp, node_indices, section_centers_um,
     V_REST, CM_AXON, G_PAS_MYSA, G_PAS_FLUT, G_PAS_STIN,
 )
-from jaxfibers.channels.mrg_axnode import AxnodeMyel
-from jaxfibers.stim.extracellular import point_source_potentials_mV
-from jaxfibers.stim.extracellular_coupled import arrays_from_geometry, integrate
-from jaxfibers.nrn_baseline import build_mrg_pyfibers  # noqa: F401 (PYTHONPATH fix)
+from jaxon.channels.mrg_axnode import AxnodeMyel
+from jaxon.stim.extracellular import point_source_potentials_mV
+from jaxon.stim.extracellular_coupled import arrays_from_geometry, integrate
+from jaxon.nrn_baseline import build_mrg_pyfibers  # noqa: F401 (PYTHONPATH fix)
 
 from pyfibers import build_fiber, FiberModel, ScaledStim
 
@@ -189,7 +189,7 @@ _JIT_RUN = None
 
 
 def _jax_run(amp_mA: float) -> tuple[int, float | None, np.ndarray]:
-    """Run jaxfibers kHz block; return (n_aps, last_ap_time, vm_far[N_STEPS])."""
+    """Run jaxon kHz block; return (n_aps, last_ap_time, vm_far[N_STEPS])."""
     global _JAX, _JIT_RUN
     if _JAX is None:
         _JAX = _build_jax_setup()
@@ -240,7 +240,7 @@ def _pf_run(amp_mA: float) -> tuple[int, float | None, np.ndarray, np.ndarray]:
 
 
 def main():
-    print("=== kHz block — PyFibers tutorial + jaxfibers comparison ===")
+    print("=== kHz block — PyFibers tutorial + jaxon comparison ===")
     print(f"Fiber: MRG_INTERP D={DIAMETER} µm  N={N_NODES} nodes  dt={DT} ms")
     print(f"kHz: {KHZ_FREQ} kHz square, on {KHZ_ON}-{KHZ_OFF} ms")
     print(f"Pacing: loc={PACE_LOC}, start={PACE_START} ms, interval={PACE_INTERVAL} ms, "
@@ -256,7 +256,7 @@ def main():
         n_pf, last_pf, vm_pf, t_pf = _pf_run(amp)
         t_pf_wall = time.time() - t0
         print(f"  PyFibers : {n_pf} APs, last t = {last_pf}  ({t_pf_wall:.1f} s)")
-        print(f"  jaxfibers: {n_jax} APs, last t = {last_jax}  ({t_jax_wall:.1f} s)")
+        print(f"  jaxon: {n_jax} APs, last t = {last_jax}  ({t_jax_wall:.1f} s)")
         results.append({
             "amp_mA":     amp,
             "n_aps_pf":   n_pf,
@@ -279,7 +279,7 @@ def main():
         ax.plot(t_pf, vm_pf, color="C0", lw=1.0,
                 label=f"PyFibers ({res['n_aps_pf']} APs)")
         ax.plot(t_jx, vm_jx, color="C1", lw=0.8, ls="--",
-                label=f"jaxfibers ({res['n_aps_jax']} APs)")
+                label=f"jaxon ({res['n_aps_jax']} APs)")
         ax.axvspan(KHZ_ON, KHZ_OFF, alpha=0.2, color="red", label="kHz on")
         for s in PACE_START + np.arange(PACE_N) * PACE_INTERVAL:
             ax.axvline(s, color="k", ls="--", lw=0.4, alpha=0.4)
@@ -291,7 +291,7 @@ def main():
     axes[-1].set_xlabel("Time (ms)")
     fig.suptitle(
         f"kHz block — MRG_INTERP D={DIAMETER} µm  (PyFibers solid blue, "
-        f"jaxfibers dashed orange)",
+        f"jaxon dashed orange)",
         fontsize=11,
     )
     path = OUT / "fig_khz_block_traces.png"

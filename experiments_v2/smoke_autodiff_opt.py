@@ -46,14 +46,14 @@ import jax
 import jax.numpy as jnp
 
 from experiments_v2 import selectivity_sweep_duke as S
-from jaxfibers.optim.optimizer import (
+from jaxon.optim.optimizer import (
     run_rect_optimization,
     run_rect_optimization_lbfgs,
     run_waveform_optimization,
     _build_rect_loss_fn,
     _initial_amps_for_seed,
 )
-from jaxfibers.optim.losses import selectivity_index
+from jaxon.optim.losses import selectivity_index
 
 WAVE_ITERS = int(os.environ.get("SMOKE_WAVE_ITERS", "5"))
 # Ve-weighted pattern is scaled to each of these peak magnitudes (mA) to find

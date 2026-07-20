@@ -11,7 +11,7 @@ collapse to SI=0 via line-search overshoot on the near-flat binary proxy) and
 not to the loss surface.
 
 We deliberately run on the SOFT activation proxy
-(JAXLEY_FIBERS_SOFT_TEMPERATURE, default 0.15 set below): with the default
+(JAXON_SOFT_TEMPERATURE, default 0.15 set below): with the default
 binary proxy the autodiff gradient is ~0 except in a narrow threshold window
 -- exactly the saturation Hussain et al. (Nat Commun 2024) avoid by
 optimizing a smooth m-gate quotient, not a thresholded activation.  The
@@ -121,14 +121,14 @@ os.environ.setdefault("N_RESTARTS_RECT", "1")
 # Soft proxy so the loss is genuinely differentiable for BOTH arms.  Without
 # this the binary proxy's gradient is ~0 except at threshold and the autodiff
 # arm is being asked to descend a flat surface (the real reason the old LBFGS
-# arm collapsed).  Read at import time by jaxfibers.optim.optimizer.
-os.environ.setdefault("JAXLEY_FIBERS_SOFT_TEMPERATURE", "0.15")
+# arm collapsed).  Read at import time by jaxon.optim.optimizer.
+os.environ.setdefault("JAXON_SOFT_TEMPERATURE", "0.15")
 # Which autodiff arm: 'adam' (clean A/B, default) or 'lbfgs' (fragile, for record).
 _AUTODIFF_OPT = os.environ.get("H2H_AUTODIFF_OPT", "adam").strip().lower()
 # Initialization: 'warm' (probe-selected focal start, default) or 'zero'
 # (AxonML-style cold start: all contacts at 0 mA, no probe).  Cold start needs
 # a larger LR and more steps to ramp from silence -- only viable with the
-# smooth quotient loss (JAXLEY_FIBERS_LOSS=quotient); with the linear loss a
+# smooth quotient loss (JAXON_LOSS=quotient); with the linear loss a
 # cold start sits in a flat region, which is the point of the comparison.
 _INIT_MODE  = os.environ.get("INIT_MODE", "warm").strip().lower()
 _ZERO_LR    = float(os.environ.get("ZERO_LR_MA", "0.1"))
@@ -136,7 +136,7 @@ _ZERO_STEPS = int(os.environ.get("ZERO_STEPS", "200"))
 _ZERO_LR_DECAY = float(os.environ.get("ZERO_LR_DECAY", "0.6"))
 _ZERO_SI_FLOOR = float(os.environ.get("ZERO_SI_FLOOR", "0.5"))
 _ZERO_PATIENCE = int(os.environ.get("ZERO_PATIENCE", "10"))
-_LOSS_MODE  = os.environ.get("JAXLEY_FIBERS_LOSS", "linear").strip().lower()
+_LOSS_MODE  = os.environ.get("JAXON_LOSS", "linear").strip().lower()
 # H2H_VERBOSE=1 -> print the per-iteration optimisation trajectory (SI, fired
 # counts, amps) for both arms, so a cold ramp can be watched escaping SI=0.
 _VERBOSE = os.environ.get("H2H_VERBOSE", "0").strip() in ("1", "true", "yes")
@@ -146,12 +146,12 @@ import jax
 import jax.numpy as jnp
 
 from experiments_v2 import selectivity_sweep_duke as S
-from jaxfibers.optim.optimizer import (
+from jaxon.optim.optimizer import (
     run_rect_optimization,
     run_rect_optimization_autodiff,
     run_rect_optimization_lbfgs,
 )
-from jaxfibers.optim.losses import selectivity_index
+from jaxon.optim.losses import selectivity_index
 
 
 def _hard_best(loss, si) -> int:
@@ -277,7 +277,7 @@ def main() -> int:
             start_si=start_si, best_mag=best_mag, pattern=pattern, budget=int(steps),
             init_mode=_INIT_MODE, loss_mode=_LOSS_MODE,
             autodiff_opt=_AUTODIFF_OPT, soft_temperature=float(
-                os.environ.get("JAXLEY_FIBERS_SOFT_TEMPERATURE", "0.0")),
+                os.environ.get("JAXON_SOFT_TEMPERATURE", "0.0")),
             fd_si=fd_si, fd_loss=fd_loss, fd_time=fd_t,
             lb_si=lb_si, lb_loss=lb_loss, lb_time=lb_t,
             dSI=fd_si - lb_si, peak_mb=gpu_peak_mb(),

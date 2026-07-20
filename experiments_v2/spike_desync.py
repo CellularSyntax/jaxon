@@ -9,7 +9,7 @@ Layout matches Hussain Fig 3d:
   * 3 fiber diameters (5.7, 8.7, 14 µm)  — columns
   * 3 intrinsic firing rates (10, 50, 100 Hz)  — rows
   * 3 stim frequencies (30, 50, 100 Hz)  — line styles (solid / dashed / dotted)
-  * jaxfibers (orange) vs PyFibers (blue) — line colors
+  * jaxon (orange) vs PyFibers (blue) — line colors
   * Per cell: mean ± 95% CI across N=5 fiber locations
   * Amplitude axis bound per diameter
 
@@ -47,14 +47,14 @@ from jaxley.solver_gate import solve_gate_exponential
 
 jax.config.update("jax_enable_x64", True)
 
-from jaxfibers.fibers.mrg import (
+from jaxon.fibers.mrg import (
     build_mrg, node_indices, section_centers_um,
     V_REST, CM_AXON, G_PAS_MYSA, G_PAS_FLUT, G_PAS_STIN,
 )
-from jaxfibers.channels.mrg_axnode import AxnodeMyel
-from jaxfibers.stim.extracellular import point_source_potentials_mV
-from jaxfibers.stim.extracellular_coupled import arrays_from_geometry, integrate
-from jaxfibers.nrn_baseline import build_mrg_pyfibers
+from jaxon.channels.mrg_axnode import AxnodeMyel
+from jaxon.stim.extracellular import point_source_potentials_mV
+from jaxon.stim.extracellular_coupled import arrays_from_geometry, integrate
+from jaxon.nrn_baseline import build_mrg_pyfibers
 
 from neuron import h
 from pyfibers import ScaledStim

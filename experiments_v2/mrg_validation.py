@@ -42,16 +42,16 @@ from jaxley.solver_gate import solve_gate_exponential
 
 jax.config.update("jax_enable_x64", True)
 
-from jaxfibers.fibers.mrg import (
+from jaxon.fibers.mrg import (
     build_mrg, node_indices, section_centers_um,
     V_REST, CM_AXON, G_PAS_MYSA, G_PAS_FLUT, G_PAS_STIN,
 )
-from jaxfibers.channels.mrg_axnode import AxnodeMyel
-from jaxfibers.stim.extracellular import point_source_potentials_mV
-from jaxfibers.nrn_baseline import (
+from jaxon.channels.mrg_axnode import AxnodeMyel
+from jaxon.stim.extracellular import point_source_potentials_mV
+from jaxon.nrn_baseline import (
     run_intracellular, run_extracellular,
 )
-from jaxfibers.stim.extracellular_coupled import (
+from jaxon.stim.extracellular_coupled import (
     arrays_from_geometry, integrate, integrate_recording, _be_step,
 )
 
@@ -418,7 +418,7 @@ def _pf_cv(nr, n_nodes, centers, nodes) -> float:
 def task_cv() -> dict:
     """Conduction velocity for all 9 MRG diameters (self-contained)."""
     print("\n=== Task 3: Conduction velocity ===")
-    from jaxfibers.nrn_baseline import run_extracellular
+    from jaxon.nrn_baseline import run_extracellular
 
     results: dict = {}
     for D in DIAMETERS:

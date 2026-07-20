@@ -6,7 +6,7 @@
 # compile: every figure script here only reads JSON from outputs/ and renders.
 #
 # Prerequisites:
-#   * conda env `jaxley_fibers` active   (conda activate jaxley_fibers)
+#   * conda env `jaxon` active   (conda activate jaxon)
 #   * run from the repo root
 #   * outputs/ populated (from the repo or the Zenodo bundle); in particular
 #     outputs/duke_sweeps_fixed/ must exist (the corrected cohort sweep)

@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -J jaxfibers-smoke
+#SBATCH -J jaxon-smoke
 #SBATCH -N 1
 #SBATCH -n 1
 #SBATCH -p gpu
@@ -34,7 +34,7 @@
 set -euo pipefail
 
 PROJECT_ROOT="${PROJECT_ROOT:-$SLURM_SUBMIT_DIR}"
-DEFAULT_SQSH="${HOME}/containers/jaxfibers.sqsh"
+DEFAULT_SQSH="${HOME}/containers/jaxon.sqsh"
 DEFAULT_IMAGE="nvcr.io#nvidia/pytorch:25.03-py3"
 if [ -z "${CONTAINER_IMAGE:-}" ]; then
   if [ -f "${DEFAULT_SQSH}" ]; then

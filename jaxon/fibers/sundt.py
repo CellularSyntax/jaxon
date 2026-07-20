@@ -13,7 +13,7 @@ Compartment parameters (verified against PyFibers SUNDT at runtime):
   v_rest    = -60 mV
 
 Extracellular coupling: call `arrays_from_geometry(geom_c, dt)` from
-`jaxfibers.stim.extracellular_coupled` (same import as for MRG).  Set
+`jaxon.stim.extracellular_coupled` (same import as for MRG).  Set
   xraxial_Mohm_cm  = 1e6  (dummy — periaxonal axial never used for nodes)
   xc_myelin_uF_cm2 = 0.0  (no myelin capacitance)
   xg_myelin_S_cm2  = 1e10 (short-circuit; overridden to 0 by the is_node mask)
@@ -26,7 +26,7 @@ from dataclasses import dataclass
 import jaxley as jx
 from jaxley.channels import Leak
 
-from jaxfibers.channels.sundt_channels import SundtAxon
+from jaxon.channels.sundt_channels import SundtAxon
 
 # ── constants ──────────────────────────────────────────────────────────────────
 V_REST   = -60.0   # mV

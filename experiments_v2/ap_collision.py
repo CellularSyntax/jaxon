@@ -49,13 +49,13 @@ from jaxley.solver_gate import solve_gate_exponential
 
 jax.config.update("jax_enable_x64", True)
 
-from jaxfibers.fibers.mrg import (
+from jaxon.fibers.mrg import (
     build_mrg, node_indices, section_centers_um,
     V_REST, CM_AXON, G_PAS_MYSA, G_PAS_FLUT, G_PAS_STIN,
 )
-from jaxfibers.channels.mrg_axnode import AxnodeMyel
-from jaxfibers.stim.extracellular_coupled import arrays_from_geometry, integrate
-from jaxfibers.nrn_baseline import build_mrg_pyfibers
+from jaxon.channels.mrg_axnode import AxnodeMyel
+from jaxon.stim.extracellular_coupled import arrays_from_geometry, integrate
+from jaxon.nrn_baseline import build_mrg_pyfibers
 from neuron import h
 
 from experiments_v2.utils import ensure_dir, save_json
@@ -224,7 +224,7 @@ def make_figure(results: list[dict]) -> None:
         axes = axes[None, :]
 
     # Hussain Fig 3c: x-axis = node number (0..n_nodes-1), node-only Vm.
-    # PyFibers (blue, solid) and jaxfibers (orange, dashed) — matches Hussain
+    # PyFibers (blue, solid) and jaxon (orange, dashed) — matches Hussain
     # convention where NEURON is solid blue and S-MF is dashed orange.
     for r, res in enumerate(results):
         D = res["diameter_um"]
@@ -235,7 +235,7 @@ def make_figure(results: list[dict]) -> None:
             ax.plot(node_x, res["snapshots_nodes_pf"][c], color="C0", lw=1.6,
                     label="PyFibers" if (r == 0 and c == 0) else None)
             ax.plot(node_x, res["snapshots_nodes"][c],    color="C1", lw=1.2, ls="--",
-                    label="jaxfibers" if (r == 0 and c == 0) else None)
+                    label="jaxon" if (r == 0 and c == 0) else None)
             ax.axhline(V_REST, color="gray", lw=0.4, ls=":")
             ax.set_xlim(0, n_nodes_r - 1)
             ax.set_ylim(-90, 50)

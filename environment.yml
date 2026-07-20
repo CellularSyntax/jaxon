@@ -1,4 +1,4 @@
-# Conda env recipe for jaxley_fibers.
+# Conda env recipe for jaxon.
 #
 # CPU-only install (any platform, including Apple silicon):
 #     conda env create -f environment.yml
@@ -22,7 +22,7 @@
 #     (Apple M1 Max, 2026-05-31). Newer minor versions of jaxley / jax /
 #     pyfibers should also work — bump cautiously.
 #
-name: jaxley_fibers
+name: jaxon
 channels:
   - conda-forge
 dependencies:

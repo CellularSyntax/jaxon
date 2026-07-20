@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to `jaxley_fibers` are recorded here.
+All notable changes to `jaxon` are recorded here.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 each entry dated and tied to git commits so the project can be rewound to any
 prior validated state.
@@ -8,8 +8,8 @@ prior validated state.
 ## [Unreleased]
 
 ### Added
-- **Fig 3 panels (a), (b), (c) now overlay PyFibers + jaxfibers** with the
-  Hussain colour convention (NEURON blue solid, jaxfibers orange dashed):
+- **Fig 3 panels (a), (b), (c) now overlay PyFibers + jaxon** with the
+  Hussain colour convention (NEURON blue solid, jaxon orange dashed):
   - Panel (a) `dc_block.py` — waterfall of V_m(t) per node across 4
     amplitudes; peak V_m matches PyFibers to 0.0 mV at all amps.
   - Panel (b) `khz_block.py` — verbatim reproduction of pyfibers tutorial
@@ -32,7 +32,7 @@ prior validated state.
   (panel d), neither of which exist in the repo yet. See AUDIT §4.2.1
   for the full TODO list (anatomy data, Ve templates, intrinsic firing
   patterns, cluster wallclock estimate).
-- **`jaxfibers/nrn_baseline.py` PYTHONPATH fix for Windows** — prepends
+- **`jaxon/nrn_baseline.py` PYTHONPATH fix for Windows** — prepends
   `c:/nrn826/lib/python` so `import neuron` picks the cp311 hoc binary
   before the legacy `c:/nrn` (which only has py27/35/36/37). Required
   for PyFibers comparisons to run on the dev host.
@@ -74,7 +74,7 @@ prior validated state.
   submission.
 - `CHANGELOG.md` (this file).
 - `slurm/build_container.sh` — one-time builder for a project-private Pyxis
-  SquashFS at `$HOME/containers/jaxfibers.sqsh`. Starts from
+  SquashFS at `$HOME/containers/jaxon.sqsh`. Starts from
   `nvcr.io#nvidia/pytorch:25.03-py3`, runs `pip install -r
   requirements_gpu.txt` inside the container, and saves the resulting
   layer. After this exists, the sbatch auto-detect picks it up and
@@ -88,7 +88,7 @@ prior validated state.
   C-fiber Δt ≈ 0.3–0.5 ms).
 
 ### Added
-- **`run_rect_optimization_lbfgs`** in `jaxfibers/optim/optimizer.py` — LBFGS
+- **`run_rect_optimization_lbfgs`** in `jaxon/optim/optimizer.py` — LBFGS
   + M random restarts for rectangular-amplitude selectivity. Uses optax's
   zoom-line-search LBFGS with autodiff gradients (via the existing
   checkpointed `batch_integrate_m_max_fd`). Restart 0 is the
@@ -200,7 +200,7 @@ prior validated state.
 - **Rattay bi_ca threshold over-estimate (+6 to +8.2 %)** at PW ≥ 0.1 ms,
   across all 5 diameters. Root cause: asymmetric exponential clip
   `jnp.exp(jnp.clip(-vsh / k, -50.0, 0.0))` in
-  `jaxfibers/channels/rattay_channels.py::_alpha_beta` truncated β_m, α_h,
+  `jaxon/channels/rattay_channels.py::_alpha_beta` truncated β_m, α_h,
   β_n at v < V_rest = -70 mV (clipping exp argument > 0 to 1). At V = -100 mV
   (end nodes during the cathodic phase of bi_ca), β_m was 5.3× too small
   and α_h was 4.5× too small. The h gate failed to recover from prolonged
@@ -237,12 +237,12 @@ prior validated state.
     sharp and unambiguous; touching them risks regression for no gain.
 
 ### Removed
-- `jaxfibers/stim/mrg_extracellular_solver.py` (375 lines). Old
+- `jaxon/stim/mrg_extracellular_solver.py` (375 lines). Old
   quasi-static V_pax solver, superseded by
-  `jaxfibers/stim/extracellular_coupled.py` (the full coupled (V_i, V_pax)
+  `jaxon/stim/extracellular_coupled.py` (the full coupled (V_i, V_pax)
   backward-Euler with block-Thomas sweep). Verified to have zero
   references in the codebase before deletion.
-- `jaxfibers/stim/extracellular_utils.py` (228 lines). Old
+- `jaxon/stim/extracellular_utils.py` (228 lines). Old
   activating-function-via-`.stimulate()` helper, superseded by direct
   coupled-solver integration. Zero references before deletion.
 
@@ -255,11 +255,11 @@ prior validated state.
 
 ### Changed
 - **All 11 SLURM sbatch files now auto-detect a project SquashFS container**
-  at `$HOME/containers/jaxfibers.sqsh` (the deps-baked-in container built
+  at `$HOME/containers/jaxon.sqsh` (the deps-baked-in container built
   by `slurm/build_container.sh`) and fall back to the nvcr.io reference if
   it doesn't exist. Resolution order:
   1. Explicit `CONTAINER_IMAGE` env-var override.
-  2. `$HOME/containers/jaxfibers.sqsh` if present.
+  2. `$HOME/containers/jaxon.sqsh` if present.
   3. `nvcr.io#nvidia/pytorch:25.03-py3`.
   Earlier intermediate iterations of this auto-detect (which looked for a
   bare `pytorch_25.03.sqsh` without pip deps installed) are superseded —
@@ -267,7 +267,7 @@ prior validated state.
 
 - **`slurm/setup_env.sh` short-circuits when deps are pre-installed.** It
   now probe-imports `jaxley` and `pyfibers`; if both are present (the
-  case inside the `jaxfibers.sqsh` container) it skips the entire
+  case inside the `jaxon.sqsh` container) it skips the entire
   `pip install -r requirements_gpu.txt` step. On the nvcr.io fallback,
   behaviour is unchanged.
 
@@ -299,13 +299,13 @@ prior validated state.
   `None` cells cleanly. Controlled by `JAX_OOM_FALLBACK = True`.
 - **`PYFIBERS_BUDGET_S` in `experiments_v2/scaling.py` raised from 120 s
   to 7200 s** (2 hours), and made overridable via the
-  `JAXLEY_FIBERS_PF_BUDGET_S` environment variable. The 2 min cap was
+  `JAXON_PF_BUDGET_S` environment variable. The 2 min cap was
   truncating PyFibers data at N ≤ 1000 for Sundt, Rattay, Schild94 and
   Schild97 (which run ~30 min - 1 hour for N = 10 000 PyFibers serial),
   forcing the scaling figure to fall back on linear extrapolation for
   those cells. With the new budget, the cluster pass yields real
   measured timings at N = 10 000 for every model in the registry.
-  Set `JAXLEY_FIBERS_PF_BUDGET_S=300` for fast local smoke runs that
+  Set `JAXON_PF_BUDGET_S=300` for fast local smoke runs that
   still extrapolate past the budget.
   - Re-run required: `sbatch slurm/run_scaling.sbatch` to regenerate
     `outputs/scaling/data_scaling.json` with real N = 10 000 PyFibers

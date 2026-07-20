@@ -14,7 +14,7 @@
 #   RECT_OPTIMIZER=autodiff SWEEP_BALANCE=1 \
 #   DUKE_SWEEP_ROOT=outputs/duke_sweeps_autodiff \
 #   SPARSE_SAMPLING_SWEEP=true SEED_END=4 \
-#   JAXLEY_FIBERS_LOSS=quotient JAXLEY_FIBERS_SOFT_TEMPERATURE=0.15 \
+#   JAXON_LOSS=quotient JAXON_SOFT_TEMPERATURE=0.15 \
 #     bash slurm/submit_duke_sweep.sh
 #
 # a100-only / different counts / b200 secondary:
@@ -46,7 +46,7 @@ echo "Duke sweep over ${N_TOTAL} disjoint shards:"
 echo "  a100 = ${N_A100}  (shards 0..$((N_A100 - 1)))"
 echo "  ${SEC_Q} = ${N_SEC}  (shards ${N_A100}..$((N_TOTAL - 1)))"
 echo "  RECT_OPTIMIZER=${RECT_OPTIMIZER:-adam_fd}  DUKE_SWEEP_ROOT=${DUKE_SWEEP_ROOT:-outputs/duke_sweeps}"
-echo "  SPARSE_SAMPLING_SWEEP=${SPARSE_SAMPLING_SWEEP:-false}  SEED_END=${SEED_END:-25}  LOSS=${JAXLEY_FIBERS_LOSS:-linear}"
+echo "  SPARSE_SAMPLING_SWEEP=${SPARSE_SAMPLING_SWEEP:-false}  SEED_END=${SEED_END:-25}  LOSS=${JAXON_LOSS:-linear}"
 
 # Each `VAR=.. sbatch` runs with --export=ALL (default), so the autodiff env
 # the caller set (RECT_OPTIMIZER, DUKE_SWEEP_ROOT, SPARSE_SAMPLING_SWEEP, ...)

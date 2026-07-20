@@ -258,8 +258,8 @@ if os.environ.get("FROZEN_VS_RELAXED_AGGREGATE", "").strip() in ("1", "true", "y
 
 # ── per-nerve mode (needs DUKE_SAMPLE_DIR) ────────────────────────────────────
 os.environ.setdefault("N_OPT_RECT", os.environ.get("FVR_STEPS", "15"))
-os.environ.setdefault("JAXLEY_FIBERS_SOFT_TEMPERATURE", "0.15")
-os.environ.setdefault("JAXLEY_FIBERS_ENERGY_LAMBDA", "1e-3")
+os.environ.setdefault("JAXON_SOFT_TEMPERATURE", "0.15")
+os.environ.setdefault("JAXON_ENERGY_LAMBDA", "1e-3")
 # Sparse density for the transfer leg (paper's reduced-order = 1 fiber/fascicle).
 _N_PER_FASC = int(os.environ.get("FVR_N_PER_FASC", "1"))
 # Init for the FREE arm: 'warm' (probe-selected start, default) or 'zero'
@@ -325,10 +325,10 @@ import jax
 import jax.numpy as jnp
 
 from experiments_v2 import selectivity_sweep_duke as S
-from jaxfibers.optim.optimizer import (
+from jaxon.optim.optimizer import (
     run_rect_optimization, run_rect_optimization_autodiff,
 )
-from jaxfibers.optim.losses import selectivity_index
+from jaxon.optim.losses import selectivity_index
 
 
 def _probe_init(seed_in):
@@ -546,8 +546,8 @@ def _run_headline(duke, name: str, out_path: Path, loss_mode: str) -> int:
         ok=True, mode="headline", K=K, init_mode=_INIT_MODE, loss_mode=loss_mode,
         balance=bool(_BALANCE), dense_steps=_DENSE_STEPS,
         seed_start=_SEED_START, seed_end=_SEED_END, n_seeds=len(seed_rows),
-        soft_temperature=float(os.environ["JAXLEY_FIBERS_SOFT_TEMPERATURE"]),
-        energy_lambda=float(os.environ["JAXLEY_FIBERS_ENERGY_LAMBDA"]),
+        soft_temperature=float(os.environ["JAXON_SOFT_TEMPERATURE"]),
+        energy_lambda=float(os.environ["JAXON_ENERGY_LAMBDA"]),
         seeds=seed_rows,
         dense_si_relaxed_autodiff_median=float(np.median(si_vals)),
     )
@@ -561,7 +561,7 @@ def main() -> int:
     name = S.SAMPLE_NAME
     # Per-config sub-directory so different configurations never overwrite each
     # other and the aggregator can group them.
-    loss_mode = os.environ.get("JAXLEY_FIBERS_LOSS", "linear")
+    loss_mode = os.environ.get("JAXON_LOSS", "linear")
     cfg = f"{_INIT_MODE}_{loss_mode}_bal{int(_BALANCE)}"
     if _MODE in ("headline", "backfill"):
         cfg += "_adheadline"   # free-autodiff-only; never collide with a speed run
@@ -683,8 +683,8 @@ def main() -> int:
             n_per_fascicle=_N_PER_FASC, pattern=patt, mode=_MODE,
             init_mode=_INIT_MODE, loss_mode=loss_mode, balance=bool(_BALANCE),
             dense_steps=_DENSE_STEPS,
-            soft_temperature=float(os.environ["JAXLEY_FIBERS_SOFT_TEMPERATURE"]),
-            energy_lambda=float(os.environ["JAXLEY_FIBERS_ENERGY_LAMBDA"]),
+            soft_temperature=float(os.environ["JAXON_SOFT_TEMPERATURE"]),
+            energy_lambda=float(os.environ["JAXON_ENERGY_LAMBDA"]),
             dense_si_frozen=dsi_f, dense_si_relaxed=dsi_r,
             dense_si_relaxed_autodiff=dsi_r_ad,
             transfer_si_frozen=None, transfer_si_relaxed=None,

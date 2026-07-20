@@ -60,11 +60,11 @@ import jax.numpy as jnp
 
 jax.config.update("jax_enable_x64", True)
 
-from jaxfibers.nerve.geometry import make_hussain_style_nerve
-from jaxfibers.stim.multichannel_field import make_ring_cuff_positions, precompute_ve_unit
-from jaxfibers.stim.batch_solve import stack_fiber_statics, initial_states_batch
-from jaxfibers.optim.losses import activation_proxy_batch, selectivity_index
-from jaxfibers.optim.optimizer import (
+from jaxon.nerve.geometry import make_hussain_style_nerve
+from jaxon.stim.multichannel_field import make_ring_cuff_positions, precompute_ve_unit
+from jaxon.stim.batch_solve import stack_fiber_statics, initial_states_batch
+from jaxon.optim.losses import activation_proxy_batch, selectivity_index
+from jaxon.optim.optimizer import (
     run_rect_optimization,           # Adam-FD (pure forward, fast compile)
     run_rect_optimization_lbfgs,     # LBFGS autodiff (slow compile)
     run_rect_optimization_lbfgs_batched,
@@ -80,19 +80,19 @@ RECT_OPTIMIZER = os.environ.get("OPTIMIZER", "lbfgs").lower()
 
 # Fibre model dispatch.  Default 'mrg' uses the original (myelinated) pipeline;
 # 'sundt' / 'sweeney' / 'rattay' route through the generic batched solver in
-# jaxfibers.stim.batch_solve_generic.  When non-MRG, the optimiser's
+# jaxon.stim.batch_solve_generic.  When non-MRG, the optimiser's
 # batch_integrate_m_max{,_fd} are monkey-patched at startup (per-seed) so the
 # 7 call sites inside the optimiser don't need to know which model is running.
 FIBER_MODEL = os.environ.get("FIBER_MODEL", "mrg").lower()
 
 # Multichannel field's section_centers_um shim auto-dispatches on the geometry
 # class, so we don't need a model-specific import here any more.
-from jaxfibers.stim.multichannel_field import section_centers_um
+from jaxon.stim.multichannel_field import section_centers_um
 from experiments_v2.utils import ensure_dir, plot_seed_summary, plot_seed_cross_section
 
 # Output dir can be redirected per-phase by the manuscript sbatch via
-# JAXLEY_FIBERS_OUTPUT_DIR; default is outputs/selectivity_sweep/.
-_OUT_OVERRIDE = os.environ.get("JAXLEY_FIBERS_OUTPUT_DIR", "").strip()
+# JAXON_OUTPUT_DIR; default is outputs/selectivity_sweep/.
+_OUT_OVERRIDE = os.environ.get("JAXON_OUTPUT_DIR", "").strip()
 if _OUT_OVERRIDE:
     _OUT_PATH = pathlib.Path(_OUT_OVERRIDE)
     if not _OUT_PATH.is_absolute():
@@ -112,7 +112,7 @@ N_NERVES        = _env_int("N_NERVES", 100)
 N_FIBERS        = _env_int("N_FIBERS", 200)
                                 # Hussain placed 1 fiber per fascicle; we vmap
                                 # hundreds per nerve realisation to showcase
-                                # the parallel speed advantage of jaxfibers.
+                                # the parallel speed advantage of jaxon.
 FIBER_DIAMETER_UM = _env_flt("FIBER_DIAMETER_UM", 5.7)
                                 # Hussain's representative MRG fiber.  Single
                                 # diameter only — mixed diameters slow LBFGS
@@ -273,9 +273,9 @@ def _build_seed_inputs(seed: int, verbose: bool = True) -> dict:
         # optimiser's _tile_fiber_statics / _tile_states helpers; the
         # patched integrators ignore them and use the per-fibre closures
         # captured at registration time.
-        from jaxfibers.stim import batch_solve_generic as _bsg
-        from jaxfibers.stim.batch_solve import FiberStatics
-        import jaxfibers.optim.optimizer as _opt
+        from jaxon.stim import batch_solve_generic as _bsg
+        from jaxon.stim.batch_solve import FiberStatics
+        import jaxon.optim.optimizer as _opt
         _opt.batch_integrate_m_max = _bsg.make_batch_integrate_m_max_factory(
             FIBER_MODEL, geoms, DT,
         )

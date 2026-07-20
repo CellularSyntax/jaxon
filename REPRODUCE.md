@@ -31,7 +31,7 @@ There are **two reproduction paths**:
 
 ## 1. Environment setup
 
-The pinned environment is `jaxley_fibers` (conda, Python 3.11, JAX 0.6.2, Jaxley
+The pinned environment is `jaxon` (conda, Python 3.11, JAX 0.6.2, Jaxley
 0.13.0, pyfibers 0.8.5, optax 0.2.8). Recipe: `environment.yml`.
 
 ### 1a. Create the conda env
@@ -41,13 +41,13 @@ cd <repo root>
 
 # CPU-only (any platform; sufficient for Path A):
 conda env create -f environment.yml
-conda activate jaxley_fibers
+conda activate jaxon
 
 # GPU (Linux/Windows + NVIDIA; required for Path B):
 #   1. edit environment.yml: comment out  "jax[cpu]==0.6.2"
 #                            uncomment     "jax[cuda12]==0.6.2"
 #   2. conda env create -f environment.yml
-#   3. conda activate jaxley_fibers
+#   3. conda activate jaxon
 #   4. verify the GPU is visible:
 python -c "import jax; print(jax.devices())"   # should list a CudaDevice
 ```
@@ -77,7 +77,7 @@ re-optimizations. If you only want the figures, skip `pyfibers_compile`.
   bit-reproducibility against NEURON, so they run on any host but are slow
   (tens of minutes each). The scaling benchmark and the Duke FEM sweep are the
   GPU-bound steps.
-- All commands are run **from the repo root** with the `jaxley_fibers` env
+- All commands are run **from the repo root** with the `jaxon` env
   active. Figure scripts are invoked as modules (`python -m experiments_v2.<name>`);
   the data-producing phenomena/validation/scaling scripts are invoked as files
   (`python experiments_v2/<name>.py`) — both forms are taken verbatim from each
@@ -135,7 +135,7 @@ conduction-velocity, and trace tasks against NEURON. ~20–40 min each on CPU
 
 ```bash
 python experiments_v2/scaling.py              # -> outputs/scaling/data_scaling.json
-# fast smoke: JAXLEY_FIBERS_PF_BUDGET_S=300 python experiments_v2/scaling.py
+# fast smoke: JAXON_PF_BUDGET_S=300 python experiments_v2/scaling.py
 ```
 
 Benchmarks PyFibers (NEURON CPU serial), Jaxley CPU vmap, and Jaxley GPU vmap at
@@ -229,7 +229,7 @@ Once `outputs/` is populated, produce every figure with the Path-A driver:
 
 ## 4. Figure / table / number -> command -> output -> runtime
 
-All figure scripts are run **from the repo root** with the `jaxley_fibers` env
+All figure scripts are run **from the repo root** with the `jaxon` env
 active. `${SW}` below is `outputs/duke_sweeps_fixed`; export it first:
 
 ```bash
@@ -259,7 +259,7 @@ export DUKE_SWEEP_ROOT=outputs/duke_sweeps_fixed
 | **centroid penalty swine ~0.011 / human ~0.136; MW p=0.01, U=157, r=0.59; subject-level p=0.011; Friedman χ²=11.4, p=0.003** | `python -m experiments_v2.analyze_sparse_sampling` prints the per-species deployment-penalty table (dense SI, per-strategy SI, gap); the Mann–Whitney / Friedman statistics are also computed and printed by `DUKE_SWEEP_ROOT=$SW python -m experiments_v2.figures_duke_main` while rendering Fig 3. (`analyze_sparse_sampling.py` honors `DUKE_SWEEP_ROOT`, default `duke_sweeps_fixed`.) |
 | **Fig3b Holm-adjusted recruitment p-values** | Printed by `DUKE_SWEEP_ROOT=$SW python -m experiments_v2.figures_duke_main` (per-nerve Wilcoxon, Holm-corrected across the 8 metric×species cells). |
 | **activation-proxy vs NEURON: max \|dSI\|=0.0045, 99.9% agreement (8 nerves)** | Per-nerve JSONs in `outputs/reviewer_analyses/neuron_pop/*.json` (`agreement`, `neuron_si`, `jaxon_si_full` fields), produced by `neuron_pop_validate.py` (§3.5). |
-| **block-Thomas vs dense-LU 5.6e-11 mV** | Numerical identity of the two extracellular solvers, verified directly in `jaxfibers/stim/extracellular_coupled.py` (no separate figure/data step). |
+| **block-Thomas vs dense-LU 5.6e-11 mV** | Numerical identity of the two extracellular solvers, verified directly in `jaxon/stim/extracellular_coupled.py` (no separate figure/data step). |
 
 > ### Sweep-root handling
 >

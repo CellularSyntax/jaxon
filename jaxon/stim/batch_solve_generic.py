@@ -43,11 +43,11 @@ import jax.numpy as jnp
 
 from jaxley.solver_gate import solve_gate_exponential
 
-from jaxfibers.stim.extracellular_coupled import arrays_from_geometry, _be_step
+from jaxon.stim.extracellular_coupled import arrays_from_geometry, _be_step
 
-from jaxfibers.channels.sundt_channels   import SundtAxon
-from jaxfibers.channels.sweeney_channels import SweeneyNode
-from jaxfibers.channels.rattay_channels  import RattayHH
+from jaxon.channels.sundt_channels   import SundtAxon
+from jaxon.channels.sweeney_channels import SweeneyNode
+from jaxon.channels.rattay_channels  import RattayHH
 
 
 # ─── Per-model constants (gates + V_REST + channel reversal potentials) ───────

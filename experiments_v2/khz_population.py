@@ -44,13 +44,13 @@ from jaxley.solver_gate import solve_gate_exponential
 
 jax.config.update("jax_enable_x64", True)
 
-from jaxfibers.fibers.mrg import (
+from jaxon.fibers.mrg import (
     build_mrg_interp, node_indices, section_centers_um,
     V_REST, CM_AXON, G_PAS_MYSA, G_PAS_FLUT, G_PAS_STIN,
 )
-from jaxfibers.channels.mrg_axnode import AxnodeMyel
-from jaxfibers.stim.extracellular import point_source_potentials_mV
-from jaxfibers.stim.extracellular_coupled import arrays_from_geometry, integrate
+from jaxon.channels.mrg_axnode import AxnodeMyel
+from jaxon.stim.extracellular import point_source_potentials_mV
+from jaxon.stim.extracellular_coupled import arrays_from_geometry, integrate
 from pyfibers import build_fiber, FiberModel, ScaledStim
 
 from experiments_v2.utils import ensure_dir, save_json

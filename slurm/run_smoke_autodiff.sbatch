@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -J jaxfibers-smoke-autodiff
+#SBATCH -J jaxon-smoke-autodiff
 #SBATCH -N 1
 #SBATCH -n 1
 #SBATCH -p gpu
@@ -28,7 +28,7 @@
 set -euo pipefail
 
 PROJECT_ROOT="${PROJECT_ROOT:-$SLURM_SUBMIT_DIR}"
-DEFAULT_SQSH="${HOME}/containers/jaxfibers.sqsh"
+DEFAULT_SQSH="${HOME}/containers/jaxon.sqsh"
 DEFAULT_IMAGE="nvcr.io#nvidia/pytorch:25.03-py3"
 if [ -z "${CONTAINER_IMAGE:-}" ]; then
   if [ -f "${DEFAULT_SQSH}" ]; then CONTAINER_IMAGE="${DEFAULT_SQSH}";
@@ -81,8 +81,8 @@ export ASYM_RATIO=\"${ASYM_RATIO:-4.0}\"
 export AMP_INIT_MA=\"${AMP_INIT_MA:--0.08}\"
 export AMP_CLIP_LO=\"${AMP_CLIP_LO:--2.00}\"
 export AMP_CLIP_HI=\"${AMP_CLIP_HI:-2.00}\"
-export JAXLEY_FIBERS_SOFT_TEMPERATURE=\"${JAXLEY_FIBERS_SOFT_TEMPERATURE:-0.1}\"
-export JAXLEY_FIBERS_ENERGY_LAMBDA=\"${JAXLEY_FIBERS_ENERGY_LAMBDA:-1e-3}\"
+export JAXON_SOFT_TEMPERATURE=\"${JAXON_SOFT_TEMPERATURE:-0.1}\"
+export JAXON_ENERGY_LAMBDA=\"${JAXON_ENERGY_LAMBDA:-1e-3}\"
 export TARGET_PARADIGM=cluster
 export CLUSTER_RADIUS_QUANTILE=\"${CLUSTER_RADIUS_QUANTILE:-0.32}\"
 export CLUSTER_WINDOW_DEG=\"${CLUSTER_WINDOW_DEG:-90.0}\"

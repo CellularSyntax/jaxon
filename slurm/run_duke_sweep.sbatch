@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -J jaxfibers-duke-sweep
+#SBATCH -J jaxon-duke-sweep
 #SBATCH -N 1
 #SBATCH -n 1
 #SBATCH -p gpu
@@ -50,7 +50,7 @@
 set -euo pipefail
 
 PROJECT_ROOT="${PROJECT_ROOT:-$SLURM_SUBMIT_DIR}"
-DEFAULT_SQSH="${HOME}/containers/jaxfibers.sqsh"
+DEFAULT_SQSH="${HOME}/containers/jaxon.sqsh"
 DEFAULT_IMAGE="nvcr.io#nvidia/pytorch:25.03-py3"
 if [ -z "${CONTAINER_IMAGE:-}" ]; then
   if [ -f "${DEFAULT_SQSH}" ]; then
@@ -187,20 +187,20 @@ export FEM_Z_STD_MIN="${FEM_Z_STD_MIN:-100.0}"
 # behaviour where SI >= 0.95 samples don't polish further).
 export EARLY_STOP_SI="${EARLY_STOP_SI:-0.95}"
 
-# Loss / activation-proxy regularisation read by jaxfibers.optim.optimizer
+# Loss / activation-proxy regularisation read by jaxon.optim.optimizer
 # at import time (defaults preserve legacy 0 / 0 behaviour if unset).
 #
-# JAXLEY_FIBERS_SOFT_TEMPERATURE > 0 switches the activation proxy from
+# JAXON_SOFT_TEMPERATURE > 0 switches the activation proxy from
 # binary-ish min(m_first, m_last) to a sigmoid surrogate that is
 # gradient-informative even when no fibre has crossed binary threshold.
 # 0.1 gives the FD optimiser a smooth landscape on Duke nerves where
 # the all-sub-threshold init regime would otherwise zero the gradient.
-export JAXLEY_FIBERS_SOFT_TEMPERATURE="${JAXLEY_FIBERS_SOFT_TEMPERATURE:-0.1}"
-# JAXLEY_FIBERS_ENERGY_LAMBDA > 0 adds an amplitude-energy penalty to
+export JAXON_SOFT_TEMPERATURE="${JAXON_SOFT_TEMPERATURE:-0.1}"
+# JAXON_ENERGY_LAMBDA > 0 adds an amplitude-energy penalty to
 # wq_loss.  A small value (1e-3 mA²) discourages the all-fire trivial
 # minimum without preventing the optimiser from exploring high-amp
 # solutions when they are necessary.
-export JAXLEY_FIBERS_ENERGY_LAMBDA="${JAXLEY_FIBERS_ENERGY_LAMBDA:-1e-3}"
+export JAXON_ENERGY_LAMBDA="${JAXON_ENERGY_LAMBDA:-1e-3}"
 
 # Pulse waveform: clinical implants are charge-balanced biphasic
 # (any net DC charge corrodes electrodes and damages tissue), so the
@@ -315,8 +315,8 @@ export L1_INIT_SEED=\"${L1_INIT_SEED}\"
 export L1_N_ITERS=\"${L1_N_ITERS}\"
 export FEM_Z_STD_MIN=\"${FEM_Z_STD_MIN}\"
 export EARLY_STOP_SI=\"${EARLY_STOP_SI}\"
-export JAXLEY_FIBERS_SOFT_TEMPERATURE=\"${JAXLEY_FIBERS_SOFT_TEMPERATURE}\"
-export JAXLEY_FIBERS_ENERGY_LAMBDA=\"${JAXLEY_FIBERS_ENERGY_LAMBDA}\"
+export JAXON_SOFT_TEMPERATURE=\"${JAXON_SOFT_TEMPERATURE}\"
+export JAXON_ENERGY_LAMBDA=\"${JAXON_ENERGY_LAMBDA}\"
 export PULSE_SHAPE=\"${PULSE_SHAPE}\"
 export PW_MS=\"${PW_MS}\"
 export ASYM_RATIO=\"${ASYM_RATIO}\"

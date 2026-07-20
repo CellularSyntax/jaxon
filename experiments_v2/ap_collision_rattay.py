@@ -42,13 +42,13 @@ from jaxley.solver_gate import solve_gate_exponential
 
 jax.config.update("jax_enable_x64", True)
 
-from jaxfibers.fibers.rattay import (
+from jaxon.fibers.rattay import (
     build_rattay, node_indices, section_centers_um,
     V_REST, CM,
 )
-from jaxfibers.channels.rattay_channels import RattayHH
-from jaxfibers.stim.extracellular_coupled import arrays_from_geometry, integrate
-from jaxfibers.nrn_baseline import build_rattay_pyfibers
+from jaxon.channels.rattay_channels import RattayHH
+from jaxon.stim.extracellular_coupled import arrays_from_geometry, integrate
+from jaxon.nrn_baseline import build_rattay_pyfibers
 from neuron import h
 
 from experiments_v2.utils import ensure_dir, save_json

@@ -14,16 +14,16 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 
-from jaxfibers.stim.extracellular import point_source_potentials_mV, point_source_potentials_mV_jax
-from jaxfibers.fibers.mrg     import section_centers_um as _mrg_centers
-from jaxfibers.fibers.mrg     import _mrg_geometry, _mrg_interp_geometry
-from jaxfibers.fibers.sundt   import section_centers_um as _sundt_centers
-from jaxfibers.fibers.sundt   import _sundt_geometry
-from jaxfibers.fibers.sweeney import section_centers_um as _sweeney_centers
-from jaxfibers.fibers.sweeney import _sweeney_geometry
-from jaxfibers.fibers.rattay  import section_centers_um as _rattay_centers
-from jaxfibers.fibers.rattay  import _rattay_geometry
-from jaxfibers.nerve.geometry import NerveGeometry
+from jaxon.stim.extracellular import point_source_potentials_mV, point_source_potentials_mV_jax
+from jaxon.fibers.mrg     import section_centers_um as _mrg_centers
+from jaxon.fibers.mrg     import _mrg_geometry, _mrg_interp_geometry
+from jaxon.fibers.sundt   import section_centers_um as _sundt_centers
+from jaxon.fibers.sundt   import _sundt_geometry
+from jaxon.fibers.sweeney import section_centers_um as _sweeney_centers
+from jaxon.fibers.sweeney import _sweeney_geometry
+from jaxon.fibers.rattay  import section_centers_um as _rattay_centers
+from jaxon.fibers.rattay  import _rattay_geometry
+from jaxon.nerve.geometry import NerveGeometry
 
 
 # Model dispatch for cross-model selectivity sweeps. Each entry maps

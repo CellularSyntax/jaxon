@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -J jaxfibers-phase3-sweeney
+#SBATCH -J jaxon-phase3-sweeney
 #SBATCH -N 1
 #SBATCH -n 1
 #SBATCH -p gpu
@@ -19,7 +19,7 @@
 
 set -euo pipefail
 PROJECT_ROOT="${PROJECT_ROOT:-$SLURM_SUBMIT_DIR}"
-DEFAULT_SQSH="${HOME}/containers/jaxfibers.sqsh"
+DEFAULT_SQSH="${HOME}/containers/jaxon.sqsh"
 DEFAULT_IMAGE="nvcr.io#nvidia/pytorch:25.03-py3"
 if [ -z "${CONTAINER_IMAGE:-}" ]; then
   CONTAINER_IMAGE="${DEFAULT_SQSH:-$DEFAULT_IMAGE}"
@@ -40,7 +40,7 @@ export WAVE_LR=5e-4 WAVE_PATIENCE=20
 export FIBER_MODEL=sweeney
 export FIBER_DIAMETER_UM=10.0
 export T_STOP=3.0
-export JAXLEY_FIBERS_OUTPUT_DIR=outputs/selectivity_sweep_phase3_sweeney_10um
+export JAXON_OUTPUT_DIR=outputs/selectivity_sweep_phase3_sweeney_10um
 
 echo "Phase 3 (Sweeney D=10 µm), seeds ${SEED_START}..$((SEED_END-1))"
 srun \
@@ -57,7 +57,7 @@ export OPTIMIZER=adam_fd
 export N_OPT_RECT=30 N_OPT_WAVE=100
 export WAVE_LR=5e-4 WAVE_PATIENCE=20
 export FIBER_MODEL=sweeney FIBER_DIAMETER_UM=10.0 T_STOP=3.0
-export JAXLEY_FIBERS_OUTPUT_DIR=\"${JAXLEY_FIBERS_OUTPUT_DIR}\"
+export JAXON_OUTPUT_DIR=\"${JAXON_OUTPUT_DIR}\"
 bash \"${PROJECT_ROOT}/slurm/setup_env.sh\"
 python -u experiments_v2/selectivity_sweep.py
 "

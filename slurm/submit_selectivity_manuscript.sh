@@ -87,4 +87,4 @@ fi
 echo
 echo "Check progress:"
 echo "  squeue -u \${USER}"
-echo "  tail -f logs/jaxfibers-phase*-*.out"
+echo "  tail -f logs/jaxon-phase*-*.out"

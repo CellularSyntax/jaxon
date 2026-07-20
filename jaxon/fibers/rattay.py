@@ -20,7 +20,7 @@ from dataclasses import dataclass
 
 import jaxley as jx
 
-from jaxfibers.channels.rattay_channels import RattayHH
+from jaxon.channels.rattay_channels import RattayHH
 
 # ── constants ──────────────────────────────────────────────────────────────────
 V_REST  = -70.0   # mV

@@ -43,15 +43,15 @@ from jaxley.solver_gate import solve_gate_exponential
 
 jax.config.update("jax_enable_x64", True)
 
-from jaxfibers.fibers.mrg import (
+from jaxon.fibers.mrg import (
     build_mrg_interp, node_indices, section_centers_um,
     V_REST, CM_AXON,
 )
-from jaxfibers.channels.mrg_axnode import AxnodeMyel
-from jaxfibers.stim.extracellular import point_source_potentials_mV
-from jaxfibers.stim.intracellular import rectangular_pulse, attach_intra_pulse
-from jaxfibers.nrn_baseline import run_intracellular_mrg_interp
-from jaxfibers.stim.extracellular_coupled import arrays_from_geometry, integrate
+from jaxon.channels.mrg_axnode import AxnodeMyel
+from jaxon.stim.extracellular import point_source_potentials_mV
+from jaxon.stim.intracellular import rectangular_pulse, attach_intra_pulse
+from jaxon.nrn_baseline import run_intracellular_mrg_interp
+from jaxon.stim.extracellular_coupled import arrays_from_geometry, integrate
 
 from experiments_v2.utils import (
     PULSES, make_pulse_array, pf_find_threshold,
@@ -112,7 +112,7 @@ def _make_jax_setup(D: float):
         is_node = is_node_arr
 
         # AxnodeMyel kinetics (replicate from AxnodeMyel channel)
-        from jaxfibers.channels.mrg_axnode import AxnodeMyel as _A
+        from jaxon.channels.mrg_axnode import AxnodeMyel as _A
         dummy_params = {
             "AxnodeMyel_celsius": celsius_arr,
         }

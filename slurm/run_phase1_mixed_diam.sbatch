@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -J jaxfibers-phase1-mixeddiam
+#SBATCH -J jaxon-phase1-mixeddiam
 #SBATCH -N 1
 #SBATCH -n 1
 #SBATCH -p gpu
@@ -24,7 +24,7 @@
 set -euo pipefail
 
 PROJECT_ROOT="${PROJECT_ROOT:-$SLURM_SUBMIT_DIR}"
-DEFAULT_SQSH="${HOME}/containers/jaxfibers.sqsh"
+DEFAULT_SQSH="${HOME}/containers/jaxon.sqsh"
 DEFAULT_IMAGE="nvcr.io#nvidia/pytorch:25.03-py3"
 if [ -z "${CONTAINER_IMAGE:-}" ]; then
   if [ -f "${DEFAULT_SQSH}" ]; then
@@ -57,8 +57,8 @@ export T_STOP=2.0
 # selective.  Combined fix:
 #   - soft temperature 0.1 → gradients available even at saturation
 #   - energy lambda 5e-3 → amps balanced against selectivity
-export JAXLEY_FIBERS_SOFT_TEMPERATURE=0.1
-export JAXLEY_FIBERS_ENERGY_LAMBDA=5e-3
+export JAXON_SOFT_TEMPERATURE=0.1
+export JAXON_ENERGY_LAMBDA=5e-3
 # Waveform Adam knobs.  Default lr=5e-3 was too aggressive for the
 # warm-started case: Phase 3 seed 0 hit SI=0.97 at iter 0 from rect-amps
 # warm-start, then Adam crashed it to SI=0.00 in <20 iters.  Drop lr by
@@ -67,10 +67,10 @@ export JAXLEY_FIBERS_ENERGY_LAMBDA=5e-3
 # we keep the warm-start result.
 export WAVE_LR=5e-4
 export WAVE_PATIENCE=20
-export JAXLEY_FIBERS_OUTPUT_DIR=outputs/selectivity_sweep_phase1_mixed_diam
+export JAXON_OUTPUT_DIR=outputs/selectivity_sweep_phase1_mixed_diam
 
 echo "Phase 1 — mixed-diameter rect+wave (target 5.7 µm / off 14 µm)"
-echo "Output: ${JAXLEY_FIBERS_OUTPUT_DIR}"
+echo "Output: ${JAXON_OUTPUT_DIR}"
 
 srun \
   --container-image="${CONTAINER_IMAGE}" \
@@ -88,11 +88,11 @@ export TARGET_DIAMETER_UM=5.7
 export OFFTARGET_DIAMETER_UM=14.0
 export N_OPT_RECT=30 N_OPT_WAVE=50
 export T_STOP=2.0
-export JAXLEY_FIBERS_SOFT_TEMPERATURE=0.1
-export JAXLEY_FIBERS_ENERGY_LAMBDA=5e-3
+export JAXON_SOFT_TEMPERATURE=0.1
+export JAXON_ENERGY_LAMBDA=5e-3
 export WAVE_LR=5e-4
 export WAVE_PATIENCE=20
-export JAXLEY_FIBERS_OUTPUT_DIR=\"${JAXLEY_FIBERS_OUTPUT_DIR}\"
+export JAXON_OUTPUT_DIR=\"${JAXON_OUTPUT_DIR}\"
 bash \"${PROJECT_ROOT}/slurm/setup_env.sh\"
 python -u experiments_v2/selectivity_sweep.py
 "

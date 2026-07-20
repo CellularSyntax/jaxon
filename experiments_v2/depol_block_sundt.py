@@ -36,14 +36,14 @@ from jaxley.solver_gate import solve_gate_exponential
 
 jax.config.update("jax_enable_x64", True)
 
-from jaxfibers.fibers.sundt import (
+from jaxon.fibers.sundt import (
     build_sundt, node_indices, section_centers_um,
     V_REST, CM,
 )
-from jaxfibers.channels.sundt_channels import SundtAxon
-from jaxfibers.stim.extracellular import point_source_potentials_mV
-from jaxfibers.stim.extracellular_coupled import arrays_from_geometry, integrate
-from jaxfibers.nrn_baseline import build_sundt_pyfibers
+from jaxon.channels.sundt_channels import SundtAxon
+from jaxon.stim.extracellular import point_source_potentials_mV
+from jaxon.stim.extracellular_coupled import arrays_from_geometry, integrate
+from jaxon.nrn_baseline import build_sundt_pyfibers
 from pyfibers import ScaledStim
 
 from experiments_v2.utils import ensure_dir, save_json

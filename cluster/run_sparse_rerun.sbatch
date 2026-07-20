@@ -19,7 +19,7 @@
 #   -- now extended with amps_mA, si_transfer, and pulse metadata.
 
 source ~/.bashrc
-conda activate jaxley_fibers
+conda activate jaxon
 
 cd "$SLURM_SUBMIT_DIR"
 

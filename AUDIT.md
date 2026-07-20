@@ -1,4 +1,4 @@
-# jaxley_fibers — Project audit (2026-06-02)
+# jaxon — Project audit (2026-06-02)
 
 > Audit of project status, gaps, and roadmap toward a Nature Communications
 > follow-up to Hussain, Grill & Pelot, *Nat. Commun.* 15:7597 (2024) —
@@ -226,7 +226,7 @@ Three options, listed in order of effort:
 
 ### 4.2 Emergent-nonlinearity demonstrations (HGP24 Figure 3)
 
-**Status (2026-06-02):** panels (a)–(c) complete with PyFibers + jaxfibers
+**Status (2026-06-02):** panels (a)–(c) complete with PyFibers + jaxon
 overlaid; panel (d) deferred.
 
 | Panel | Script | Status |
@@ -241,7 +241,7 @@ Composite figure: `experiments_v2/fig3_combined.py` →
 legacy single-diameter placeholder until the full sweep is run.
 
 Hussain-style colour convention enforced throughout: PyFibers/NEURON blue
-solid, jaxfibers orange dashed.
+solid, jaxon orange dashed.
 
 #### 4.2.1 What's needed to upgrade panels (b) and (d) to manuscript fidelity
 
@@ -261,7 +261,7 @@ Plan locked (2026-06-02 — confirmed with MH):
    their digitised outlines directly; do not retrace from screenshots.
 2. **ImThera + helical cuff CAD** — both already exist in MH's in-house
    FEM pipeline. We do not need to build cuff geometry.
-3. **FEM output is voxel grid (.npz / .vtk) per contact**. jaxfibers
+3. **FEM output is voxel grid (.npz / .vtk) per contact**. jaxon
    side needs a new `load_ve_voxel_template(npz_path) -> callable that
    interpolates Ve at arbitrary (x,y,z)`. Per-fiber Ve_unit is then
    stacked just like the existing selectivity_sweep code expects.
@@ -275,11 +275,11 @@ Remaining unknowns (deferred until FEM templates are in hand):
   prescribed patterns; only matters once the JAX-side population
   rewrite is being written.
 
-3. **Intrinsic firing patterns** — currently jaxfibers does deterministic
+3. **Intrinsic firing patterns** — currently jaxon does deterministic
    periodic pacing. Hussain panel (d) uses **5 distinct firing patterns**
    per cell (Poisson trains with the row's mean rate? or specific
    replayed patterns?). **Open question for MH.** Driven via
-   `add_intrinsic_activity(..., noise=1.0)` on PyFibers side; jaxfibers
+   `add_intrinsic_activity(..., noise=1.0)` on PyFibers side; jaxon
    needs equivalent pre-generated spike-train injection.
 
 4. **Compute budget** — panel (d) grid is
@@ -301,10 +301,10 @@ Remaining unknowns (deferred until FEM templates are in hand):
 
 **Sequencing.** Background work — not gating. While MH runs P2 + H2 FEM
 solves through the in-house pipeline (ImThera + helical, all contacts),
-jaxfibers side can scaffold:
-- `jaxfibers/nerve/anatomy.py` — load Hussain traces, sample fiber
+jaxon side can scaffold:
+- `jaxon/nerve/anatomy.py` — load Hussain traces, sample fiber
   positions per fascicle from diameter histograms
-- `jaxfibers/stim/ve_templates.py` — load .npz/.vtk voxel grid +
+- `jaxon/stim/ve_templates.py` — load .npz/.vtk voxel grid +
   interpolate at scattered (x,y,z); cache per contact
 - New `experiments_v2/khz_block_p2.py` / `spike_desync_h2.py` that
   consume those + reuse the SLURM array structure from selectivity_sweep
@@ -341,7 +341,7 @@ Now that gradient descent works through the **exact** model, the
 natural Nat Commun beat is *what new objectives can we now optimize*?
 
 * **Energy** efficiency at fixed selectivity (HGP24 mentions this; we
-  have the loss in `jaxfibers/objectives.py` but never use it).
+  have the loss in `jaxon/objectives.py` but never use it).
 * **Charge** efficiency — coulombs per recruited fiber. (
 * **Robustness** — optimize for the *worst-case* selectivity over a
   morphology distribution (i.e., implicit differentiation through
@@ -480,7 +480,7 @@ What's not:
 > "Surrogate models of peripheral nerve fibers (HGP24) accelerate
 > stimulation optimization at the cost of accuracy (2.5 % MAPE,
 > threshold errors up to ±11 %) and per-task retraining. We present
-> **jaxley_fibers**, a differentiable JAX/Jaxley reimplementation of
+> **jaxon**, a differentiable JAX/Jaxley reimplementation of
 > six published fiber models (MRG, Sweeney, Sundt, Rattay,
 > Schild 1994 & 1997) sharing a custom GPU-batched coupled-cable solver
 > that matches NEURON to **<0.5 % threshold accuracy** and **machine

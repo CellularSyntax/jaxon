@@ -255,7 +255,7 @@ def pf_find_threshold(
     import sys
     import pathlib
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
-    from jaxfibers.nrn_baseline import find_threshold_extracellular_waveform
+    from jaxon.nrn_baseline import find_threshold_extracellular_waveform
 
     wav = pulse_array_to_callable(pulse_arr, dt)
     return find_threshold_extracellular_waveform(

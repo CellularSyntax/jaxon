@@ -48,7 +48,7 @@ sweep), passed to the figure scripts via `DUKE_SWEEP_ROOT=outputs/duke_sweeps_fi
 | Fig3b Holm recruitment p-values | `outputs/duke_sweeps_fixed/` via figures_duke_main.py |
 | Friedman chi2=11.4 p=0.003 (human density) | `outputs/duke_sweeps_fixed/` sparse sweep |
 | activation-proxy vs NEURON: max |dSI|=0.0045, 99.9% agreement | `outputs/reviewer_analyses/neuron_pop/` (8 nerves) |
-| block-Thomas vs dense-LU 5.6e-11 mV | `jaxfibers/stim/extracellular_coupled.py` (verified in code) |
+| block-Thomas vs dense-LU 5.6e-11 mV | `jaxon/stim/extracellular_coupled.py` (verified in code) |
 
 ## LOAD-BEARING output dirs (keep)
 - outputs/duke_sweeps_fixed/          <- cohort analysis (Fig 3, tab:duke-cohort, all penalty stats)

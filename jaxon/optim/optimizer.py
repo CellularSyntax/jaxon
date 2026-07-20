@@ -32,13 +32,13 @@ import jax.numpy as jnp
 import numpy as np
 import optax
 
-from jaxfibers.stim.batch_solve import (
+from jaxon.stim.batch_solve import (
     FiberStatics,
     batch_integrate_m_max,
     batch_integrate_m_max_fd,
 )
-from jaxfibers.stim.multichannel_field import compute_ve_unit_jax
-from jaxfibers.optim.losses import (
+from jaxon.stim.multichannel_field import compute_ve_unit_jax
+from jaxon.optim.losses import (
     activation_proxy_batch as _activation_proxy_batch_impl,
     wq_loss as _wq_loss_impl,
     activation_mass_batch as _activation_mass_batch_impl,
@@ -47,11 +47,11 @@ from jaxfibers.optim.losses import (
 )
 import os as _os
 
-# JAXLEY_FIBERS_SOFT_TEMPERATURE: sigmoid-smooth the per-fibre activation
+# JAXON_SOFT_TEMPERATURE: sigmoid-smooth the per-fibre activation
 # proxy.  See losses.activation_proxy_batch docstring.  Default 0 = binary.
-_SOFT_T = float(_os.environ.get("JAXLEY_FIBERS_SOFT_TEMPERATURE", "0.0"))
+_SOFT_T = float(_os.environ.get("JAXON_SOFT_TEMPERATURE", "0.0"))
 
-# JAXLEY_FIBERS_LOSS: selectivity objective the optimisers descend.
+# JAXON_LOSS: selectivity objective the optimisers descend.
 #   'linear'   (default) -- weighted sum  sum_f w_f[y_f(1-a_f)+(1-y_f)a_f]
 #              on the (soft) activation proxy a_f; the historical jaxon loss.
 #   'quotient' -- Hussain et al. (2024) weighted quotient off_mass/on_mass on
@@ -59,17 +59,17 @@ _SOFT_T = float(_os.environ.get("JAXLEY_FIBERS_SOFT_TEMPERATURE", "0.0"))
 #              self-regularising (see losses.quotient_loss).  In this mode the
 #              soft-temperature and energy-lambda knobs are bypassed (the proxy
 #              and the energy term are not used by the quotient).
-_LOSS_MODE   = _os.environ.get("JAXLEY_FIBERS_LOSS", "linear").strip().lower()
+_LOSS_MODE   = _os.environ.get("JAXON_LOSS", "linear").strip().lower()
 # Terminal nodes summed at each end for the quotient's activation mass.
-_WQ_END_NODES = int(_os.environ.get("JAXLEY_FIBERS_WQ_END_NODES", "3"))
+_WQ_END_NODES = int(_os.environ.get("JAXON_WQ_END_NODES", "3"))
 
-# JAXLEY_FIBERS_ENERGY_LAMBDA: amplitude-energy regularisation strength.
+# JAXON_ENERGY_LAMBDA: amplitude-energy regularisation strength.
 # Adds `lambda * mean(amps²)` to the selectivity loss.  Required for the
 # mixed-diameter type-selectivity problem where the unregularised optimiser
 # falls into the trivial "crank everything to ±3 mA so all fibres fire"
 # equilibrium.  Default 0 = no regularisation (single-diameter runs).
 # Typical values: 1e-3 to 1e-2.
-_ENERGY_LAMBDA = float(_os.environ.get("JAXLEY_FIBERS_ENERGY_LAMBDA", "0.0"))
+_ENERGY_LAMBDA = float(_os.environ.get("JAXON_ENERGY_LAMBDA", "0.0"))
 
 
 def activation_proxy_batch(m_max, node_idx):
@@ -102,7 +102,7 @@ def selectivity_loss_from_mmax(m_max, node_idx, target_mask, weights, amps):
         # term gives the objective a real restoring force toward low amplitude
         # so the optimiser explores the selective band before saturating, the
         # way AxonML's strong (n_axons-scaled) weight decay does.  Off by
-        # default (JAXLEY_FIBERS_ENERGY_LAMBDA=0); previously this term was
+        # default (JAXON_ENERGY_LAMBDA=0); previously this term was
         # silently dropped on the quotient branch even when the env set it.
         if _ENERGY_LAMBDA > 0.0 and amps is not None:
             amps_j = jnp.asarray(amps, dtype=jnp.float64)
@@ -586,7 +586,7 @@ def run_rect_optimization_autodiff(
     to the FD path -- ONLY the gradient source changes.  Any difference in
     the resulting selectivity is therefore attributable to FD-vs-autodiff,
     not to Adam-vs-L-BFGS (the confound in the earlier LBFGS comparison) and
-    not to the loss surface (use JAXLEY_FIBERS_SOFT_TEMPERATURE for both).
+    not to the loss surface (use JAXON_SOFT_TEMPERATURE for both).
 
     Per step this needs ONE forward + ONE backward (vs the FD path's K+1
     forwards), so the per-step cost crosses over in autodiff's favour as K

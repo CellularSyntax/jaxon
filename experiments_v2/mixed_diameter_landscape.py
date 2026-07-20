@@ -36,15 +36,15 @@ import jax.numpy as jnp
 
 jax.config.update("jax_enable_x64", True)
 
-from jaxfibers.nerve.geometry import NerveGeometry, FascicleOutline
-from jaxfibers.stim.multichannel_field import (
+from jaxon.nerve.geometry import NerveGeometry, FascicleOutline
+from jaxon.stim.multichannel_field import (
     make_ring_cuff_positions, precompute_ve_unit,
 )
-from jaxfibers.stim.batch_solve import (
+from jaxon.stim.batch_solve import (
     batch_integrate_m_max, stack_fiber_statics, initial_states_batch,
 )
-from jaxfibers.optim.losses import activation_proxy_batch, selectivity_index
-from jaxfibers.fibers.mrg import section_centers_um
+from jaxon.optim.losses import activation_proxy_batch, selectivity_index
+from jaxon.fibers.mrg import section_centers_um
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 OUT  = ROOT / "outputs" / "mixed_diameter_landscape"

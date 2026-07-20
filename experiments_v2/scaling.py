@@ -39,13 +39,13 @@ import jaxley as jx
 
 jax.config.update("jax_enable_x64", True)
 
-from jaxfibers.fibers.mrg     import build_mrg,     node_indices as mrg_node_indices
-from jaxfibers.fibers.mrg     import build_mrg_interp, node_indices as mrg_interp_node_indices
-from jaxfibers.fibers.sundt   import build_sundt,   node_indices as sundt_node_indices
-from jaxfibers.fibers.rattay  import build_rattay,  node_indices as rattay_node_indices
-from jaxfibers.fibers.sweeney import build_sweeney, node_indices as sweeney_node_indices
-from jaxfibers.stim.intracellular import rectangular_pulse, attach_intra_pulse
-from jaxfibers.nrn_baseline  import (
+from jaxon.fibers.mrg     import build_mrg,     node_indices as mrg_node_indices
+from jaxon.fibers.mrg     import build_mrg_interp, node_indices as mrg_interp_node_indices
+from jaxon.fibers.sundt   import build_sundt,   node_indices as sundt_node_indices
+from jaxon.fibers.rattay  import build_rattay,  node_indices as rattay_node_indices
+from jaxon.fibers.sweeney import build_sweeney, node_indices as sweeney_node_indices
+from jaxon.stim.intracellular import rectangular_pulse, attach_intra_pulse
+from jaxon.nrn_baseline  import (
     run_intracellular, run_intracellular_sundt,
     run_intracellular_rattay, run_intracellular_sweeney,
     run_intracellular_mrg_interp,
@@ -60,10 +60,10 @@ OUT = ensure_dir(ROOT / "outputs" / "scaling")
 # 2 hours per model covers PyFibers serial up to N=10^5 for the myelinated
 # models (MRG, Sweeney, MRG_Interp) and up to N=10^4 for the unmyelinated
 # C-fibers (Sundt, Rattay), with the figure extrapolating above the cap.
-# Set via JAXLEY_FIBERS_PF_BUDGET_S env var to override per-run, e.g.
-# `JAXLEY_FIBERS_PF_BUDGET_S=300 python experiments_v2/scaling.py` for a fast
+# Set via JAXON_PF_BUDGET_S env var to override per-run, e.g.
+# `JAXON_PF_BUDGET_S=300 python experiments_v2/scaling.py` for a fast
 # local smoke run with extrapolation past N=100.
-PYFIBERS_BUDGET_S = float(os.environ.get("JAXLEY_FIBERS_PF_BUDGET_S", 7200.0))
+PYFIBERS_BUDGET_S = float(os.environ.get("JAXON_PF_BUDGET_S", 7200.0))
 
 N_FIBERS = [1, 10, 100, 1000, 10000, 100000]
 

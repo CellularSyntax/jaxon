@@ -47,14 +47,14 @@ from jaxley.solver_gate import solve_gate_exponential
 
 jax.config.update("jax_enable_x64", True)
 
-from jaxfibers.fibers.sweeney import (
+from jaxon.fibers.sweeney import (
     build_sweeney, node_indices, section_centers_um,
     V_REST,
 )
-from jaxfibers.channels.sweeney_channels import SweeneyNode
-from jaxfibers.stim.extracellular import point_source_potentials_mV
-from jaxfibers.nrn_baseline import run_intracellular_sweeney, run_extracellular_sweeney
-from jaxfibers.stim.extracellular_coupled import arrays_from_geometry, integrate, _be_step
+from jaxon.channels.sweeney_channels import SweeneyNode
+from jaxon.stim.extracellular import point_source_potentials_mV
+from jaxon.nrn_baseline import run_intracellular_sweeney, run_extracellular_sweeney
+from jaxon.stim.extracellular_coupled import arrays_from_geometry, integrate, _be_step
 
 from experiments_v2.utils import (
     PULSES, make_pulse_array, pf_find_threshold,
@@ -84,7 +84,7 @@ ENA    = 35.64    # mV
 # We follow suit — validating at off-design diameters with anodic-leading
 # stimulation triggers NEURON's `extracellular` mechanism into a singular
 # linear solve ("Zero Diagonal" / NaN), which is a PyFibers/NEURON
-# off-design failure, not a jaxfibers issue.
+# off-design failure, not a jaxon issue.
 DIAMETERS   = [10.0]                                  # µm
 SD_PWS      = [0.02, 0.05, 0.1, 0.2, 0.5, 1.0]        # ms
 PULSE_KEYS  = list(PULSES.keys())

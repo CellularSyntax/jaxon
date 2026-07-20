@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -J jaxfibers-phase3-mrg10
+#SBATCH -J jaxon-phase3-mrg10
 #SBATCH -N 1
 #SBATCH -n 1
 #SBATCH -p gpu
@@ -24,7 +24,7 @@
 set -euo pipefail
 
 PROJECT_ROOT="${PROJECT_ROOT:-$SLURM_SUBMIT_DIR}"
-DEFAULT_SQSH="${HOME}/containers/jaxfibers.sqsh"
+DEFAULT_SQSH="${HOME}/containers/jaxon.sqsh"
 DEFAULT_IMAGE="nvcr.io#nvidia/pytorch:25.03-py3"
 if [ -z "${CONTAINER_IMAGE:-}" ]; then
   if [ -f "${DEFAULT_SQSH}" ]; then
@@ -51,10 +51,10 @@ export WAVE_PATIENCE=20
 export FIBER_DIAMETER_UM=10.0
 
 # Distinct output dir so it doesn't collide with the 5.7 µm sweep.
-export JAXLEY_FIBERS_OUTPUT_DIR=outputs/selectivity_sweep_phase3_mrg10um
+export JAXON_OUTPUT_DIR=outputs/selectivity_sweep_phase3_mrg10um
 
 echo "Phase 3 (MRG D=10 µm), seeds ${SEED_START}..$((SEED_END-1))"
-echo "Output: ${JAXLEY_FIBERS_OUTPUT_DIR}"
+echo "Output: ${JAXON_OUTPUT_DIR}"
 
 srun \
   --container-image="${CONTAINER_IMAGE}" \
@@ -73,7 +73,7 @@ export N_OPT_RECT=30 N_OPT_WAVE=100
 export WAVE_LR=5e-4
 export WAVE_PATIENCE=20
 export FIBER_DIAMETER_UM=10.0
-export JAXLEY_FIBERS_OUTPUT_DIR=\"${JAXLEY_FIBERS_OUTPUT_DIR}\"
+export JAXON_OUTPUT_DIR=\"${JAXON_OUTPUT_DIR}\"
 bash \"${PROJECT_ROOT}/slurm/setup_env.sh\"
 python -u experiments_v2/selectivity_sweep.py
 "

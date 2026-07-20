@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -J jaxfibers-scaling-fill10k
+#SBATCH -J jaxon-scaling-fill10k
 #SBATCH -N 1
 #SBATCH -n 1
 #SBATCH -p gpu
@@ -17,7 +17,7 @@
 # 2-hour default budget in experiments_v2/scaling.py.
 #
 # What changed vs the original scaling run:
-#   - JAXLEY_FIBERS_PF_BUDGET_S=86400  (24 h per pyfibers chunk)
+#   - JAXON_PF_BUDGET_S=86400  (24 h per pyfibers chunk)
 #     The previous default (7200 = 2 h) truncated pyfibers serial
 #     timing at N=1000 for the slow models, leaving the N=10,000
 #     cell of Table 3 blank for Sundt / Rattay / Schild94 / Schild97.
@@ -32,7 +32,7 @@
 set -euo pipefail
 
 PROJECT_ROOT="${PROJECT_ROOT:-$SLURM_SUBMIT_DIR}"
-DEFAULT_SQSH="${HOME}/containers/jaxfibers.sqsh"
+DEFAULT_SQSH="${HOME}/containers/jaxon.sqsh"
 DEFAULT_IMAGE="nvcr.io#nvidia/pytorch:25.03-py3"
 if [ -z "${CONTAINER_IMAGE:-}" ]; then
   if [ -f "${DEFAULT_SQSH}" ]; then
@@ -56,7 +56,7 @@ export SLURM_STEP_LAUNCH_TIMEOUT=600
 # 24 h budget per pyfibers chunk - plenty for N=10k on the C-fiber
 # models which extrapolate to ~30 min based on the N=1000 timings
 # (Sundt ~168s, Rattay ~149s, Schild ~340s).
-export JAXLEY_FIBERS_PF_BUDGET_S=86400
+export JAXON_PF_BUDGET_S=86400
 
 echo "Scaling re-run with extended pyfibers budget (24 h/chunk)"
 echo "Output: outputs/scaling/data_scaling.json (overwritten)"
@@ -71,7 +71,7 @@ export PROJECT_ROOT=\"${PROJECT_ROOT}\"
 export JAX_ENABLE_X64=1
 # Intentionally NOT setting SKIP_PYFIBERS_COMPILE: scaling.py calls
 # pyfibers which needs NEURON's axnode_myel + friends compiled.
-export JAXLEY_FIBERS_PF_BUDGET_S=${JAXLEY_FIBERS_PF_BUDGET_S}
+export JAXON_PF_BUDGET_S=${JAXON_PF_BUDGET_S}
 bash \"${PROJECT_ROOT}/slurm/setup_env.sh\"
 python -u experiments_v2/scaling.py
 "

@@ -53,11 +53,11 @@ import jax.numpy as jnp
 
 jax.config.update("jax_enable_x64", True)
 
-from jaxfibers.nerve.geometry import NerveGeometry
-from jaxfibers.stim.multichannel_field import make_ring_cuff_positions, precompute_ve_unit
-from jaxfibers.stim.batch_solve import stack_fiber_statics, initial_states_batch
-from jaxfibers.optim.optimizer import run_rect_optimization, run_waveform_optimization
-from jaxfibers.fibers.mrg import section_centers_um
+from jaxon.nerve.geometry import NerveGeometry
+from jaxon.stim.multichannel_field import make_ring_cuff_positions, precompute_ve_unit
+from jaxon.stim.batch_solve import stack_fiber_statics, initial_states_batch
+from jaxon.optim.optimizer import run_rect_optimization, run_waveform_optimization
+from jaxon.fibers.mrg import section_centers_um
 from experiments_v2.utils import ensure_dir
 
 OUT = ensure_dir(ROOT / "outputs" / "selectivity_demo")

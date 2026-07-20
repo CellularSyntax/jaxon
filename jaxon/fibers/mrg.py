@@ -7,7 +7,7 @@ as a separate bath-facing RC layer in the periaxonal space — exactly as NEURON
     xraxial_Mohm_cm  periaxonal axial resistivity  (MΩ/cm)
     xc_myelin_uF_cm2 myelin cap. per unit area     (µF/cm²)
     xg_myelin_S_cm2  myelin cond. per unit area    (S/cm²)
-These are consumed by jaxfibers.stim.extracellular.solve_vpax_static().
+These are consumed by jaxon.stim.extracellular.solve_vpax_static().
 
 Compartment-wise geometry tracks PyFibers' MRG_DISCRETE table (`models/mrg.py`):
 period = node + MYSA + FLUT + STIN x 6 + FLUT + MYSA (11 sections per period).
@@ -23,7 +23,7 @@ from dataclasses import dataclass
 import jaxley as jx
 from jaxley.channels import Leak
 
-from jaxfibers.channels.mrg_axnode import AxnodeMyel
+from jaxon.channels.mrg_axnode import AxnodeMyel
 
 # Discrete MRG geometry table (PyFibers models/mrg.py, line 65-77).
 _MRG_DISCRETE = {

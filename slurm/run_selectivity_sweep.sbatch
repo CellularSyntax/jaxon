@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -J jaxfibers-selectivity
+#SBATCH -J jaxon-selectivity
 #SBATCH -N 1
 #SBATCH -n 1
 #SBATCH -p gpu
@@ -17,7 +17,7 @@
 # verify the optimisation pipeline (LBFGS rect + Adam waveform) works
 # end-to-end before scaling to multiple geometries.
 #
-# Setup (matches Hussain 2024 methodology, scaled for jaxfibers parallel
+# Setup (matches Hussain 2024 methodology, scaled for jaxon parallel
 # demonstration):
 #   * N_FIBERS = 200, all at single diameter D = 5.7 µm
 #     (Hussain placed 1 fiber per fascicle at 5.7 µm; we vmap 200 fibers
@@ -35,7 +35,7 @@
 # Outputs: outputs/selectivity_sweep/data_seed_0000.json
 #
 # Submit from the project root:
-#   cd /path/to/jaxley_fibers
+#   cd /path/to/jaxon
 #   sbatch slurm/run_selectivity_sweep.sbatch
 #
 # LBFGS rect restarts
@@ -76,12 +76,12 @@ SEEDS_PER_TASK="${SEEDS_PER_TASK:-1}"
 
 # Resolve the container image once at submit time:
 #   1. Honour an explicit CONTAINER_IMAGE env-var override.
-#   2. Else prefer the project SquashFS at $HOME/containers/jaxfibers.sqsh
+#   2. Else prefer the project SquashFS at $HOME/containers/jaxon.sqsh
 #      (built once via slurm/build_container.sh; has pip deps baked in,
 #      so setup_env.sh skips its pip install step).
 #   3. Else fall back to nvcr.io#nvidia/pytorch:25.03-py3 (Pyxis pulls +
 #      caches it on the assigned node; setup_env.sh installs deps).
-DEFAULT_SQSH="${HOME}/containers/jaxfibers.sqsh"
+DEFAULT_SQSH="${HOME}/containers/jaxon.sqsh"
 DEFAULT_IMAGE="nvcr.io#nvidia/pytorch:25.03-py3"
 if [ -z "${CONTAINER_IMAGE:-}" ]; then
   if [ -f "${DEFAULT_SQSH}" ]; then

@@ -38,14 +38,14 @@ from jaxley.solver_gate import solve_gate_exponential
 
 jax.config.update("jax_enable_x64", True)
 
-from jaxfibers.fibers.sweeney import (
+from jaxon.fibers.sweeney import (
     build_sweeney, node_indices, section_centers_um,
     V_REST,
 )
-from jaxfibers.channels.sweeney_channels import SweeneyNode
-from jaxfibers.stim.extracellular import point_source_potentials_mV
-from jaxfibers.stim.extracellular_coupled import arrays_from_geometry, integrate
-from jaxfibers.nrn_baseline import build_sweeney_pyfibers
+from jaxon.channels.sweeney_channels import SweeneyNode
+from jaxon.stim.extracellular import point_source_potentials_mV
+from jaxon.stim.extracellular_coupled import arrays_from_geometry, integrate
+from jaxon.nrn_baseline import build_sweeney_pyfibers
 from pyfibers import ScaledStim
 from scipy.interpolate import interp1d
 

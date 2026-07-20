@@ -35,14 +35,14 @@ import jax.numpy as jnp
 
 jax.config.update("jax_enable_x64", True)
 
-from jaxfibers.nerve.geometry import make_hussain_style_nerve
-from jaxfibers.stim.multichannel_field import (
+from jaxon.nerve.geometry import make_hussain_style_nerve
+from jaxon.stim.multichannel_field import (
     make_ring_cuff_positions, precompute_ve_unit, build_fiber_arrays,
 )
-from jaxfibers.stim.batch_solve import stack_fiber_statics, initial_states_batch
-from jaxfibers.optim.losses import activation_proxy_batch, selectivity_index
-from jaxfibers.optim.optimizer import run_rect_optimization, run_joint_optimization
-from jaxfibers.fibers.mrg import section_centers_um
+from jaxon.stim.batch_solve import stack_fiber_statics, initial_states_batch
+from jaxon.optim.losses import activation_proxy_batch, selectivity_index
+from jaxon.optim.optimizer import run_rect_optimization, run_joint_optimization
+from jaxon.fibers.mrg import section_centers_um
 from experiments_v2.utils import ensure_dir, save_json, plot_seed_summary
 
 OUT = ensure_dir(ROOT / "outputs" / "selectivity_joint_opt")

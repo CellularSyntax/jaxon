@@ -1,4 +1,4 @@
-# Experiment strategy — jaxley_fibers v2
+# Experiment strategy — jaxon v2
 
 ## Goal
 

@@ -53,12 +53,12 @@ import jax.numpy as jnp
 
 jax.config.update("jax_enable_x64", True)
 
-from jaxfibers.stim.batch_solve import (
+from jaxon.stim.batch_solve import (
     stack_fiber_statics, initial_states_batch, batch_integrate_m_max,
 )
-from jaxfibers.optim.optimizer import run_rect_optimization
-from jaxfibers.optim.losses import activation_proxy_batch, selectivity_index
-from jaxfibers.nerve.geometry import NerveGeometry
+from jaxon.optim.optimizer import run_rect_optimization
+from jaxon.optim.losses import activation_proxy_batch, selectivity_index
+from jaxon.nerve.geometry import NerveGeometry
 from experiments_v2.utils import ensure_dir, save_json
 from experiments_v2.duke_loader import load_duke_sample, cluster_target_mask
 
@@ -74,7 +74,7 @@ if not SAMPLE_PATH.is_absolute():
     SAMPLE_PATH = ROOT / SAMPLE_PATH
 SAMPLE_NAME = SAMPLE_PATH.name
 
-_OUT_OVERRIDE = os.environ.get("JAXLEY_FIBERS_OUTPUT_DIR", "").strip()
+_OUT_OVERRIDE = os.environ.get("JAXON_OUTPUT_DIR", "").strip()
 if _OUT_OVERRIDE:
     _p = pathlib.Path(_OUT_OVERRIDE)
     OUT = ensure_dir(_p if _p.is_absolute() else ROOT / _p)

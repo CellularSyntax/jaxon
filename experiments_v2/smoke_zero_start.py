@@ -12,10 +12,10 @@ run the cold GD with verbose on, report whether and when SI lifts off zero.
 Run (driven by slurm/run_smoke_zero_start.sbatch), or directly in-container:
 
     DUKE_SAMPLE_DIR=duke_Ves/human_sub-47_sam-2 MAX_FIBERS=50 \
-    JAXLEY_FIBERS_LOSS=quotient CLUSTER_N_MIN_TARGET=8 \
+    JAXON_LOSS=quotient CLUSTER_N_MIN_TARGET=8 \
     python -u -m experiments_v2.smoke_zero_start
 
-Knobs (env): JAXLEY_FIBERS_LOSS (quotient|linear), ZERO_LR_MA, ZERO_STEPS,
+Knobs (env): JAXON_LOSS (quotient|linear), ZERO_LR_MA, ZERO_STEPS,
 ZERO_LR_DECAY, ZERO_SI_FLOOR, ZERO_PATIENCE, MAX_FIBERS, ZERO_GRAD_MODE
 (fd|autodiff), ZERO_MAX_TGT_FRAC (reject near-whole-nerve degenerate targets).
 """
@@ -24,16 +24,16 @@ from __future__ import annotations
 import os
 import sys
 
-# Loss mode is read at import time by jaxfibers.optim.optimizer -- set first.
-os.environ.setdefault("JAXLEY_FIBERS_LOSS", "quotient")
-os.environ.setdefault("JAXLEY_FIBERS_SOFT_TEMPERATURE", "0.15")
+# Loss mode is read at import time by jaxon.optim.optimizer -- set first.
+os.environ.setdefault("JAXON_LOSS", "quotient")
+os.environ.setdefault("JAXON_SOFT_TEMPERATURE", "0.15")
 os.environ.setdefault("N_OPT_RECT", "1")  # unused here, keeps S import happy
 
 import numpy as np
 import jax  # noqa: F401  (ensures device init / X64 banner)
 
 from experiments_v2 import selectivity_sweep_duke as S
-from jaxfibers.optim.optimizer import (
+from jaxon.optim.optimizer import (
     run_rect_optimization, run_rect_optimization_autodiff,
 )
 
@@ -76,7 +76,7 @@ _WARM_MA = float(os.environ.get("ZERO_WARM_MA", "0.04"))
 
 def main() -> int:
     name = S.SAMPLE_NAME
-    loss_mode = os.environ["JAXLEY_FIBERS_LOSS"]
+    loss_mode = os.environ["JAXON_LOSS"]
     print(f"[zero-smoke] {name}  loss={loss_mode}  "
           f"lr={_LR} wd={_WD} steps={_STEPS} decay={_DECAY} floor={_FLOOR} "
           f"patience={_PATIENCE}", flush=True)

@@ -23,7 +23,7 @@ from dataclasses import dataclass
 import jaxley as jx
 from jaxley.channels import Leak
 
-from jaxfibers.channels.sweeney_channels import SweeneyNode
+from jaxon.channels.sweeney_channels import SweeneyNode
 
 # ── constants ──────────────────────────────────────────────────────────────────
 V_REST         = -80.0   # mV

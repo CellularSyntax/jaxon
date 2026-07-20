@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -J jaxfibers-zerosmoke
+#SBATCH -J jaxon-zerosmoke
 #SBATCH -N 1
 #SBATCH -n 1
 #SBATCH -p gpu
@@ -14,16 +14,16 @@
 # Standalone cold-start (0 mA) GD smoke test on ONE downsampled nerve.
 # Prints the per-iter SI trajectory so we can see whether GD escapes SI=0.
 #
-#   SMOKE_SAMPLE=human_sub-47_sam-2 MAX_FIBERS=50 JAXLEY_FIBERS_LOSS=quotient \
+#   SMOKE_SAMPLE=human_sub-47_sam-2 MAX_FIBERS=50 JAXON_LOSS=quotient \
 #     sbatch slurm/run_smoke_zero_start.sbatch
 #
-# Knobs (env): JAXLEY_FIBERS_LOSS, ZERO_LR_MA, ZERO_STEPS, ZERO_LR_DECAY,
+# Knobs (env): JAXON_LOSS, ZERO_LR_MA, ZERO_STEPS, ZERO_LR_DECAY,
 #              ZERO_SI_FLOOR, ZERO_PATIENCE, MAX_FIBERS, CLUSTER_N_MIN_TARGET.
 
 set -euo pipefail
 
 PROJECT_ROOT="${PROJECT_ROOT:-$SLURM_SUBMIT_DIR}"
-DEFAULT_SQSH="${HOME}/containers/jaxfibers.sqsh"
+DEFAULT_SQSH="${HOME}/containers/jaxon.sqsh"
 DEFAULT_IMAGE="nvcr.io#nvidia/pytorch:25.03-py3"
 if [ -z "${CONTAINER_IMAGE:-}" ]; then
   if [ -f "${DEFAULT_SQSH}" ]; then CONTAINER_IMAGE="${DEFAULT_SQSH}";
@@ -39,7 +39,7 @@ fi
 
 SAMPLE="${SMOKE_SAMPLE:-human_sub-47_sam-2}"
 SAMPLE_DIR="${DUKE_VES_ROOT}/${SAMPLE}"
-echo "Zero-start smoke: ${SAMPLE}  MAX_FIBERS=${MAX_FIBERS:-50}  LOSS=${JAXLEY_FIBERS_LOSS:-quotient}"
+echo "Zero-start smoke: ${SAMPLE}  MAX_FIBERS=${MAX_FIBERS:-50}  LOSS=${JAXON_LOSS:-quotient}"
 
 srun \
   --container-image="${CONTAINER_IMAGE}" \
@@ -52,9 +52,9 @@ export JAX_ENABLE_X64=1
 export SKIP_PYFIBERS_COMPILE=1
 export DUKE_SAMPLE_DIR=\"${SAMPLE_DIR}\"
 export MAX_FIBERS=\"${MAX_FIBERS:-50}\"
-export JAXLEY_FIBERS_LOSS=\"${JAXLEY_FIBERS_LOSS:-quotient}\"
-export JAXLEY_FIBERS_SOFT_TEMPERATURE=\"${JAXLEY_FIBERS_SOFT_TEMPERATURE:-0.15}\"
-export JAXLEY_FIBERS_ENERGY_LAMBDA=\"${JAXLEY_FIBERS_ENERGY_LAMBDA:-1e-3}\"
+export JAXON_LOSS=\"${JAXON_LOSS:-quotient}\"
+export JAXON_SOFT_TEMPERATURE=\"${JAXON_SOFT_TEMPERATURE:-0.15}\"
+export JAXON_ENERGY_LAMBDA=\"${JAXON_ENERGY_LAMBDA:-1e-3}\"
 export ZERO_LR_MA=\"${ZERO_LR_MA:-0.05}\"
 export ZERO_STEPS=\"${ZERO_STEPS:-300}\"
 export ZERO_LR_DECAY=\"${ZERO_LR_DECAY:-0.6}\"

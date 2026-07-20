@@ -10,7 +10,7 @@ jaxon and NEURON are fed the same per-compartment extracellular potential
 potential reaches BOTH end nodes -- the NEURON analogue of jaxon's
 min(end-node) activation proxy.  SI = frac_fired_target - frac_fired_offtarget.
 
-Run (PowerShell, jaxley_fibers env with c:\\nrn826 on PYTHONPATH/PATH):
+Run (PowerShell, jaxon env with c:\\nrn826 on PYTHONPATH/PATH):
   python -m experiments_v2.neuron_pop_validate --sample human_sub-50_sam-2 --seed 0 --maxfib 80
   python -m experiments_v2.neuron_pop_validate --sample human_sub-50_sam-2 --seed 0   # full pop
 """
@@ -44,12 +44,12 @@ def biphasic_asym(t):
 
 def jaxon_si(duke, amps, target_mask, node_indices):
     """Recompute jaxon recruitment on this exact (fresh) population."""
-    os.environ.setdefault("JAXLEY_FIBERS_SOFT_TEMPERATURE", "0.1")
+    os.environ.setdefault("JAXON_SOFT_TEMPERATURE", "0.1")
     import jax; jax.config.update("jax_enable_x64", True)
     import jax.numpy as jnp
-    from jaxfibers.stim.batch_solve import (
+    from jaxon.stim.batch_solve import (
         stack_fiber_statics, initial_states_batch, batch_integrate_m_max)
-    from jaxfibers.optim.losses import activation_proxy_batch, selectivity_index
+    from jaxon.optim.losses import activation_proxy_batch, selectivity_index
     geoms = duke["geoms"]
     fs = stack_fiber_statics(geoms, DT); s0 = initial_states_batch(geoms)
     n = int(TSTOP / DT); t = (np.arange(n) + 1) * DT
@@ -69,7 +69,7 @@ def neuron_fired_population(Ve_unit, amps, idx, diam=5.7, n_nodes=21,
     'fired' = action potential (Vm > vm_thresh_mV) reaches BOTH end nodes -- the
     NEURON analogue of jaxon's min(end-node) activation proxy.
     """
-    from jaxfibers.nrn_baseline import build_mrg_pyfibers
+    from jaxon.nrn_baseline import build_mrg_pyfibers
     from pyfibers import ScaledStim
     fiber = build_mrg_pyfibers(diameter=diam, n_nodes=n_nodes, temperature=37.0)
     fiber.record_vm()

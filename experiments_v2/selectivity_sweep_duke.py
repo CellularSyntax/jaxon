@@ -42,7 +42,7 @@ import sys
 import time
 from pathlib import Path
 
-# Make sibling jaxfibers/ importable when this script is launched directly
+# Make sibling jaxon/ importable when this script is launched directly
 # (e.g. on the cluster where PYTHONPATH may not include the project root).
 # Mirrors the synthetic-sweep selectivity_sweep.py.
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -54,17 +54,17 @@ import jax.numpy as jnp
 
 jax.config.update("jax_enable_x64", True)
 
-from jaxfibers.stim.batch_solve import (
+from jaxon.stim.batch_solve import (
     stack_fiber_statics, initial_states_batch, batch_integrate_m_max,
 )
-from jaxfibers.optim.optimizer import (
+from jaxon.optim.optimizer import (
     run_rect_optimization,
     run_rect_optimization_autodiff,
     run_rect_optimization_lbfgs,
     run_waveform_optimization,
 )
-from jaxfibers.optim.losses import activation_proxy_batch, selectivity_index
-from jaxfibers.nerve.geometry import NerveGeometry
+from jaxon.optim.losses import activation_proxy_batch, selectivity_index
+from jaxon.nerve.geometry import NerveGeometry
 from experiments_v2.utils import ensure_dir, save_json
 from experiments_v2.duke_loader import (
     load_duke_sample, divider_split_target_mask,
@@ -88,7 +88,7 @@ SAMPLE_NAME = SAMPLE_PATH.name   # e.g. "sub-10_sam-1"
 # itself keeps the bundle's name verbatim (e.g. ``sub-10_sam-1`` or
 # ``human-sub-3_sam-1``) — the species can be inferred from the prefix
 # downstream by the figure code.
-_OUT_OVERRIDE = os.environ.get("JAXLEY_FIBERS_OUTPUT_DIR", "").strip()
+_OUT_OVERRIDE = os.environ.get("JAXON_OUTPUT_DIR", "").strip()
 if _OUT_OVERRIDE:
     _OUT_PATH = pathlib.Path(_OUT_OVERRIDE)
     if not _OUT_PATH.is_absolute():

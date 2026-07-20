@@ -70,3 +70,8 @@ duke_Ves/
 
 # --- Manuscript build artefacts (regenerated from source) ---
 manuscript/main_iop.pdf
+
+# --- excluded from the public GitHub mirror ---
+manuscript/
+reference_code/
+submission/

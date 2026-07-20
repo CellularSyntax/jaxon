@@ -15,24 +15,48 @@
 \begin{figure}[h]
   \centering
   \figmaybe[width=0.98\textwidth]{main/fig2_phenomena.png}
-  \caption{jaxon reproduces three canonical propagation phenomena
-    (solid) vs.\ PyFibers/NEURON (dashed), for a myelinated A-fiber
-    (MRG, top row \textbf{a}--\textbf{c}) and an unmyelinated C-fiber
-    (Sundt, bottom row \textbf{d}--\textbf{f}).
-    \textbf{(a, d)} AP propagation: waterfall of the membrane-potential
-    trace at each node (y = position along fiber, x = time); the
-    horizontal arrow marks the central stimulation site.
-    \textbf{(b, e)} kHz conduction block at $20\,\mathrm{kHz}$
-    extracellular hold; distal-node $V_m$ traces at four block
-    amplitudes show the pace train passing, partially and fully blocking
-    as amplitude increases (kHz-on window shaded).  The block threshold
-    matches NEURON within the $0.01\,\mathrm{mA}$ scan resolution and the
-    AP count agrees exactly.
-    \textbf{(c, f)} AP collision; snapshots of $V_m$ along the fiber at
-    five times (columns) for four diameters (rows) show two
-    inward-propagating APs meeting and annihilating, with a
-    jaxon-vs-NEURON peak-voltage discrepancy below $1\,\mu\mathrm{V}$.}
+  \caption{jaxon (solid) reproduces three canonical
+    propagation phenomena vs.\ PyFibers/NEURON (lighter dashed overlay), for all four
+    fiber models --- the myelinated MRG (\textbf{a}--\textbf{c}) and
+    Sweeney (\textbf{d}--\textbf{f}) A-fibers and the unmyelinated Sundt
+    (\textbf{g}--\textbf{i}) and Rattay (\textbf{j}--\textbf{l})
+    C-fibers.  Each model occupies one quadrant with three
+    node-vs-time waterfall columns (y = position along fiber, x = time;
+    the black arrow marks the central stimulation site).
+    \textbf{Columns 1 (a, d, g, j):} AP propagation.
+    \textbf{Columns 2 (b, e, h, k):} DC (depolarizing-hold) conduction
+    block --- a sustained cathodic hold blocks the propagating AP, the
+    red arrow marking the block site.
+    \textbf{Columns 3 (c, f, i, l):} AP collision --- two
+    inward-propagating APs meet and annihilate.  In every panel the
+    jaxon (solid) trace tracks PyFibers/NEURON (lighter dashed) to the
+    floating-point floor.  The complementary $20\,\mathrm{kHz}$
+    kilohertz-frequency block validation is shown separately in
+    Supplementary Fig.~\ref{fig:khz-block}.}
   \label{fig:phenomena}
+\end{figure}
+
+\begin{figure}[h]
+  \centering
+  \figmaybe[width=0.98\textwidth]{supp/figS_khz_block.png}
+  \caption{Kilohertz-frequency conduction block, jaxon (orange solid)
+    vs.\ PyFibers/NEURON (blue dashed), for all four fiber models
+    (\textbf{a} MRG, \textbf{b} Sweeney, \textbf{c} Sundt, \textbf{d}
+    Rattay).  A $20\,\mathrm{kHz}$ sinusoidal extracellular hold is
+    applied over the shaded window while a slow pacing train probes
+    conduction; each model shows distal-node $V_m$ at four hold
+    amplitudes, from sub-block (pacing train passes) to full block
+    (train suppressed).  Onset of block agrees with NEURON to the
+    $0.01\,\mathrm{mA}$ scan resolution.  At amplitudes well above block
+    threshold the two implementations diverge in the fine structure of
+    the sustained kHz-driven oscillation (e.g.\ Sundt at
+    $-15$/$-20\,\mathrm{mA}$, Rattay at $-30$/$-50\,\mathrm{mA}$): this
+    high-amplitude, kilohertz-driven regime is intrinsically
+    integration-scheme-sensitive --- jaxon's fixed-step backward-Euler
+    and NEURON's solver make different sub-threshold excursions once the
+    membrane is held far from rest --- so we report it for completeness
+    rather than as a sub-$1\,\%$ agreement claim.}
+  \label{fig:khz-block}
 \end{figure}
 
 \begin{figure}[h]
@@ -43,7 +67,7 @@
     the star marks the single centroid fiber (a standard reduced-order
     reduction).  Sampling more fibers per target fascicle reduces the
     penalty --- the human median falls from $0.19$ at one random fiber to
-    ${\sim}0.02$--$0.03$ at three to ten (Friedman $p = 0.003$; most of the
+    ${\sim}0.02$--$0.03$ at three to ten (Friedman $\chi^2 = 11.4$, $p = 0.003$, $n = 11$ human nerves over three sampling levels; most of the
     gain is the $1\rightarrow3$ step, after which it plateaus) --- but it
     does \emph{not} close on the largest human fascicles: $3$ of $11$ human
     nerves still lose more than $0.10$ even at ten fibers (${\sim}7\,\%$ of
@@ -450,4 +474,16 @@ scheme are described once below and apply to every panel.
   \figmaybe[width=0.95\textwidth]{supp/figS_human_sub-58_sam-3.png}
   \caption{Specimen \texttt{human sub-58\_sam-3}. \suppcaption}
   \label{fig:supp-human-sub-58-sam-3}
+\end{figure}
+
+\begin{figure}[p]\centering
+  \figmaybe[width=0.95\textwidth]{supp/figS_human_sub-57_sam-1.png}
+  \caption{Specimen \texttt{human sub-57\_sam-1}. \suppcaption}
+  \label{fig:supp-human-sub-57-sam-1}
+\end{figure}
+
+\begin{figure}[p]\centering
+  \figmaybe[width=0.95\textwidth]{supp/figS_human_sub-58_sam-1.png}
+  \caption{Specimen \texttt{human sub-58\_sam-1}. \suppcaption}
+  \label{fig:supp-human-sub-58-sam-1}
 \end{figure}

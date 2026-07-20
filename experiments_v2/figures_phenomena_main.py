@@ -35,8 +35,8 @@ V_REST = -80.0
 VM_LIM = (-92, 55)
 
 # Per-model colours (match fig1).  In fig2's waterfalls the MODEL sets the hue;
-# PyFibers = solid full colour, JAXON = lighter dashed (overlay) — so a perfect
-# match shows the lighter dashes tracking the solid line.
+# JAXON = solid full colour, PyFibers = lighter dashed (overlay) — matching fig1's
+# jaxon-solid convention, so a perfect match shows the lighter dashes on the solid line.
 MODEL_COLORS = {
     "MRG":     "#0072B2",   # blue
     "Sweeney": "#009E73",   # green
@@ -140,8 +140,8 @@ def _panel_a(gs_cell, fig, dc_data: dict | None,
         y_off     = pos[i]
         trace_pf  = (vm_pf[:,  i] - v_rest) * y_scale
         trace_jax = (vm_jax[:, i] - v_rest) * y_scale
-        ax.plot(t_pf,  y_off + trace_pf,  color=color, lw=0.7, alpha=0.9)
-        ax.plot(t_jax, y_off + trace_jax, color=cj, lw=0.7, ls="--", alpha=0.9)
+        ax.plot(t_jax, y_off + trace_jax, color=color, lw=0.7, alpha=0.9)
+        ax.plot(t_pf,  y_off + trace_pf,  color=cj, lw=0.7, ls="--", alpha=0.9)
 
     ax.set_xlabel("time (ms)")
     ax.set_ylabel("position (mm)")
@@ -199,9 +199,9 @@ def _panel_block_waterfall(gs_cell, fig, blk: dict | None,
 
     for i in plot_idx:
         y_off = pos[i]
-        ax.plot(t_pf,  y_off + (vm_pf[:,  i] - v_rest) * y_scale, color=color,
+        ax.plot(t_jax, y_off + (vm_jax[:, i] - v_rest) * y_scale, color=color,
                 lw=0.6, alpha=0.9)
-        ax.plot(t_jax, y_off + (vm_jax[:, i] - v_rest) * y_scale, color=cj,
+        ax.plot(t_pf,  y_off + (vm_pf[:,  i] - v_rest) * y_scale, color=cj,
                 lw=0.6, ls="--", alpha=0.9)
 
     # Block-node marker (electrode) + init arrow.
@@ -254,9 +254,9 @@ def _panel_collision_waterfall(gs_cell, fig, coll: dict | None,
 
     for i in plot_idx:
         y_off = pos[i]
-        ax.plot(t_pf,  y_off + (vm_pf[:,  i] - v_rest) * y_scale, color=color,
+        ax.plot(t_jax, y_off + (vm_jax[:, i] - v_rest) * y_scale, color=color,
                 lw=0.6, alpha=0.9)
-        ax.plot(t_jax, y_off + (vm_jax[:, i] - v_rest) * y_scale, color=cj,
+        ax.plot(t_pf,  y_off + (vm_pf[:,  i] - v_rest) * y_scale, color=cj,
                 lw=0.6, ls="--", alpha=0.9)
 
     # Init arrows at both ends (APs launched inward).
@@ -329,8 +329,8 @@ def _panel_b(gs_cell, fig, khz_data: dict | None,
 
     # Single-row legend placed just above the top subplot
     handles = [
-        Line2D([0], [0], color=C_PF,  lw=1.4, ls="-",  label="PyFibers"),
-        Line2D([0], [0], color=C_JAX, lw=1.4, ls="--", label="JAXON"),
+        Line2D([0], [0], color=C_JAX, lw=1.4, ls="-",  label="JAXON"),
+        Line2D([0], [0], color=C_PF,  lw=1.4, ls="--", label="PyFibers"),
     ]
     # bbox y=1.00 → legend sits flush above axes[0] top, below the panel heading
     axes[0].legend(handles=handles, loc="lower left",
@@ -375,9 +375,9 @@ def _panel_c(gs_cell, fig, coll_data: dict | None,
                 spine.set_visible(True)
             ax.set_box_aspect(1)
 
+            ax.plot(nodes, snaps_jax[c],    color=C_JAX, lw=1.0)
             if snaps_pf is not None:
-                ax.plot(nodes, snaps_pf[c], color=C_PF,  lw=1.0)
-            ax.plot(nodes, snaps_jax[c],    color=C_JAX, lw=0.9, ls="--")
+                ax.plot(nodes, snaps_pf[c], color=C_PF,  lw=0.9, ls="--")
             ax.axhline(v_rest, color=C_REST, lw=0.3, ls=":", zorder=0)
             ax.set_ylim(round(v_rest / 10) * 10 - 12, 55)
             ax.set_xlim(0, nodes[-1])
@@ -400,8 +400,8 @@ def _panel_c(gs_cell, fig, coll_data: dict | None,
 
     # Legend above the panel, top-right — same style as panels a and b
     leg_handles = [
-        Line2D([0], [0], color=C_PF,  lw=1.0, label="PyFibers"),
-        Line2D([0], [0], color=C_JAX, lw=0.9, ls="--", label="JAXON"),
+        Line2D([0], [0], color=C_JAX, lw=1.0, label="JAXON"),
+        Line2D([0], [0], color=C_PF,  lw=0.9, ls="--", label="PyFibers"),
     ]
     ax_outer.legend(handles=leg_handles, loc="lower right",
                     bbox_to_anchor=(1.0, 1.02), ncol=2, frameon=False,
@@ -489,8 +489,8 @@ def main() -> int:
 
     # Single shared method legend (colour = model; line style = method).
     fig.legend(handles=[
-        Line2D([0], [0], color="#444444", lw=1.5, ls="-",  label="PyFibers"),
-        Line2D([0], [0], color="#888888", lw=1.5, ls="--", label="JAXON"),
+        Line2D([0], [0], color="#444444", lw=1.5, ls="-",  label="JAXON"),
+        Line2D([0], [0], color="#888888", lw=1.5, ls="--", label="PyFibers"),
     ], loc="upper right", bbox_to_anchor=(0.99, 0.995), ncol=2,
         frameon=False, fontsize=FS)
 

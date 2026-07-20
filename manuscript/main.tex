@@ -86,7 +86,7 @@
 
 \ifx\jneSubmission\undefined
   % ── Article-class preview block ───────────────────────────────────
-  \title{A differentiable, GPU-native fiber simulator reveals a
+  \title{A GPU-native, differentiable fiber simulator reveals a
          species-dependent selectivity penalty in reduced-order
          peripheral-nerve models}
   \author{David Lung\thanks{\href{https://orcid.org/0009-0003-7748-2335}{ORCID: 0009-0003-7748-2335}}}
@@ -111,7 +111,7 @@
   % ── iopjournal submission block ───────────────────────────────────
   \articletype{Paper}
 
-  \title{A differentiable, GPU-native fiber simulator reveals a
+  \title{A GPU-native, differentiable fiber simulator reveals a
          species-dependent selectivity penalty in reduced-order
          peripheral-nerve models}
 
@@ -144,11 +144,22 @@
 \input{sections/04_discussion}
 
 % ─── Back matter ───────────────────────────────────────────────────
-\data{The full \texttt{jaxon} source code and the reproduction code for
-every figure in this paper are available at
-\url{https://gitlab.meduniwien.ac.at/zmpbmt/cvd/jaxfibers} under the
-MIT license, at git tag \texttt{jne-submission} (to be assigned at
-submission).}
+\data{The \texttt{jaxon} source code, together with the reproduction
+code and analysis scripts for every figure and statistic in this paper,
+is developed openly on GitHub
+(\texttt{github.com/\needdata{ORG}/jaxon}) under the MIT license.
+The exact software version used for the results reported here is
+archived as a frozen GitHub release on Zenodo
+(\needdata{DOI:10.5281/zenodo.XXXXXXX}), and the input and intermediate
+data required to reproduce the manuscript figures are deposited in a
+companion Zenodo data archive (\needdata{DOI:10.5281/zenodo.YYYYYYY}).
+The underlying quantified vagus-nerve morphology is openly available
+from the SPARC Portal: swine~\cite{pelot2020swineSPARC} (dataset
+doi:10.26275/MAQ2-EII4) and
+human~\cite{pelot2021humanSPARC,pelot2023humanvagus} (dataset
+doi:10.26275/OFJA-GHOZ).  The finite-element field solver and the
+pre-computed per-contact lead fields for the cohort are provided by the
+golgi pipeline~\cite{lung2026golgi,lung2026golgisoftware}.}
 
 \ack{The authors thank the Medical University of Vienna for access to
 the HPC facility on which the NVIDIA A100 benchmarks and the

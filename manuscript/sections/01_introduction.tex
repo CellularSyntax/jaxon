@@ -42,17 +42,21 @@ approximations~\cite{marshall2025pyfibers} or evolutionary
 search~\cite{aristovich2021}---scaling poorly to the high-dimensional
 spaces opened up by waveform shaping or many-contact cuffs.
 A second, less-examined economy compounds the first: to keep the fiber
-count manageable, these pipelines typically reduce each fascicle to a
-single representative (centroid) fiber~\cite{hussain2024axonml}.  Whether
-this reduction preserves the selectivity of candidate designs --- or
-quietly biases it --- has not been tested, because testing it demands
-simulating the full fiber population under the very fields the reduced
-model selects.
+count manageable, selectivity-optimization pipelines commonly sample
+only a few representative fibers per fascicle, in the limiting case a
+single centroid fiber --- the reduction used, for example, in
+GPU-accelerated selectivity optimization~\cite{hussain2024axonml}.
+Whether this reduction preserves the selectivity of candidate designs
+--- or quietly biases it --- has not been tested, because testing it
+demands simulating the full fiber population under the very fields the
+reduced model selects.
 
 Recent work in differentiable simulation suggests an alternative.
 Frameworks such as \texttt{jaxley}~\cite{deistler2024} express the
 Hodgkin--Huxley membrane equations and multi-compartment cable
-dynamics in JAX~\cite{jax2018}, so that gradients of arbitrary
+dynamics in JAX~\cite{jax2018}, in the same differentiable-physics
+spirit as frameworks like \texttt{JAX\,MD}~\cite{schoenholz2020jaxmd},
+so that gradients of arbitrary
 functions of the membrane trajectory are available by reverse-mode
 automatic differentiation within a single GPU-vectorized forward pass
 --- enabling, in the central nervous system, gradient-based inference
@@ -94,7 +98,11 @@ contributions are:
         and thereby differs systematically between species (small in
         swine, large in human), exposing a translational bias that
         reduced-order models cannot detect
-        (Section~\ref{sec:results-sparse}).
+        (Section~\ref{sec:results-sparse}).  The selectivity finding is
+        established for the myelinated fiber population (as opposed to the small unmyelinated C-fibers) at a single diameter;
+        the small autonomic/C-fiber selectivity limit is a separate,
+        larger effect (shown on these same nerves by the companion
+        golgi work~\cite{lung2026golgi}) left to future work.
   \item \textbf{The pipeline.}  A selectivity-optimization pipeline
         over per-contact amplitudes whose GPU-fast forward pass makes
         optimization tractable directly on the \emph{full fiber
@@ -110,6 +118,6 @@ contributions are:
         gradients --- verified against finite differences and
         unavailable to NEURON-wrapped pipelines --- for the
         waveform-shape optimization left to future work
-        (Section~\ref{sec:results-duke}).
+        (validated in Supplementary Fig.~\ref{fig:optimizer-validation}).
 \end{enumerate}
 

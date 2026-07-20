@@ -1,33 +1,75 @@
-# jaxley_fibers
+<p align="center">
+  <img src="docs/jaxon_logo.png" alt="jaxon" width="320">
+</p>
 
-Differentiable, GPU-batched JAX/[Jaxley](https://github.com/jaxleyverse/jaxley)
-reimplementation of six published peripheral-nerve fiber models, paired with a
-custom backward-Euler coupled (V_i, V_pax) solver that reproduces NEURON's
-`extracellular` mechanism to <0.5 % threshold error and machine-precision
-conduction velocity. The framework enables gradient-based optimisation of
-extracellular stimulation parameters — selectivity, waveform shape, and
-electrode position — directly through the cable equation.
+<p align="center">
+  <b>A differentiable, GPU-native simulator for peripheral-nerve fiber models.</b>
+</p>
 
-> **State of the project:** see [AUDIT.md](AUDIT.md) for the full status report,
-> known gaps, and roadmap toward a Nature Communications follow-up to
-> Hussain et al. *Nat. Commun.* 15:7597 (2024).
-> See [CHANGELOG.md](CHANGELOG.md) for chronological changes.
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+  <img src="https://img.shields.io/badge/backend-JAX%20%C2%B7%20Jaxley-orange" alt="JAX · Jaxley">
+  <img src="https://img.shields.io/badge/python-3.11-3776AB" alt="Python 3.11">
+  <img src="https://img.shields.io/badge/validated%20vs-NEURON%20%2F%20PyFibers-success" alt="validated vs NEURON/PyFibers">
+  <img src="https://img.shields.io/badge/platform-Linux%20%C2%B7%20macOS%20%C2%B7%20Windows%20(WSL2)-lightgrey" alt="Linux · macOS · Windows (WSL2)">
+</p>
+
+---
+
+**jaxon** is a fully differentiable, GPU-native reimplementation of the canonical
+peripheral-nerve fiber models in [JAX](https://github.com/jax-ml/jax) /
+[Jaxley](https://github.com/jaxleyverse/jaxley). It reproduces NEURON's
+`extracellular` mechanism to sub-0.5 % threshold error and machine-precision
+conduction velocity, runs whole fiber populations in parallel on one GPU, and
+exposes **gradients through the cable equation** — so extracellular stimulation
+parameters (per-contact amplitudes, waveform shape, electrode position) can be
+optimized directly rather than grid-searched. It slots into existing pipelines
+as a gradient-enabled, vectorized replacement for the NEURON forward solver.
+
+The cohort-scale selectivity experiments run on FEM-derived per-contact lead
+fields and histology-segmented vagus-nerve geometries produced by the **golgi**
+platform [1, 2] (29 nerves: 18 pig, 11 human), applied to a 12-contact ring cuff.
+
+## ✨ Highlights
+
+- **Differentiable through the cable equation.** Reverse-mode autodiff and packed
+  finite-difference gradients drive Adam optimization of per-contact amplitudes,
+  arbitrary K×T waveforms, and joint amplitude + electrode-position search — no
+  surrogate model, gradients of the true biophysics.
+- **GPU-native population scale.** `vmap`-batched forward passes simulate
+  100,000 fibers on a single GPU, reaching a geometric-mean ~820× speedup over
+  single-thread NEURON at that scale (~200–300× at the ~1000-fiber operating
+  point used in the paper).
+- **Validated against NEURON / PyFibers.** 99.6 % of 943 threshold configurations
+  agree within 1 %; conduction velocity matches to machine precision. jaxon is
+  checked against the reference solver, not a fit to it.
+- **Principled coupled solver.** A custom backward-Euler integrator for the
+  two-state (V_i, V_pax) double-cable equation — the equivalent of NEURON's
+  `extracellular` mechanism, not the single-cable activating-function shortcut —
+  solved by a 2×2 block-Thomas sweep verified to 5.6×10⁻¹¹ mV against dense LU.
+- **Five model/parameterization variants.** Myelinated MRG (McIntyre–Richardson–Grill,
+  original + interpolated tables) and Sweeney; unmyelinated Sundt and Rattay C-fibers,
+  each hand-translated from NMODL and rate-checked to machine precision.
+- **Realistic cohort fields.** Drives golgi-derived FEM lead fields over
+  histology-segmented swine and human vagus nerves, so selectivity is scored on
+  anatomically realistic populations, not synthetic cross-sections.
 
 ## Models
 
-| Model      | Type                        | Compartments        | Validation status     |
-|------------|-----------------------------|---------------------|-----------------------|
-| MRG        | Myelinated A-fiber (2002)   | 21 nodes (double-cable) | ✓ <0.5 % thresholds, 1e-12 CV |
-| MRG_Interp | MRG, polynomial geometry    | same                | scaling-only          |
-| Sweeney    | Myelinated A-fiber (1987)   | 21 nodes            | ✓ <0.1 % thresholds, 1e-12 CV |
-| Sundt      | Unmyelinated C-fiber (2015) | 51 uniform          | ✓ <0.5 % thresholds, CV fixed |
-| Rattay     | Unmyelinated HH C-fiber     | 51 uniform          | ✓ <0.5 % thresholds, CV fixed |
-| Schild94   | Unmyelinated C-fiber (full Ca dynamics) | 51 uniform | code complete; validation pending |
-| Schild97   | Unmyelinated C-fiber (mean) | 51 uniform          | code complete; validation pending |
+| Model      | Type                                    | Compartments            | Validation status                |
+|------------|-----------------------------------------|-------------------------|----------------------------------|
+| MRG        | Myelinated A-fiber (2002)               | 21 nodes (double-cable) | ✓ <0.5 % thresholds, 1e-12 CV    |
+| MRG_Interp | MRG, polynomial geometry                | same                    | scaling-only                     |
+| Sweeney    | Myelinated A-fiber (1987)               | 21 nodes                | ✓ <0.1 % thresholds, 1e-12 CV    |
+| Sundt      | Unmyelinated C-fiber (2015)             | 51 uniform              | ✓ <0.5 % thresholds, CV fixed    |
+| Rattay     | Unmyelinated HH C-fiber                 | 51 uniform              | ✓ <0.5 % thresholds, CV fixed    |
+| Schild94   | Unmyelinated C-fiber (full Ca dynamics) | 51 uniform              | code complete; validation pending |
+| Schild97   | Unmyelinated C-fiber (mean)             | 51 uniform              | code complete; validation pending |
 
-## Quick start
+## Installation
 
-### Install
+jaxon installs with conda (for the pinned scientific + NEURON stack) and runs on
+CPU by default; a single edit switches it to CUDA.
 
 ```bash
 # 1. enter the project directory
@@ -36,19 +78,20 @@ cd jaxley_fibers
 # 2. create the env (CPU by default; uncomment jax[cuda12] in environment.yml for GPU)
 conda env create -f environment.yml
 
-# 3. activate and compile NEURON .mod files
+# 3. activate and compile the NEURON .mod files used by the PyFibers reference
 conda activate jaxley_fibers
 pyfibers_compile
 ```
 
-For CUDA hosts, edit `environment.yml` per its header comments before step 2,
-then verify:
+For CUDA hosts, edit `environment.yml` per its header comments before step 2, then verify:
 
 ```bash
 python -c "import jax; print(jax.devices())"   # should list CudaDevice
 ```
 
-### Run the validation suite
+## Quick start
+
+**Run the validation suite** (CPU, minutes):
 
 ```bash
 conda activate jaxley_fibers
@@ -58,167 +101,166 @@ python experiments_v2/sundt_validation.py      # ditto, Sundt
 python experiments_v2/rattay_validation.py     # ditto, Rattay
 python experiments_v2/sweeney_validation.py    # ditto, Sweeney
 python experiments_v2/scaling.py               # scaling benchmark, all models
-python experiments_v2/selectivity_demo.py      # local selectivity demo
+```
+
+**Optimize stimulation for selectivity:**
+
+```bash
+python experiments_v2/selectivity_demo.py      # local single-nerve selectivity demo
 python experiments_v2/selectivity_sweep.py     # full population sweep
-python experiments_v2/selectivity_joint_opt.py # joint amps + electrode positions
+python experiments_v2/selectivity_joint_opt.py # joint amplitudes + electrode positions
 ```
 
-Outputs land in `outputs/<experiment>/`. Heavier sweeps are wired for SLURM
-under `slurm/` — see `slurm/submit_all.sh`.
+Outputs land in `outputs/<experiment>/`. Heavier sweeps are wired for SLURM under
+`slurm/` — see `slurm/submit_all.sh`. To reproduce every figure and number in the
+paper from processed data, see **[REPRODUCE.md](REPRODUCE.md)**.
 
-### One-time cluster setup: build a project SquashFS with deps baked in
+> **State of the project:** see [AUDIT.md](AUDIT.md) for the full status report and
+> known gaps, and [CHANGELOG.md](CHANGELOG.md) for chronological changes.
 
-The sbatch jobs run inside `nvcr.io#nvidia/pytorch:25.03-py3` via Pyxis.
-Two costs hit every job otherwise:
+## Reproducing the paper
 
-* a 5–10 min Pyxis pull of the ~10 GB base image when the node cache is
-  cold (mitigated by `SLURM_STEP_LAUNCH_TIMEOUT=600` in the sbatch files);
-* a 1–2 min `pip install -r requirements_gpu.txt` inside the container at
-  job start (`slurm/setup_env.sh`).
-
-Build a private SquashFS once with the pip deps **baked in** and both go
-away — subsequent jobs start in seconds:
+The processed data (golgi lead fields + all sweep / validation / phenomena
+outputs) is archived on Zenodo; `REPRODUCE.md` documents two paths — regenerating
+every figure from that processed data (fast, CPU-only), or re-running the full
+simulation pipeline from scratch (slow, GPU). A one-command driver regenerates
+all main and named-supplementary figures:
 
 ```bash
-# Run from the project root.  --mem=128G is intentional: mksquashfs peaks
-# at ~60-100 GB of RAM during the final compression step.
-bash slurm/build_container.sh
+bash reproduce_figures.sh                       # main + supplementary figures from processed data
 ```
 
-This `srun`s the build, pulls the base image if not yet cached, runs
-`pip install -r requirements_gpu.txt` inside the container, and saves
-the result to `$HOME/containers/jaxfibers.sqsh` (~7-9 GB).  Expected wall
-time: 5–15 minutes.
-
-After the file exists, every sbatch in `slurm/` auto-detects it
-(resolution order: explicit `CONTAINER_IMAGE` env-var > the local
-`jaxfibers.sqsh` > nvcr.io fallback) and `setup_env.sh` notices the
-deps are present and skips its pip install.
-
-The only per-job cost that remains is `pyfibers_compile` (~10 s), which
-generates `x86_64/` NMODL artefacts in the project root — that's outside
-the container and must stay per-job.
-
-Nothing breaks if you skip this step; the nvcr.io fallback works on a
-fresh clone.  Verify the auto-detect kicked in on a new job:
-
-```bash
-grep '^Container' logs/<new-job-id>.out
-# Expected:  Container    : /msc/home/<you>/containers/jaxfibers.sqsh
-```
-
-## Package layout
-
-```
-jaxley_fibers/
-├── AUDIT.md                       state-of-the-project + Nat Comms roadmap
-├── CHANGELOG.md                   chronological changes
-├── README.md                      this file
-├── environment.yml                pinned conda env
-├── jaxfibers/                     core package
-│   ├── channels/                  Jaxley Channel translations (MRG, Sundt,
-│   │                              Rattay, Sweeney, Schild94, Schild97)
-│   ├── fibers/                    morphology builders, one per model
-│   ├── stim/
-│   │   ├── intracellular.py       rectangular intracellular pulse helper
-│   │   ├── extracellular.py       point-source Ve profile (V/mA at each node)
-│   │   ├── extracellular_coupled.py
-│   │   │                          coupled (V_i, V_pax) backward-Euler solver
-│   │   │                          with 2×2 block-Thomas sweep
-│   │   ├── batch_solve.py         vmapped multi-fiber forward pass
-│   │   └── multichannel_field.py  multi-contact ring-cuff field
-│   ├── optim/
-│   │   ├── losses.py              activation proxy, WQ loss, WBCE, SI
-│   │   └── optimizer.py           rect / waveform / joint Adam loops
-│   ├── nerve/geometry.py          synthetic nerve cross-section
-│   ├── objectives.py              differentiable objective helpers
-│   └── nrn_baseline.py            thin PyFibers / NEURON wrappers
-├── experiments_v2/                paper-relevant runs (manifest)
-│   ├── utils.py                   pulse registry, JAX bisection, AP detection
-│   ├── <model>_validation.py      thresholds + CV + traces, one per fiber model
-│   ├── scaling.py                 PyFibers vs Jaxley CPU vs Jaxley GPU
-│   ├── selectivity_*.py           selectivity optimisation experiments
-│   └── debug/                     dev-time investigation and verification scripts
-├── outputs/                       validation JSONs + figures + scaling data
-├── slurm/                         SLURM sbatch drivers for the cluster
-└── reference_code/pyfibers/       upstream PyFibers, cloned for reference
-```
+The raw golgi FEM meshes are **not** bundled — they are golgi outputs, available
+via the golgi platform and the underlying SPARC datasets (swine
+[doi:10.26275/MAQ2-EII4](https://doi.org/10.26275/MAQ2-EII4), human
+[doi:10.26275/OFJA-GHOZ](https://doi.org/10.26275/OFJA-GHOZ)).
 
 ## Core design
 
-* **Channels.** Each NMODL mechanism is hand-translated into a pure-JAX
-  `Channel` class with `solve_gate_exponential` updates. Rate constants are
-  validated against the published `.mod` formulas to machine precision.
-* **Fibers.** Each builder returns a `jaxley.Cell` and an `MrgGeometry`-style
-  dataclass that fully describes the per-compartment static parameters.
-* **Coupled solver (`extracellular_coupled.integrate`).** Custom
-  backward-Euler integrator for the 2-state (V_i, V_pax) cable equation —
-  the principled equivalent of NEURON's `extracellular` mechanism, not the
-  single-cable activating-function approximation. Uses a 2×2 block-Thomas
-  sweep verified to 5e-11 mV against dense LU; back-substitution is via
-  `jax.lax.associative_scan` for O(log n) backward depth.
-* **Batching.** `stack_fiber_statics` packs N fibers into vmapped arrays;
-  `batch_integrate_m_max` runs them in parallel on the GPU for the optimisation
-  loops.
-* **Optimisation.** Three modes in `optim/optimizer.py`:
-  * rectangular per-contact amplitudes via packed finite-difference gradient
-    (K+1 configs in one forward pass);
-  * arbitrary K×T waveforms via autodiff through the ODE scan (with gradient
-    checkpointing);
-  * joint amplitudes + electrode positions via FD over both, with the field
-    recomputed differentiably each step.
+- **Channels.** Each NMODL mechanism is hand-translated into a pure-JAX `Channel`
+  class with `solve_gate_exponential` updates; rate constants are checked against
+  the published `.mod` formulas to machine precision.
+- **Fibers.** Each builder returns a `jaxley.Cell` plus a geometry dataclass fully
+  describing the per-compartment static parameters.
+- **Coupled solver** (`stim/extracellular_coupled.py`). Backward-Euler integrator
+  for the two-state (V_i, V_pax) double-cable equation, solved by a 2×2
+  block-Thomas sweep (verified to 5.6e-11 mV vs dense LU); back-substitution via
+  `jax.lax.associative_scan` for O(log n) depth.
+- **Batching.** `stack_fiber_statics` packs N fibers into vmapped arrays;
+  `batch_integrate_m_max` runs them in parallel on the GPU for the optimization loops.
+- **Optimization** (`optim/optimizer.py`), three modes: rectangular per-contact
+  amplitudes via a packed finite-difference gradient (K+1 configs per forward
+  pass); arbitrary K×T waveforms via autodiff through the ODE scan (with gradient
+  checkpointing); joint amplitudes + electrode positions via FD over both, with
+  the field recomputed differentiably each step.
 
-## Headline numbers (post-audit, 2026-06-02)
+## Repository layout
 
-* **MRG threshold error vs NEURON:** median +0.04 %, max 0.39 %, across
-  432 cases (9 diameters × 8 pulse shapes × 6 pulse widths). 100-1000× better
-  than Hussain et al.'s S-MF surrogate (2.5 % MAPE, range −11 % to +7.3 %).
-* **Sweeney threshold error:** max 0.09 % across 240 cases.
-* **MRG / Sweeney conduction velocity:** 1e-12 % (machine precision) across
-  all diameters.
-* **Scaling (vs single-core NEURON):** 30-40× CPU vmap, 60-120× GPU vmap at
-  N = 1000 fibers. Headline speedup is smaller than the AxonML surrogate
-  (~10⁴×); this project's value is *accuracy* and *differentiability*, not
-  raw forward speed (see [AUDIT.md](AUDIT.md) §4.1).
+```text
+jaxley_fibers/
+├── README.md               this file
+├── AUDIT.md                state-of-the-project + roadmap
+├── CHANGELOG.md            chronological changes
+├── REPRODUCE.md            step-by-step paper reproduction
+├── reproduce_figures.sh    one-command figure driver (processed data)
+├── environment.yml         pinned conda env
+├── jaxfibers/              core package
+│   ├── channels/           Jaxley Channel translations (MRG, Sundt, Rattay,
+│   │                       Sweeney, Schild94, Schild97)
+│   ├── fibers/             morphology builders, one per model
+│   ├── stim/
+│   │   ├── intracellular.py        rectangular intracellular pulse helper
+│   │   ├── extracellular.py        point-source Ve profile (demo option)
+│   │   ├── extracellular_coupled.py  coupled (V_i, V_pax) backward-Euler solver
+│   │   ├── batch_solve.py          vmapped multi-fiber forward pass
+│   │   └── multichannel_field.py   multi-contact ring-cuff field
+│   ├── optim/
+│   │   ├── losses.py       activation proxy, WQ loss, WBCE, selectivity index
+│   │   └── optimizer.py    rect / waveform / joint Adam loops
+│   ├── nerve/geometry.py   synthetic nerve cross-section (demos/tests)
+│   └── nrn_baseline.py     thin PyFibers / NEURON wrappers
+├── experiments_v2/         paper-relevant runs (see EXPERIMENTS.md, FIGURE_DATA_MAP.md)
+│   ├── <model>_validation.py       thresholds + CV + traces, one per fiber model
+│   ├── scaling.py                  PyFibers vs Jaxley CPU vs Jaxley GPU
+│   ├── selectivity_sweep_duke.py   cohort selectivity sweep on golgi fields
+│   ├── figures_*_main.py           paper figure generators
+│   └── analyze_*.py                statistics + tables
+├── duke_Ves/               per-nerve golgi FEM lead fields + geometry (gitignored)
+├── outputs/                validation JSONs + figures + sweep data (gitignored)
+├── slurm/                  SLURM sbatch drivers for the cluster
+└── reference_code/pyfibers/  upstream PyFibers, cloned for reference
+```
+
+## Headline numbers
+
+- **MRG threshold error vs NEURON:** median +0.04 %, max 0.39 % across 432 cases
+  (9 diameters × 8 pulse shapes × 6 pulse widths). **Sweeney:** max 0.09 % across
+  240 cases. Overall, **99.6 % of 943 configurations within 1 %**.
+- **MRG / Sweeney conduction velocity:** machine precision (1e-12 %) across all diameters.
+- **Scaling vs single-thread NEURON:** ~200–300× at N = 1000 fibers, geometric-mean
+  ~820× at N = 100,000 on one A100. The value here is *accuracy* and
+  *differentiability*, not raw forward speed against fitted surrogates (see
+  [AUDIT.md](AUDIT.md) §4.1).
 
 ## Caveats
 
-1. **Extracellular field is point-source.** All current experiments use a
-   point-source potential in a homogeneous medium (σ = 0.3 S/m). Real
-   FEM-derived fields (e.g. from ASCENT, as used by Hussain et al.) are
-   on the Phase B roadmap.
-2. **Synthetic nerve geometry.** Fibers are randomly placed in a circular
-   cross-section with an eccentric target fascicle. Histology-derived
-   morphology (Pelot 2020 pig / 2021 human SPARC datasets) is on the
-   roadmap.
-3. **Schild94 / Schild97 are not yet validated.** Channel and fiber code
-   exist and are wired into the scaling benchmark but the dedicated
-   validation runs have not been executed on the cluster.
-4. **Sundt at D = 1.2 µm gives a non-physiological CV (~19 m/s)** in the
-   current validation script because the bisection lands on a
-   suprathreshold pulse that fires multi-site. Reported by both JAX and
-   PyFibers identically — a measurement artefact, not a model error.
-   Lower the `amp = thr * 1.3` factor or use a centred intracellular
-   pulse for CV measurement if this matters.
+1. **Extracellular field.** The cohort selectivity experiments use FEM-derived
+   per-contact lead fields (the pre-baked `Ve_VperA` tensor) computed by **golgi**
+   [1, 2] for a multi-contact ring cuff on histology-segmented vagus nerves — not
+   a point source. The analytic point-source potential in a homogeneous medium
+   (σ = 0.3 S/m, `stim/extracellular.py`) is retained as a lightweight option for
+   local single-nerve demos.
+2. **Nerve geometry.** The cohort experiments use histology-derived vagus-nerve
+   morphology segmented and meshed by **golgi** [1, 2] from the Pelot 2020 pig /
+   2021 human SPARC datasets (29 nerves: 18 pig, 11 human). The synthetic circular
+   cross-section (`nerve/geometry.py`) is retained for local demos and unit tests.
+3. **Schild94 / Schild97 are not yet validated.** Channel and fiber code exist and
+   are wired into the scaling benchmark, but the dedicated validation runs have
+   not been executed.
+4. **Sundt at D = 1.2 µm gives a non-physiological CV (~19 m/s)** in the current
+   validation script because the bisection lands on a suprathreshold pulse that
+   fires multi-site. Reported identically by JAX and PyFibers — a measurement
+   artifact, not a model error.
 
 ## Reproducibility
 
 Versions pinned in `environment.yml` / `requirements.txt`:
 
 ```
-python       3.11
-jax          0.6.2  (jax[cpu] on local, jax[cuda12] on CUDA hosts)
-jaxley       0.13.0
-neuron       9.0.1
-pyfibers     0.8.5
-optax        0.2.8
-numpy        2.2.6
-matplotlib   3.10.9
-pandas       2.3.3
+python       3.11        jaxley       0.13.0      optax        0.2.8
+jax          0.6.2       neuron       9.0.1       numpy        2.2.6
+                         pyfibers     0.8.5       matplotlib   3.10.9
 ```
 
-Cluster validation hardware: MedUni Vienna HPC, NVIDIA A16 (16 GB VRAM),
-SLURM. Cluster has no git — copy via scp from the dev host and re-run
-`pyfibers_compile` after the conda env is created on the new host
-(NEURON `.mod` artefacts are platform-specific and intentionally
-gitignored).
+Cluster validation hardware: MedUni Vienna HPC, NVIDIA A16 (16 GB VRAM), SLURM.
+NEURON `.mod` artifacts are platform-specific and gitignored — re-run
+`pyfibers_compile` after creating the conda env on a new host.
+
+## License
+
+jaxon is released under the **MIT License** — see [LICENSE](LICENSE). The golgi
+FEM datasets and the manuscript reproduction archive are released separately on
+Zenodo under CC-BY-4.0.
+
+## Citation
+
+If you use jaxon, please cite the accompanying manuscript (Lung & Haberbusch,
+Medical University of Vienna; citation to be updated on publication) and the
+golgi platform that supplies the cohort fields:
+
+1. Lung D, Jia Y, Moro A, Fachino M, Haberbusch M. *golgi: open-source software
+   for automated nerve model generation and recruitment simulation.* bioRxiv
+   2026.07.10.737846. https://doi.org/10.64898/2026.07.10.737846
+2. Lung D, Jia Y, Blumer R, Reissig L, Zopf LM, Heimel P, Kraus C, Moro A,
+   Fachino M, Haberbusch M. *golgi: an open-source graphical platform for
+   image-to-recruitment modeling of peripheral nerve stimulation.* bioRxiv
+   2026.07.10.737529. https://doi.org/10.64898/2026.07.10.737529
+
+## Built with
+
+| Role | Built on |
+|---|---|
+| Differentiable cable simulation | [JAX](https://github.com/jax-ml/jax) · [Jaxley](https://github.com/jaxleyverse/jaxley) |
+| Optimization | [Optax](https://github.com/google-deepmind/optax) |
+| Reference solver | [NEURON](https://neuron.yale.edu/) via [PyFibers](https://github.com/wmglab-duke/pyfibers) |
+| Cohort FEM fields & anatomy | [golgi](https://github.com/CellularSyntax/golgi) |

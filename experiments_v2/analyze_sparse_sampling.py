@@ -19,13 +19,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
 import numpy as np
 
 ROOT  = Path(__file__).resolve().parent.parent
-SWEEP = ROOT / "outputs" / "duke_sweeps"
+# Corrected sweep tree; override with DUKE_SWEEP_ROOT (relative to repo root).
+SWEEP = ROOT / (os.environ.get("DUKE_SWEEP_ROOT", "").strip() or "outputs/duke_sweeps_fixed")
 
 STRATEGIES = [
     ("centroid",  1, "centroid"),

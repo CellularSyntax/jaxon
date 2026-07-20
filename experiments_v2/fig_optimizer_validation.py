@@ -87,7 +87,8 @@ REPR = [("swine", "sub-13_sam-3"), ("swine", "sub-10_sam-1"), ("swine", "sub-8_s
 conv = []
 for sp, samp in REPR:
     try:
-        d = json.load(open(os.path.join(ROOT, "outputs/duke_sweeps", samp, "data_seed_0000.json")))
+        _sw = os.environ.get("DUKE_SWEEP_ROOT", "").strip() or "outputs/duke_sweeps_fixed"
+        d = json.load(open(os.path.join(ROOT, _sw, samp, "data_seed_0000.json")))
         lh = np.asarray(d["rect"]["loss_history"], float)
         conv.append((sp, samp, lh, float(d["rect"]["achievable_si"])))
     except Exception as e:

@@ -85,26 +85,59 @@ $V_{\mathrm{rest}} = -70$\,mV, $C_m = 1\,\mu$F\,cm$^{-2}$,
 $\rho_a = 100\,\Omega\,$cm; constants in Table~\ref{tab:app-rattay}.
 
 \paragraph{Coupled backward-Euler solver.}
-The MRG double cable is the only non-trivial solver case.  Because the
-periaxonal equation~(\ref{eq:cable-vpx}) has no capacitive term it is
-algebraic, so $\mathbf{V}_{\mathrm{px}}$ is eliminated by
-back-substitution before stepping $\mathbf{V}_i$.  At step $n$,
+The MRG double cable is the only non-trivial solver case.  We keep the
+intracellular and periaxonal potentials as a single interleaved unknown
+$(\mathbf{V}_i, \mathbf{V}_{\mathrm{px}})$ per compartment, so one
+backward-Euler step is a \emph{block-tridiagonal} linear system: each
+compartment contributes a $2\times2$ diagonal block coupling its own
+$(V_i, V_{\mathrm{px}})$ pair, and the intracellular and periaxonal
+axial resistances contribute the $2\times2$ off-diagonal blocks
+$\mathbf{U}_p$ (upper) and $\mathbf{L}$ (lower) to its neighbours.  At
+step $n$,
 \begin{equation}
-  \left(C_m / \Delta t \cdot I - \mathbf{A}_{ii}^{\mathrm{eff}}\right)\mathbf{V}_i^{(n+1)} =
-  C_m / \Delta t \cdot \mathbf{V}_i^{(n)} - \mathbf{I}_{\mathrm{ion}}^{(n)}(\mathbf{V}_i, \mathbf{m})
-  - \mathbf{I}_{\mathrm{stim}}^{(n)} - \mathbf{b}_e^{(n)},
+  \mathbf{B}\,
+  \left[\begin{smallmatrix}\mathbf{V}_i^{(n+1)}\\ \mathbf{V}_{\mathrm{px}}^{(n+1)}\end{smallmatrix}\right]
+  = \mathbf{r}^{(n)}\bigl(\mathbf{V}_i^{(n)},\mathbf{V}_{\mathrm{px}}^{(n)},
+    \mathbf{I}_{\mathrm{ion}}^{(n)},\mathbf{I}_{\mathrm{stim}}^{(n)},\mathbf{V}_e^{(n)}\bigr),
   \label{eq:beuler-vi}
 \end{equation}
-with $\mathbf{A}_{ii}^{\mathrm{eff}} = \mathbf{A}_{ii} -
-\mathbf{A}_{ip} \mathbf{A}_{pp}^{-1} \mathbf{A}_{pi}$ the Schur
-complement of the periaxonal cable and $\mathbf{b}_e^{(n)} =
-- \mathbf{A}_{ip} \mathbf{A}_{pp}^{-1} \mathbf{V}_e^{(n)}$ the
-extracellular forcing.  Eq.~(\ref{eq:beuler-vi}) is solved by a
-JAX-compatible Thomas tridiagonal sweep; gating variables advance
-semi-implicitly.  The forward pass is wrapped in \texttt{jax.lax.scan}
-over time steps, returning either the full voltage trace or only the
-per-compartment maximum of $\mathbf{m}_{\mathrm{Na}}$ (the activation
-proxy) at $\ge\!2$ orders of magnitude lower memory cost.
+where $\mathbf{B}$ is the block-tridiagonal operator whose diagonal
+block at an internodal compartment couples the intracellular and
+periaxonal unknowns $(V_i, V_{\mathrm{px}})$ through the axolemma,
+$\left[\begin{smallmatrix} a+G_i & -a\\ -a & a+c+G_p\end{smallmatrix}\right]$,
+where $a = C_m/\Delta t + g_m$ is the axolemma (transmembrane)
+admittance --- the backward-Euler membrane capacitance plus the membrane
+conductance, and the term that couples the two layers, so it appears on
+both off-diagonals; $c = c_{\mathrm{my}}/\Delta t + g_{\mathrm{my}}$ is
+the myelin admittance from the periaxonal space to ground; and $G_i$ and
+$G_p$ are the \emph{distinct} intra-axonal and periaxonal axial
+conductances (each a sum over the compartment's two axial bonds, carried
+into the off-diagonal blocks $\mathbf{U}_p,\mathbf{L}$).  At a node the
+myelin is absent ($c = 0$) and the capacitance-free periaxonal row is
+replaced by the algebraic constraint $V_{\mathrm{px}} = V_e$ (its block
+row becomes $[\,0\ \ 1\,]$), while $g_m$ in $a$ becomes the linearized
+active-channel conductance.  The off-diagonal blocks
+$\mathbf{U}_p,\mathbf{L}$ are diagonal in $(V_i, V_{\mathrm{px}})$,
+carrying $-G_i$ and $-G_p$ respectively to the neighbouring
+compartments; the right-hand side $\mathbf{r}^{(n)}$ collects the
+previous-step states (through the capacitive $C_m/\Delta t$ and
+$c_{\mathrm{my}}/\Delta t$ terms), the ionic and stimulus currents and
+the extracellular forcing.  Eq.~(\ref{eq:beuler-vi}) is solved by a
+JAX-compatible \emph{block} Thomas sweep --- a $2\times2$-block
+generalization of the scalar Thomas algorithm (sequential forward
+elimination of the lower blocks, then an associative-scan
+back-substitution) --- which we verified against a dense-LU reference
+to $5.6\times10^{-11}\,\mathrm{mV}$.  Equivalently, eliminating the
+algebraic periaxonal row gives the intracellular Schur complement
+$\mathbf{A}_{ii}^{\mathrm{eff}} = \mathbf{A}_{ii} -
+\mathbf{A}_{ip}\mathbf{A}_{pp}^{-1}\mathbf{A}_{pi}$; because the
+periaxonal cable couples only nearest neighbours we solve the
+interleaved block system directly rather than forming this (dense)
+complement.  Gating variables advance semi-implicitly.  The forward
+pass is wrapped in \texttt{jax.lax.scan} over time steps, returning
+either the full voltage trace or only the per-compartment maximum of
+$\mathbf{m}_{\mathrm{Na}}$ (the activation proxy) at $\ge\!2$ orders of
+magnitude lower memory cost.
 
 \subsection*{Fiber-model parameter tables}
 \label{sec:app-models}
@@ -264,7 +297,7 @@ as packaged in \texttt{pyfibers}.
 % ─── Table A5 — Rattay ──────────────────────────────────────────────────────
 \begin{table}[h]
   \centering
-  \caption{Rattay (1993) unmyelinated-fiber constants used by jaxon.
+  \caption{Rattay (1989) unmyelinated-fiber constants used by jaxon.
     Canonical Hodgkin--Huxley parameterization with fast sodium
     ($g_{\mathrm{Na}}\,m^3 h$), delayed-rectifier potassium
     ($g_K\,n^4$) and a passive leak.  Q$_{10} = 2.2466$ is applied to
@@ -327,7 +360,7 @@ as packaged in \texttt{pyfibers}.
 \end{table}
 
 \paragraph{Per-sample FE model.}
-For each sample, an automated pipeline (Golgi~\cite{haberbusch2026golgi})
+For each sample, an automated pipeline (Golgi~\cite{lung2026golgi})
 converts the segmented cross-section into a watertight 3-D multi-domain
 nerve-and-cuff FE model and computes the per-contact extracellular
 lead field.  Briefly: (i) the segmentation is cleaned morphologically
@@ -410,7 +443,15 @@ yields the lead field $V_e^{(k)}$ in V/A for each of the 12 contacts.
   \figmaybe[width=0.98\textwidth]{supp/figS_optimizer_validation.png}
   \caption{Optimizer and gradient validation.
     \textbf{(a)} The exact reverse-mode (autodiff) gradient of the
-    selectivity objective with respect to the per-contact amplitudes
+    selectivity objective with respect to the per-contact amplitudes ---
+    obtained by differentiating through the \texttt{jax.lax.scan} time
+    loop (discrete reverse-mode backprop through the solver, which stores
+    the per-step tape --- distinct from the memory-free continuous
+    adjoint of neural ODEs~\cite{chen2018neuralode}, which re-integrates
+    backward and is a natural future route to eliminate that tape), and
+    directly usable by
+    quasi-Newton optimizers such as L-BFGS~\cite{liu1989lbfgs} for the
+    high-dimensional waveform design left to future work ---
     agrees with a central finite-difference estimate (cosine similarity
     $1.0000$, relative $L_2$ error $3.7\times10^{-3}$; components pooled
     over points along an optimization trajectory), confirming the

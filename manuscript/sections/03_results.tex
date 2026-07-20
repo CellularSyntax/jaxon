@@ -10,7 +10,7 @@ NEURON and benchmark its throughput
 then optimize selectivity on real cross-species anatomy
 (Section~\ref{sec:results-duke}), where this central result emerges
 (Section~\ref{sec:results-sparse}).  All raw data and analysis code are
-available in the project repository.
+available as described in the Data Availability statement.
 
 \subsection{Validation against NEURON}
 \label{sec:results-validation}
@@ -24,8 +24,9 @@ compared activation thresholds across diameters, eight waveforms
 sawtooth, exponential, Gaussian) and pulse widths
 $0.02$--$1\,\mathrm{ms}$ --- 943 configurations in total.
 \textbf{$99.6\,\%$ agree to within $1\,\%$ relative threshold error}
-(Table~\ref{tab:validation-sd}; jaxon--NEURON $r = 0.999998$, mean
-signed bias $+0.11\,\%$).  Only the Rattay model exceeds the criterion,
+(Table~\ref{tab:validation-sd}; jaxon--NEURON threshold correlation
+$r = 0.999998$, i.e.\ $R^2 > 0.99999$ as plotted in
+Figure~\ref{fig:validation}\textbf{c}; mean signed bias $+0.11\,\%$).  Only the Rattay model exceeds the criterion,
 in a single edge regime --- biphasic cathodic-first pulses at the four
 smallest diameters (peak $2.24\,\%$ at $D=0.3\,\mu\mathrm{m}$) --- which
 we attribute to reduced bisection resolution near the
@@ -75,11 +76,13 @@ for Sundt at $D=0.3\,\mu\mathrm{m}$).  Per-waveform and per-diameter
 breakdowns are in Supplementary
 Tables~\ref{tab:validation-sd-per-wf}--\ref{tab:validation-cv}; the
 per-waveform error distribution is Figure~\ref{fig:validation}\textbf{c}.
-Beyond thresholds, jaxon reproduces three canonical propagation
-phenomena --- action-potential propagation, $20\,\mathrm{kHz}$
-conduction block and AP collision --- in both a myelinated and an
-unmyelinated model, each matching NEURON within the scan resolution or
-the floating-point floor (Supplementary Fig.~\ref{fig:phenomena}).
+Beyond thresholds, jaxon reproduces canonical propagation phenomena ---
+action-potential propagation, DC (depolarizing-hold) conduction block
+and AP collision across all four fiber models
+(Supplementary Fig.~\ref{fig:phenomena}), and $20\,\mathrm{kHz}$
+kilohertz-frequency block (Supplementary Fig.~\ref{fig:khz-block}) ---
+each matching NEURON within the scan resolution or the floating-point
+floor.
 
 Figure~\ref{fig:validation} compactly summarizes the validation and
 the computational-efficacy result for all four models in a single
@@ -117,7 +120,11 @@ distribution sits below the $1\,\%$ acceptance criterion.
     $1\,\%$ acceptance criterion is the dotted red line.
     \textbf{(d)} Conduction velocity vs.\ fiber diameter for the
     A-fiber (MRG, Sweeney) and C-fiber (Sundt, Rattay) models; same
-    jaxon-solid / PyFibers-lighter-dashed convention.
+    jaxon-solid / PyFibers-lighter-dashed convention.  MRG and Sweeney
+    differ in conduction velocity at matched diameter --- an expected
+    between-model biophysical difference, not a jaxon-vs-NEURON
+    validation discrepancy (each model's jaxon and NEURON curves
+    coincide).
     \textbf{(e)} Forward-pass throughput on a single NVIDIA A100 GPU:
     absolute wall time (left) and jaxon-vs-PyFibers speedup (right)
     vs.\ fiber count $N$, log--log
@@ -131,7 +138,7 @@ distribution sits below the $1\,\%$ acceptance criterion.
 The principal performance motivation for the JAX implementation is
 the expectation that GPU vmap-batching will outperform CPU-parallel
 NEURON as the fiber count grows.  We benchmarked all five
-implemented axon models (MRG with both the original and the
+model/parameterization variants (MRG with both the original and the
 interpolated parameter tables, Sweeney, Sundt and Rattay) at
 $N \in \{1, 10, 100, 1\,000, 10\,000, 100\,000\}$ fibers on a single
 NVIDIA A100 GPU, against \texttt{pyfibers} running 8-thread
@@ -143,12 +150,19 @@ Table~\ref{tab:scaling} summarizes the headline numbers.
 At small $N$, GPU launch overhead dominates and \texttt{pyfibers} on
 CPU is faster, but the vmap-batched forward pass amortizes the per-step
 launch cost across the batch, so jaxon overtakes \texttt{pyfibers} at
-$N \approx 10$ for every model and the advantage grows with $N$
-(Table~\ref{tab:scaling}).  At $N=100\,000$ the speedup reaches
+$N \approx 10$ for every model and the advantage grows over the small-$N$
+regime, reaching order $500$--$1400\times$ at the largest $N$
+(Table~\ref{tab:scaling}; the MRG double-cable speedup peaks near
+$N=10^4$ and rolls off slightly by $N=10^5$, while the lighter models
+stay monotonic).  At $N=100\,000$ the speedup reaches
 $544\times$ for MRG, $1\,377\times$ for Sweeney (smaller per-fiber
 state) and ${\sim}1\,000\times$ for the C-fibers, a geometric mean of
 $\sim\!820\times$ --- taking what would be multiple CPU-hours per
-forward pass down to under twenty seconds.  This is a GPU-versus-eight-thread-CPU
+forward pass down to under twenty seconds.  At the ${\sim}1\,000$-fiber
+scale of the cohort selectivity study the speedup is more modest but
+still decisive --- $209\times$ (MRG) to $304\times$ (Sundt), the
+operating point that actually makes the thousands-of-evaluations
+optimization loop below tractable.  This is a GPU-versus-eight-thread-CPU
 comparison against the field-standard \texttt{pyfibers} workflow; against
 many-core CPU or GPU-accelerated NEURON variants the multiplier would be
 smaller, but the order-of-magnitude advantage from \texttt{vmap}-batching the
@@ -198,8 +212,8 @@ seeds) subject-specific FE-modeled vagus-nerve cross-sections drawn
 from the SPARC quantified morphology releases of
 swine~\cite{pelot2020swineSPARC} and human~\cite{pelot2021humanSPARC},
 with per-contact extracellular lead-fields computed in-house with the
-Golgi pipeline~\cite{haberbusch2026golgi}
-(Section~\ref{sec:methods-duke}).  The 12-contact MultiContact cuff
+Golgi pipeline~\cite{lung2026golgi}
+(Section~\ref{sec:methods-duke}).  The 12-contact cuff
 (three axial rows $\times$ four angular columns) gives the rectangular
 optimizer $K=12$ amplitudes per nerve; the target is the peripheral
 fascicle cluster within one contiguous angular sector
@@ -252,21 +266,27 @@ to future work (Section~\ref{sec:discussion}).
     & \multicolumn{2}{c}{count} & \multicolumn{2}{c}{dense SI}
     & penalty & fibers/fasc. \\
     \cmidrule(lr){2-3}\cmidrule(lr){4-5}
-    & nerves & seeds & mean (med.) & $\ge0.90$ & med.\ (mean) & median \\
+    & nerves & seeds & med.\ (mean) & $\ge0.90$ & med.\ (mean) & median \\
     \midrule
-    Swine        & 18 &  72 & 0.926 (0.946) & 72\,\% & 0.011 (0.013) & 30 \\
-    Human        & 11 &  39 & 0.845 (0.964) & 67\,\% & 0.136 (0.128) & 151 \\
+    Swine        & 18 &  72 & 0.946 (0.926) & 72\,\% & 0.011 (0.013) & 30 \\
+    Human        & 11 &  39 & 0.964 (0.845) & 67\,\% & 0.136 (0.128) & 151 \\
     \midrule
-    \textbf{All} & \textbf{29} & \textbf{111} & \textbf{0.897 (0.948)}
+    \textbf{All} & \textbf{29} & \textbf{111} & \textbf{0.948 (0.897)}
                  & \textbf{70\,\%} & --- & --- \\
     \bottomrule
   \end{tabular}
 
   \vspace{2pt}
   {\footnotesize Species penalty difference (centroid reduction):
-   two-sided Mann--Whitney $p = 0.01$.  Strategy-averaged penalty vs.\
+   two-sided Mann--Whitney $p = 0.01$ ($n = 29$ nerves; robust at the
+   subject level, $p = 0.011$ over $11$ swine / $7$ human subjects ---
+   see Section~\ref{sec:methods-stats}).  Strategy-averaged penalty vs.\
    fibers per target fascicle: Spearman $r = +0.47$, $p = 0.01$
-   ($n = 29$ nerves; within-species not significant, see text).}
+   ($n = 29$ nerves; within-species not significant, see text).  The
+   fibers-per-fascicle counts (median $30$ swine, $151$ human) are
+   sampled-fiber counts under area-weighted seeding of $1\,000$ fibers
+   per nerve --- i.e.\ proportional to fascicle area, not anatomical
+   fiber counts.}
 \end{table}
 
 \paragraph{Emergent stimulation strategy.}
@@ -303,7 +323,7 @@ selectivity.
 \begin{figure}[h]
   \centering
   \figmaybe[width=0.98\textwidth]{main/fig3_duke.png}
-  \caption{Selectivity optimization on the Duke histology-derived
+  \caption{Selectivity optimization on the SPARC histology-derived
     vagus-nerve cohort (29 nerves: 18 swine, 11 human; 111
     selectable-target seeds, degenerate targets excluded).  ``Sparse''
     in panels \textbf{a}--\textbf{b} denotes a
@@ -313,21 +333,28 @@ selectivity.
     sampling density.
     \textbf{(a)} Dense- versus sparse-optimized activation for a
     representative swine and human nerve, matched on target size
-    ($\sim$28\,\% of fibers) and dense $\mathrm{SI}$ ($\sim$0.97);
+    ($\sim$28\,\% of fibers) and dense $\mathrm{SI}$ ($\sim$0.97); the
+    swine deployment penalty is near zero (and can be slightly negative
+    from sampling noise), consistent with the swine cohort median of
+    $0.011$;
     fibers colored by activation status (target/off-target $\times$
     fired/silent), with the optimized 12-contact cuff pattern below
-    (contacts colored by polarity, sized by $|I_k|$).
-    \textbf{(b)} Dense versus sparse performance per nerve (mean
-    $\pm$ SEM, dots = nerves): selectivity index, on-target and
+    (contacts colored by polarity --- teal cathodic ($I_k<0$), orange
+    anodic ($I_k>0$), white inactive --- and sized by $|I_k|$).
+    \textbf{(b)} Dense versus sparse performance per nerve (bars = mean
+    $\pm$ SEM with per-nerve dots overlaid, shown for readability;
+    all inference is on the per-nerve medians reported in the text and
+    Table~\ref{tab:duke-cohort}): selectivity index, on-target and
     off-target recruitment, and total stimulation current.  Brackets
-    give two-sided per-nerve Wilcoxon $p$ (Holm-corrected over the
-    eight cells).
+    give the two-sided per-nerve Wilcoxon $p$, Holm-corrected over the
+    eight metric~$\times$~species cells (the same values quoted in the
+    text).
     \textbf{(c)} Emergent stimulation strategy: (left) fraction of
     contacts that are cathodic by target-relative direction ---
     cathodes steer toward the target; (right) longitudinal mean
     current by axial row --- a center--surround (tripolar) profile.
     \textbf{(d)} Sparse fiber-sampling: dense-optimized $\mathrm{SI}$
-    ceiling (dashed line $\pm$ bootstrap CI) versus sparse-optimized
+    ceiling (dashed line $\pm$ bootstrap CI, $10\,000$ resamples) versus sparse-optimized
     transfer $\mathrm{SI}$ per strategy (centroid, 1/3/10 fibers per
     fascicle) for swine and human; right, the deployment penalty
     $\mathrm{SI_{dense}} - \mathrm{SI_{transfer}}$ versus the number of
@@ -347,7 +374,11 @@ approximation costs at deployment.  For each nerve $\times$ seed we
 re-ran the identical optimization on four sparse fiber-sampling levels
 --- one centroid fiber per fascicle, and $1$, $3$ or $10$
 randomly-sampled fibers per fascicle --- by pure row-subsampling of the
-precomputed $V_e$ lead-field with no FEM recomputation.  The
+precomputed $V_e$ lead-field with no FEM recomputation.  Each
+density level uses a single random draw with a fixed RNG seed (set in
+the released code), so the sampling is reproducible; the $116$ target
+seeds within the $29$ nerves provide the spread, and the per-nerve
+density curves aggregate over a nerve's seeds.  The
 selectivity such a model \emph{reports} is optimistic, because its
 amplitudes are tuned to the few fibers it can see; we therefore take
 each sparse-optimized amplitude vector and re-score it on the full
@@ -362,14 +393,19 @@ human.  For the single-representative-fiber reduction that reduced-order
 pipelines actually use --- one fiber at each fascicle centroid --- the
 per-nerve penalty is a median $0.011$ in swine (mean $0.013$, maximum
 $0.05$) versus $0.136$ in human (mean $0.128$; Mann--Whitney
-$p = 0.01$), against a dense ceiling of ${\sim}0.95$.  The human
-distribution is right-skewed: nearly half of the human nerves lose more
-than $0.10$ and the worst loses $0.45$, whereas no swine nerve loses more
-than $0.05$.  Sampling \emph{more} fibers reduces the penalty --- across
-the four strategies it falls significantly as density rises (one to ten
-random fibers per target fascicle, median $0.19 \rightarrow 0.03$;
-Friedman $p = 0.002$; averaged over strategies the human penalty is
-$0.083$) --- but it does not close on the largest fascicles, where three
+$U = 157$, $p = 0.01$, rank-biserial $r = 0.59$, $95\%$ bootstrap CI ($10\,000$ resamples, seed fixed in the released code)
+$[0.15, 0.93]$), against a dense ceiling of ${\sim}0.95$.  The human
+distribution is not a simple right-skew but a \emph{low-penalty cluster
+plus a heavy upper tail}: five of eleven human nerves lose less than
+$0.07$ while the remainder form an upper tail reaching $0.45$ (so the
+mean, $0.128$, sits just below the median, $0.136$), whereas no swine
+nerve loses more than $0.05$.  Sampling \emph{more} fibers reduces the
+penalty: across the three random-density levels it falls significantly
+as density rises (one to ten random fibers per target fascicle, median
+$0.19 \rightarrow 0.03$; Friedman $\chi^2 = 11.4$, $p = 0.003$, $n = 11$
+human nerves over the three levels, with the centroid reduction as a
+separate reference point; averaged over the sparse strategies the
+human penalty is $0.083$) --- but it does not close on the largest fascicles, where three
 of eleven human nerves still lose more than $0.10$ even at ten fibers
 (Supplementary Figure~\ref{fig:density}).  Re-expressed
 as the fraction of each target fascicle sampled --- the species-fair
@@ -403,10 +439,17 @@ more fascicular nerve (swine) is the more forgiving one.
 
 The recruitment signature confirms the mechanism
 (Figure~\ref{fig:duke}\textbf{b}).  Relative to the dense optimum, the
-centroid-transfer configuration in human loses on-target recruitment
-(median $100\,\% \rightarrow 83\,\%$; $p = 0.004$) and selectivity
-($p = 0.002$), whereas off-target recruitment and total delivered
-current are statistically unchanged ($p > 0.2$).  The penalty is thus a
+centroid-transfer configuration in human ($n = 11$ nerves) loses
+on-target recruitment (median $100\,\% \rightarrow 83\,\%$;
+$p = 0.023$) and selectivity ($p = 0.014$), whereas off-target
+recruitment and total delivered current are statistically unchanged
+($p = 0.70$ for both) --- all $p$-values here and in
+Figure~\ref{fig:duke}\textbf{b} are two-sided per-nerve Wilcoxon
+signed-rank, Holm-corrected across the eight metric~$\times$~species
+cells.  In swine ($n = 18$) the same dense-vs-transfer SI difference is
+Holm-significant ($p = 0.005$) but negligible in magnitude
+(${\sim}0.01$ SI; on-target $p = 0.11$) --- statistical significance
+without practical consequence, in contrast to the human loss.  The penalty is thus a
 failure to recruit the large target fascicle, not off-target spill or
 reduced drive.  It is, however, largely a cost of the \emph{standard
 workflow} --- optimizing on the reduced set and reading selectivity off
@@ -417,8 +460,13 @@ sparse-optimized design that scores best on the full population
 swine and $0.016$ in human.  The honest conclusion is therefore narrow:
 centroid-only sampling \emph{as standardly used}~\cite{hussain2024axonml}
 over-states deliverable selectivity on the large-fascicle human anatomies
-most relevant to clinical translation, but a practitioner who brings the
-full population into the loop --- at optimization or at least at
-validation, now computationally feasible --- recovers most of it, leaving
-only a small residual (${\sim}0.02$ in human) that no sparse design fully
-closes.
+most relevant to clinical translation, but a \emph{modeler} who brings
+the full population into the selectivity pipeline --- at optimization or
+at least at validation, now computationally feasible --- recovers most
+of it, leaving only a small residual (${\sim}0.02$ in human; the
+optimize-then-validate residual above, $0.016$, rounds into this range)
+that no sparse design fully closes.  This is a statement about the
+modeling workflow, not a bedside prescription: it says a selectivity
+design tuned on centroid fibers should be re-scored on the full
+population before being trusted, not that a fixed stimulus amplitude be
+used clinically (see Discussion).

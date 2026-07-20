@@ -17,19 +17,22 @@
     The solver is validated against \texttt{pyfibers}/NEURON on
     thresholds and conduction velocity.
     \textbf{(b) Anatomy to model.}  A histological vagus-nerve
-    cross-section is segmented and embedded in the 12-contact
-    MultiContact cuff finite-element model, from which the per-contact
-    extracellular lead fields $V_e^{(k)}$ are computed.
+    cross-section is segmented, area-preservingly circularized and
+    embedded in the 12-contact cuff finite-element model, from which the
+    per-contact extracellular lead fields $V_e^{(k)}$ (and the derived
+    activating function) are computed.
     \textbf{(c) Fiber models and validation.}  The four
     implemented fiber models (myelinated MRG and Sweeney; unmyelinated
-    Sundt and Rattay) and their strength--duration agreement with
-    \texttt{pyfibers}/NEURON.
-    \textbf{(d) Selectivity optimization on the cohort.}
-    Two example nerves with the optimized cuff pattern (cathode blue,
-    anode orange, inactive white, over the cuff's four angular columns
-    $\times$ three axial rows) and fibers colored by recruitment
-    (target fired / target silent / off-target fired / off-target
-    silent); the peripheral target-fascicle cluster is tinted green.}
+    Sundt and Rattay) with their equivalent-circuit double-cable /
+    single-cable schematics.
+    \textbf{(d) Throughput and selectivity optimization.}
+    Left, the jaxon-vs-\texttt{pyfibers} forward-pass speedup versus
+    fiber count (Section~\ref{sec:results-scaling}); right, one example
+    nerve with the optimized cuff pattern (cathode teal, anode orange,
+    inactive white, over the cuff's four angular columns $\times$ three
+    axial rows) and fibers colored by recruitment (target fired / target
+    silent / off-target fired / off-target silent), the peripheral
+    target-fascicle cluster outlined.}
   \label{fig:overview}
 \end{figure}
 
@@ -39,7 +42,9 @@
 jaxon implements four canonical peripheral nerve fiber models: the
 myelinated McIntyre--Richardson--Grill (MRG) double-cable and Sweeney
 single-cable axons, and the unmyelinated Sundt and Rattay
-C-fibers~\cite{mcintyre2002,sweeney1987,sundt2015,rattay1989analysis}.
+C-fibers~\cite{mcintyre2002,sweeney1987,sundt2015,rattay1989analysis};
+the unmyelinated models follow the biophysical tradition of detailed
+vagal/nodose C-fiber membrane models~\cite{schild1994}.
 Each carries its published channel set and diameter-dependent geometry
 (resting potentials $-80$\,mV for MRG/Sweeney, $-60$\,mV Sundt,
 $-70$\,mV Rattay); the MRG model is a coupled $(V_i, V_{\mathrm{px}})$
@@ -52,15 +57,19 @@ the forward-and-optimize pipeline, FE construction, validation and
 cohort optimization.
 
 \paragraph{Coupled solver and batched forward pass.}
-The MRG double cable is integrated by a backward-Euler scheme in which
-the capacitance-free periaxonal equation is eliminated by a Schur
-complement and the resulting tridiagonal system solved by a
-JAX-compatible Thomas sweep (Supplementary Material).  The
+The MRG double cable is integrated by backward Euler; each step is a
+$2\times2$ block-tridiagonal system in the interleaved
+intracellular/periaxonal unknowns, solved directly by a JAX-compatible
+block-Thomas sweep (Supplementary Material).  The
 forward pass for one fiber is wrapped in \texttt{jax.lax.scan} over
 time steps and returns, for optimization, only the per-compartment
 maximum of the Na$^+$ activation gate $\mathbf{m}_{\mathrm{Na}}$ --- a
 differentiable recruitment proxy --- at $\ge\!2$ orders of magnitude
-lower memory than the full trace.  For $N$ fibers under the same
+lower memory than the full trace.  This is one of two independent memory
+savings: the shortened \emph{output} (proxy scalar instead of the full
+voltage trace), and, with finite-difference gradients, the absence of a
+reverse-mode \emph{tape} over the time integration (below); the two
+combine to let the whole population fit on one GPU.  For $N$ fibers under the same
 electrode, the per-fiber static parameters are stacked and a single
 \texttt{jax.vmap} call compiles to one $N$-way XLA kernel, eliminating
 the per-fiber Python overhead that dominates NEURON pipelines and
@@ -82,9 +91,10 @@ $a_f \to 0$ otherwise.  The sigmoid smoothing keeps the gradient
 informative away from threshold; its binary limit
 ($\tau\!\to\!0$) is $a_f = \min(\mu_{\mathrm{first}},
 \mu_{\mathrm{last}})$, whose gradient vanishes except in a narrow
-window at threshold.  Recruitment counts and the reported selectivity
-index threshold $a_f$ at $0.5$.  We minimize the weighted-quality (WQ)
-loss
+window at threshold.  A fiber is counted \emph{recruited} when
+$a_f > 0.5$ (equivalently, in the binary limit, when the max Na$^+$
+activation gate exceeds $\tfrac12$ at both terminal nodes).  We
+minimize the weighted-quality (WQ) loss
 \begin{equation}
   L_{\mathrm{WQ}} = \sum_f w_f \left[ y_f (1 - a_f) + (1 - y_f) a_f \right]
                  + \lambda \cdot \frac{1}{K} \sum_k I_k^2,
@@ -100,6 +110,33 @@ the trivial ``fire-everything'' optimum; we set $\lambda = 10^{-3}$ for
 all results reported here, small enough to leave the single-diameter
 selectivity outcomes unchanged.
 
+\paragraph{Selectivity index.}
+The primary outcome, the (hard) \emph{selectivity index} (SI), is the
+difference between the recruited fraction of the target population and
+the recruited fraction of the off-target population,
+\begin{equation}
+  \mathrm{SI} \;=\;
+  \frac{1}{|\mathcal{T}|}\sum_{f\in\mathcal{T}}\mathbf{1}[a_f>0.5]
+  \;-\;
+  \frac{1}{|\mathcal{O}|}\sum_{f\in\mathcal{O}}\mathbf{1}[a_f>0.5],
+  \label{eq:si}
+\end{equation}
+where $\mathcal{T}$ and $\mathcal{O}$ are the target and off-target
+fiber sets ($y_f=1$ and $y_f=0$).  SI is bounded on $[-1,1]$:
+$\mathrm{SI}=1$ is perfect selectivity (every target fiber recruited,
+every off-target fiber spared), $\mathrm{SI}=0$ is no discrimination
+(equal recruited fractions), and negative SI is reversed selectivity
+(more off-target than target recruitment); the ``hard SI'' used for the
+$0.95$ early-stop and reported throughout applies the binary
+$a_f>0.5$ recruitment rule of Eq.~(\ref{eq:si}), whereas the soft WQ
+loss of Eq.~(\ref{eq:wq-loss}) uses the smooth proxy $a_f$ directly so
+the optimizer sees an informative gradient.  A change of $\Delta\mathrm{SI}$
+corresponds, at fixed off-target recruitment, to a $\Delta\mathrm{SI}$
+change in the fraction of the target fascicle recruited (e.g.\ the
+human deployment penalty of ${\sim}0.14$ is predominantly a
+${\sim}14$-percentage-point loss of on-target recruitment;
+Section~\ref{sec:results-sparse}).
+
 \paragraph{Amplitude optimization.}
 The design variable is the per-contact amplitude vector
 $\mathbf{I} \in \mathbb{R}^K$ ($K=12$); each contact scales a fixed,
@@ -107,12 +144,23 @@ charge-balanced asymmetric-biphasic rectangular pulse ($0.5\,$ms
 cathodic phase followed by a $2.0\,$ms anodic recharge at one-quarter
 amplitude, so net charge is zero --- the clinical convention for
 chronic implants).  All selectivity results use
-Adam~\cite{kingma2015adam} with finite-difference gradients: each step
-needs only $K{+}1$ forward passes and avoids back-propagating through
-the long integration, so it runs on the full ${\sim}1000$-fiber
-population --- the regime prior NEURON pipelines could not afford.  The
-amplitude clip, learning rate and finite-difference step are listed in
-Supplementary Table~\ref{tab:opt-hparams}; the loop runs for up to $90$
+Adam~\cite{kingma2015adam} with one-sided finite-difference gradients:
+each step needs only $K{+}1$ forward passes (one per contact plus the
+baseline) and avoids back-propagating through the long integration, so
+it runs on the full ${\sim}1000$-fiber population --- the regime prior
+NEURON pipelines could not afford.  The one-sided step
+($\epsilon = 0.010\,$mA, $0.5\,\%$ of the $\pm2.0\,$mA amplitude clip)
+was chosen small enough to resolve the local gradient yet large enough
+to avoid cancellation noise in the sigmoid recruitment proxy.  That the
+loss landscape is smooth enough for a finite-difference gradient to
+steer the optimizer is established independently in Supplementary
+Fig.~\ref{fig:optimizer-validation}, where a \emph{central}
+finite-difference estimate agrees with the exact reverse-mode autodiff
+gradient to a relative $L_2$ error of $3.7\times10^{-3}$; the coarser
+one-sided step used in the cohort loop is a deliberately cheaper
+approximation of the same gradient, sufficient for FD-Adam.
+The amplitude clip, learning rate and finite-difference step are listed
+in Supplementary Table~\ref{tab:opt-hparams}; the loop runs for up to $90$
 iterations and early-stops when the hard SI reaches $0.95$ (a
 convergence floor: an SI within $0.05$ of the perfect-selectivity
 ceiling, the resolution below which additional iterations no longer
@@ -125,7 +173,7 @@ seed); the best initializes the trajectory, with the probe's zero
 contacts frozen to preserve sparsity.  (jaxon also exposes exact
 autodiff gradients, used for waveform-shape optimization; future work.)
 
-\subsection{Subject-specific Duke FEM cohort}
+\subsection{Subject-specific SPARC histology FEM cohort}
 \label{sec:methods-duke}
 
 For the cohort-scale selectivity study (Section~\ref{sec:results-duke})
@@ -138,7 +186,7 @@ segmented epineurium and per-fascicle endoneurium boundaries; the
 human dataset additionally includes anti-claudin-1 staining that
 resolves the perineurium thickness directly~\cite{pelot2023humanvagus}.
 
-An automated pipeline (Golgi~\cite{haberbusch2026golgi}) converts each
+An automated pipeline (Golgi~\cite{lung2026golgi}) converts each
 segmented cross-section into a watertight 3-D multi-domain nerve-and-cuff
 FE model --- nerve embedded in a concentric 12-contact cuff (3 axial
 rows $\times$ 4 angular columns), saline film and muscle bath --- and
@@ -156,7 +204,11 @@ $1\,000$ straight axial fibers per nerve are seeded by area-weighted
 rejection sampling inside the fascicles and the lead fields
 $V_e^{(k)}$ sampled at every MRG compartment, giving a per-fiber tensor
 ${V_e^{(k)}}_{f,n}$ that the optimizer superposes linearly with the
-amplitudes.  The target/off-target labels $y_f$ in
+amplitudes.  Unless otherwise stated all selectivity results use MRG
+fibers of a single diameter, $5.7\,\mu$m --- the smallest of the three
+diameters in the spot-check of Section~\ref{sec:limitations} --- so the
+strategy-averaged human penalty reported below and the $5.7\,\mu$m
+spot-check value coincide by construction.  The target/off-target labels $y_f$ in
 Eq.~(\ref{eq:wq-loss}) are set per nerve by a peripheral-cluster
 selector that matches what the cuff can steer: a $90^\circ$ sector (the
 cuff's angular resolution) is slid around the perimeter, and four
@@ -166,13 +218,20 @@ enclosed fascicles labeled target.  Of $36$ SPARC bundles processed,
 $29$ nerves (18 swine, 11 human; 116 seeds) entered the study; the rest
 were rejected for having $<\!3$ fascicles or insufficient FE-mesh
 $z$-resolution between contact rows (full criteria in the Supplementary
-Material).
+Material).  These $29$ nerves are axial cross-sections from
+$11$ swine and $7$ human subjects (four human subjects each contribute
+two sections); we treat the nerve cross-section as the unit of
+replication throughout and, to guard against pseudoreplication,
+confirm the species effect at the subject level in
+Section~\ref{sec:methods-stats}.
 
 \subsection{Validation protocol}
 \label{sec:methods-validation}
 
 For each model we drove jaxon and \texttt{pyfibers}-wrapped NEURON with
-identical stimuli, at a matched fixed time step ($\Delta t = 5\,\mu$s;
+identical stimuli, at a matched fixed time step ($\Delta t = 5\,\mu$s --- the
+field-standard MRG step, e.g.\ the AxonML default --- so that the
+comparison isolates implementation agreement rather than discretization;
 NEURON integrated with its default backward-Euler method), and compared
 three quantities against NEURON: the
 strength--duration threshold (terminal node, $\mathrm{PW} \in
@@ -183,20 +242,23 @@ established practice of validating open-source nerve-stimulation models
 against NEURON~\cite{bucksot2021validation}.  All results
 were produced on one NVIDIA A100 (40\,GB) with \texttt{jax} 0.6.2 /
 \texttt{jaxley} 0.13.0 (CUDA 12.4) and pyfibers 0.8.5 (NEURON 8.2); the
-full environment and reproduction code are available in the project
-repository.
+full environment and reproduction code are available as described in
+the Data Availability statement.
 
 \subsection{Statistical analysis}
 \label{sec:methods-stats}
 
-Selectivity comparisons on the histology cohort are paired by nerve
-$\times$ target-cluster seed, so we test them with the two-sided
-Wilcoxon signed-rank test, which makes no Gaussian assumption on the
-heavy-tailed, ceiling-bounded SI distributions.  For the
-sparse-sampling analysis (Section~\ref{sec:results-sparse}) the
-independent unit is the nerve: per-seed values are averaged within each
-nerve before testing, so that nerves rather than nested seeds are the
-units of replication.  The deployment penalty (dense-optimized SI minus
+Selectivity comparisons on the histology cohort compare two matched
+conditions evaluated on the \emph{same} nerve $\times$ target-cluster
+seed (e.g.\ dense-optimized vs.\ centroid-transfer), so we use the
+paired, two-sided Wilcoxon signed-rank test, which makes no Gaussian
+assumption on the heavy-tailed, ceiling-bounded SI distributions.  The
+``pairing'' refers only to this matching of conditions; the independent
+unit of replication is always the \emph{nerve}: per-seed values are
+averaged within each nerve before any cohort-level test, so that nerves
+rather than nested seeds enter the statistics, and every reported
+$p$-value is computed on $n = 29$ nerves ($18$ swine, $11$ human)
+unless stated otherwise.  The deployment penalty (dense-optimized SI minus
 sparse-optimized transfer SI) is tested per species and sampling
 strategy with two-sided Wilcoxon signed-rank tests, Holm-corrected
 across the eight species $\times$ strategy cells; the species
@@ -206,8 +268,22 @@ Spearman rank correlation.  Seeds whose target cluster is degenerate
 (target fraction $> 0.6$ --- spanning most of the nerve, so no selective
 solution exists by construction; $5$ of $116$, all human) are excluded
 from all analyses; low-SI outcomes on selectable targets are retained as
-genuine geometric-ceiling cases rather than solver failures.  We
+genuine geometric-ceiling cases rather than solver failures.  The
+species penalty difference is insensitive to this cutoff: it is
+essentially unchanged for exclusion thresholds of $0.5$, $0.6$ and
+$0.7$ (Mann--Whitney $p = 0.010$, $0.010$ and $0.011$ respectively).  We
 report medians with inter-quartile ranges alongside means throughout,
-because the SI distributions are bounded at $1.0$ and right-skewed by
-the geometric-ceiling subset, so the median is the more representative
-central estimate.  Analyses use \texttt{scipy.stats}.
+because the SI distributions are bounded at $1.0$ and skewed toward
+low values (mean below median) by the geometric-ceiling subset, so the
+median is the more representative central estimate.  The derived
+human deployment-penalty distribution is not a simple right-skew: it is
+a low-penalty cluster plus a heavy high-penalty tail (so the mean,
+$0.128$, sits just below the median, $0.136$), which the median again
+summarizes more faithfully than the mean.  Because the $11$ human nerves derive from $7$
+subjects (and the $18$ swine from $11$), we additionally confirm the
+species penalty difference at the subject level, aggregating each
+subject's sections to a single value: the difference is essentially
+unchanged (swine median $0.008$, $n=11$ subjects; human median $0.099$,
+$n=7$ subjects; Mann--Whitney $p = 0.011$, vs.\ $p = 0.010$ at the
+nerve level), so it is not an artifact of counting two sections from the
+same subject as independent.  Analyses use \texttt{scipy.stats} (SciPy 1.15.3, Python 3.11).

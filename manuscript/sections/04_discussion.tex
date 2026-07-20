@@ -63,7 +63,7 @@ centroid-per-fascicle sampling whose deployment penalty we quantify
 (Section~\ref{sec:results-sparse}).
 jaxon is complementary to this ecosystem rather than a replacement for
 it: the subject-specific finite-element fields used here are produced by
-our companion open platform, golgi~\cite{haberbusch2026golgi}, which
+our companion open platform, golgi~\cite{lung2026golgi}, which
 builds the anatomy, meshes and solves the extracellular field, and
 characterizes fascicular and fiber-type selectivity with threshold-based
 NEURON and surrogate backends.  jaxon contributes the differentiable,
@@ -80,7 +80,8 @@ selectivity pipeline.
 Other GPU neuron simulators ---
 \texttt{NeuroGPU}~\cite{benshalom2022neurogpu},
 \texttt{Brian2GeNN}~\cite{stimberg2020brian2genn},
-\texttt{CoreNEURON}~\cite{kumbhar2019coreneuron} and \texttt{Arbor} ---
+\texttt{CoreNEURON}~\cite{kumbhar2019coreneuron} and
+\texttt{Arbor}~\cite{abi2019arbor} ---
 accelerate the forward pass but none models \emph{extracellular} field
 stimulation, the regime relevant to cuff electrodes, and none exposes
 end-to-end gradients.  CPU NEURON has thus remained the only
@@ -90,6 +91,7 @@ differentiable extracellular forward pass is itself a capability gap
 that the existing tools do not fill.
 
 \subsection{Limitations}
+\label{sec:limitations}
 
 \paragraph{Scope of the deployment-penalty finding.}
 The penalty is established \emph{in silico}, with one cuff and one FE
@@ -114,13 +116,32 @@ natural next step; jaxon's throughput makes the required population-scale
 sweeps tractable.
 
 \paragraph{Single-cuff geometry.}
-The histology selectivity results use a single 12-contact MultiContact
+The histology selectivity results use a single 12-contact
 cuff (three axial rows $\times$ four angular columns) at a fixed
 radius.  Larger contact counts, conformable cuffs and multi-cuff
 arrays are increasingly common in clinical practice but were out of
 scope for the present paper; jaxon's per-contact amplitude
 parameterization extends to arbitrary contact layouts with no change
 to the solver.
+
+\paragraph{Fixed-amplitude selectivity versus clinical titration.}
+The deployment penalty is defined as under-recruitment of the target
+fascicle at the \emph{optimized fixed amplitude}, whereas clinical
+neuromodulation titrates stimulus amplitude to a physiological
+endpoint.  Because the reduced-order design fixes a suboptimal
+\emph{spatial} amplitude pattern, it sits on a strictly lower achievable
+selectivity-vs-off-target trade-off curve than the dense-optimized
+pattern; a clinician raising the overall amplitude could recover some
+target recruitment lost to the reduced-order design, at the cost of
+engaging more off-target fibers, but cannot reach the dense pattern's
+trade-off --- the deficit is in the pattern, not merely the operating
+amplitude.  The penalty should
+therefore be read as a bias in \emph{model-predicted deliverable
+selectivity} that propagates into device and waveform design decisions,
+not as a direct prediction of a clinical selectivity deficit under
+titrated use.  Likewise, acting on it requires subject-specific
+histology and an FE field model, so it is actionable today for
+modelers building selectivity pipelines rather than at the bedside.
 
 \paragraph{Simplified cuff finite-element model.}
 The per-contact $V_e$ lead-fields for the histology cohort are computed
@@ -142,7 +163,7 @@ conservative lower bound, and inter-fiber variability is known to
 broaden activation distributions and lower achievable
 selectivity~\cite{aristovich2021}.  A distinct and, on the vagus, larger
 limit on deliverable selectivity comes from the realistic \emph{mix} of
-fiber types: our companion open platform~\cite{haberbusch2026golgi},
+fiber types: our companion open platform~\cite{lung2026golgi},
 which supplies the finite-element fields used here, shows on these same
 nerves that moving from a single-diameter idealization to a morphometry-based
 A/B/C population collapses the selectivity of the small, high-threshold
@@ -160,7 +181,16 @@ Recruitment is scored by a sigmoid-smoothed activation proxy
                     \max_t \mathbf{m}_{\mathrm{Na}}(t)\big|_{\text{last node}}\bigr).
 \end{equation*}
 It correctly classifies recruitment when an action potential
-propagates to both ends.  It is approximate in pathological regimes
+propagates to both ends.  We verified it directly against full spike
+detection at the population scale: on eight cohort nerves (four human,
+four swine) we re-scored the optimized configuration in
+\texttt{pyfibers}-wrapped NEURON over the entire ${\sim}1\,000$-fiber
+population and compared per-fiber recruitment.  The proxy agrees with
+NEURON spike detection on $99.9\,\%$ of fibers (minimum $99.6\,\%$), and
+the resulting population selectivity index matches NEURON to within
+$0.005$ SI on every nerve --- an order of magnitude below the human
+deployment penalty --- so the penalty is not an artifact of the
+activation proxy.  It is nonetheless approximate in pathological regimes
 (failed propagation, partial recruitment in dendrites with branching
 or blocked nodes).  None of these regimes was encountered in the
 straight-axon MRG simulations of this paper, but they would warrant

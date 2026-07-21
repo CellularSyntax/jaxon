@@ -126,7 +126,7 @@ every figure from that processed data (fast, CPU-only), or re-running the full
 simulation pipeline from scratch (slow, GPU).
 
 The driver reads all inputs from `outputs/` (in particular it needs
-`outputs/duke_sweeps_fixed/`, the corrected cohort sweep). The Zenodo archive
+`outputs/duke_sweeps/`, the corrected cohort sweep). The Zenodo archive
 unpacks to `processed_outputs/` and `lead_fields/`, so map `processed_outputs/`
 onto `outputs/` before running. From the repository root:
 

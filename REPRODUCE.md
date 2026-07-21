@@ -20,11 +20,11 @@ There are **two reproduction paths**:
 
 > **The corrected sweep tree.** The whole-nerve cohort analysis (Fig 3,
 > `tab:duke-cohort`, every deployment-penalty statistic) reads the corrected
-> off-by-one sweep in **`outputs/duke_sweeps_fixed/`**, passed to the figure
-> scripts via the environment variable **`DUKE_SWEEP_ROOT=outputs/duke_sweeps_fixed`**.
-> All cohort scripts now honor `DUKE_SWEEP_ROOT` and default to
-> `outputs/duke_sweeps_fixed`; the earlier uncorrected `outputs/duke_sweeps/`
-> tree has been removed. Exporting `DUKE_SWEEP_ROOT` is optional but recommended
+> off-by-one sweep in **`outputs/duke_sweeps/`**. All cohort scripts default to
+> this path; the earlier uncorrected sweep has been removed and the corrected
+> tree occupies the plain `duke_sweeps` name. The scripts also honor an optional
+> **`DUKE_SWEEP_ROOT`** override (e.g. to point at a diameter-variant tree);
+> setting it is not required
 > so the sweep root is explicit.
 
 ---
@@ -94,7 +94,7 @@ With `outputs/` present (from the repo or the Zenodo bundle) and the env active:
 ```
 
 That driver (authored alongside this file) sets
-`DUKE_SWEEP_ROOT=outputs/duke_sweeps_fixed` and runs every main + named-supplementary
+`DUKE_SWEEP_ROOT=outputs/duke_sweeps` and runs every main + named-supplementary
 figure script in order. It regenerates:
 
 - `manuscript/figures/main/fig1_validation.{png,svg}`
@@ -175,21 +175,21 @@ loop over the 29 cohort nerves; on the cluster it shards via SLURM.
 **Single-host loop (writes the corrected tree):**
 
 ```bash
-export DUKE_SWEEP_ROOT=outputs/duke_sweeps_fixed
+export DUKE_SWEEP_ROOT=outputs/duke_sweeps
 export PULSE_SHAPE=biphasic_asym PW_MS=0.5 ASYM_RATIO=4.0 T_STOP=5.0
 export SPARSE_SAMPLING_SWEEP=true SPARSE_N_PER_FASCICLE_LIST=1,3,10
 export SEED_START=0 SEED_END=4          # 4 random target-divider seeds per nerve
 for d in duke_Ves/*/; do
   DUKE_SAMPLE_DIR="${d%/}" python -m experiments_v2.selectivity_sweep_duke
 done
-# -> outputs/duke_sweeps_fixed/<nerve>/data_seed_NNNN.json
-#    outputs/duke_sweeps_fixed/<nerve>/sparse_sampling_seed_NNNN.json
+# -> outputs/duke_sweeps/<nerve>/data_seed_NNNN.json
+#    outputs/duke_sweeps/<nerve>/sparse_sampling_seed_NNNN.json
 ```
 
 **Cluster (SLURM, A100), the way the manuscript run was launched:**
 
 ```bash
-DUKE_SWEEP_ROOT=outputs/duke_sweeps_fixed \
+DUKE_SWEEP_ROOT=outputs/duke_sweeps \
 SPARSE_SAMPLING_SWEEP=true SEED_END=4 \
 PULSE_SHAPE=biphasic_asym PW_MS=0.5 ASYM_RATIO=4.0 T_STOP=5.0 \
   bash slurm/submit_duke_sweep.sh          # shards nerves across a100 (+h100) pools
@@ -211,7 +211,7 @@ population per nerve (needs a compiled pyfibers baseline + GPU for the jaxon sid
 for s in human_sub-50_sam-2 human_sub-53_sam-2 human_sub-54_sam-2 human_sub-54_sam-3 \
          sub-8_sam-1 sub-10_sam-1 sub-11_sam-1 sub-13_sam-3; do
   python -m experiments_v2.neuron_pop_validate --sample "$s" --seed 0 \
-      --sweep_root outputs/duke_sweeps_fixed
+      --sweep_root outputs/duke_sweeps
 done
 # -> outputs/reviewer_analyses/neuron_pop/<sample>_seed0.json
 #    (fields: json_si, jaxon_si_full, neuron_si, agreement, ...)
@@ -230,10 +230,10 @@ Once `outputs/` is populated, produce every figure with the Path-A driver:
 ## 4. Figure / table / number -> command -> output -> runtime
 
 All figure scripts are run **from the repo root** with the `jaxley_fibers` env
-active. `${SW}` below is `outputs/duke_sweeps_fixed`; export it first:
+active. `${SW}` below is `outputs/duke_sweeps`; export it first:
 
 ```bash
-export DUKE_SWEEP_ROOT=outputs/duke_sweeps_fixed
+export DUKE_SWEEP_ROOT=outputs/duke_sweeps
 ```
 
 | Result | Command (Path A) | Output file(s) | Runtime |
@@ -256,7 +256,7 @@ export DUKE_SWEEP_ROOT=outputs/duke_sweeps_fixed
 |--------|------------------|
 | **99.6% of 943 configs within 1% threshold error** | Config count (943) is printed by `python -m experiments_v2.figures_validation_main` (`… threshold rows`); the 99.6%-within-1% fraction is derived from the same strength-duration rows in `outputs/{mrg,sweeney,sundt,rattay}_validation/data_*_sd.json`. |
 | **~820× geomean speedup @ N=1e5; 209–304× @ N=1000** | From `outputs/scaling/data_scaling.json` (PyFibers/JAXON wall-time ratios), rendered in Fig 1e by `figures_validation_main.py`. |
-| **centroid penalty swine ~0.011 / human ~0.136; MW p=0.01, U=157, r=0.59; subject-level p=0.011; Friedman χ²=11.4, p=0.003** | `python -m experiments_v2.analyze_sparse_sampling` prints the per-species deployment-penalty table (dense SI, per-strategy SI, gap); the Mann–Whitney / Friedman statistics are also computed and printed by `DUKE_SWEEP_ROOT=$SW python -m experiments_v2.figures_duke_main` while rendering Fig 3. (`analyze_sparse_sampling.py` honors `DUKE_SWEEP_ROOT`, default `duke_sweeps_fixed`.) |
+| **centroid penalty swine ~0.011 / human ~0.136; MW p=0.01, U=157, r=0.59; subject-level p=0.011; Friedman χ²=11.4, p=0.003** | `python -m experiments_v2.analyze_sparse_sampling` prints the per-species deployment-penalty table (dense SI, per-strategy SI, gap); the Mann–Whitney / Friedman statistics are also computed and printed by `DUKE_SWEEP_ROOT=$SW python -m experiments_v2.figures_duke_main` while rendering Fig 3. (`analyze_sparse_sampling.py` honors `DUKE_SWEEP_ROOT`, default `duke_sweeps`.) |
 | **Fig3b Holm-adjusted recruitment p-values** | Printed by `DUKE_SWEEP_ROOT=$SW python -m experiments_v2.figures_duke_main` (per-nerve Wilcoxon, Holm-corrected across the 8 metric×species cells). |
 | **activation-proxy vs NEURON: max \|dSI\|=0.0045, 99.9% agreement (8 nerves)** | Per-nerve JSONs in `outputs/reviewer_analyses/neuron_pop/*.json` (`agreement`, `neuron_si`, `jaxon_si_full` fields), produced by `neuron_pop_validate.py` (§3.5). |
 | **block-Thomas vs dense-LU 5.6e-11 mV** | Numerical identity of the two extracellular solvers, verified directly in `jaxfibers/stim/extracellular_coupled.py` (no separate figure/data step). |
@@ -264,11 +264,11 @@ export DUKE_SWEEP_ROOT=outputs/duke_sweeps_fixed
 > ### Sweep-root handling
 >
 > Both cohort helper scripts read `DUKE_SWEEP_ROOT` (default
-> `outputs/duke_sweeps_fixed`, the corrected tree):
+> `outputs/duke_sweeps`, the corrected tree):
 >
 > - **`analyze_sparse_sampling.py`** — prints the cohort penalty table for
 >   `tab:duke-cohort`. Run `DUKE_SWEEP_ROOT=$SW python -m experiments_v2.analyze_sparse_sampling`
->   (or rely on the `duke_sweeps_fixed` default). `figures_duke_main.py` prints
+>   (or rely on the `duke_sweeps` default). `figures_duke_main.py` prints
 >   the same penalty statistics while rendering Fig 3.
 > - **`fig_optimizer_validation.py`** — panel (c) reads representative loss
 >   histories from the sweep root; the gradient check loads
@@ -298,7 +298,7 @@ export DUKE_SWEEP_ROOT=outputs/duke_sweeps_fixed
 
 These feed a paper figure/number and must be present for reproduction:
 
-- `outputs/duke_sweeps_fixed/` — cohort analysis (Fig 3, `tab:duke-cohort`, all penalty stats)
+- `outputs/duke_sweeps/` — cohort analysis (Fig 3, `tab:duke-cohort`, all penalty stats)
 - `outputs/{mrg,sweeney,sundt,rattay}_validation/` — Fig 1, validation tables, 99.6%/943
 - `outputs/scaling/` — Fig 1e, `tab:scaling`, speedup
 - `outputs/{dc_block,depol_block,ap_collision}{,_rattay,_sundt,_sweeney}/` — Fig 2

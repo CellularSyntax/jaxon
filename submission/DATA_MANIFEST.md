@@ -34,8 +34,8 @@ NOT INCLUDED (available elsewhere):
 
 ## Reproduction
 See `REPRODUCE.md` in the code repository. In brief: install the environment
-(environment.yml), point the figure scripts at `processed_outputs/` (set
-`DUKE_SWEEP_ROOT=.../processed_outputs/duke_sweeps_fixed`), and run them. To
+(environment.yml), map `processed_outputs/` onto the repo's `outputs/` (the
+scripts read `outputs/duke_sweeps/` by default), and run `reproduce_figures.sh`. To
 re-run the cohort sweeps from the lead fields, point the sweep driver at
 `lead_fields/`.
 
@@ -43,7 +43,7 @@ re-run the cohort sweeps from the lead fields, point the sweep driver at
 
 | directory | feeds |
 |-----------|-------|
-| duke_sweeps_fixed/ | Fig 3, Table (cohort), all deployment-penalty statistics |
+| duke_sweeps/ | Fig 3, Table (cohort), all deployment-penalty statistics |
 | duke_sweeps_D7.3/, duke_sweeps_D10.0/ | Discussion diameter spot-check (human penalty 0.066, 0.054) |
 | scaling/ | Fig 1e, scaling table |
 | mrg_validation/, sweeney_validation/, sundt_validation/, rattay_validation/ | Fig 1, validation tables (99.6% of 943 configs) |

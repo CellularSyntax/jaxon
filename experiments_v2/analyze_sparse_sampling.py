@@ -27,7 +27,7 @@ import numpy as np
 
 ROOT  = Path(__file__).resolve().parent.parent
 # Corrected sweep tree; override with DUKE_SWEEP_ROOT (relative to repo root).
-SWEEP = ROOT / (os.environ.get("DUKE_SWEEP_ROOT", "").strip() or "outputs/duke_sweeps_fixed")
+SWEEP = ROOT / (os.environ.get("DUKE_SWEEP_ROOT", "").strip() or "outputs/duke_sweeps")
 
 STRATEGIES = [
     ("centroid",  1, "centroid"),

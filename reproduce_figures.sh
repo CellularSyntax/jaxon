@@ -9,7 +9,7 @@
 #   * conda env `jaxley_fibers` active   (conda activate jaxley_fibers)
 #   * run from the repo root
 #   * outputs/ populated (from the repo or the Zenodo bundle); in particular
-#     outputs/duke_sweeps_fixed/ must exist (the corrected cohort sweep)
+#     outputs/duke_sweeps/ must exist (the corrected cohort sweep)
 #
 # It does NOT run the slow upstream producers (validation / scaling / phenomena
 # / duke FEM sweep) — see REPRODUCE.md §3 (Path B) for those.
@@ -25,7 +25,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${SCRIPT_DIR}"
 
 # --- the corrected cohort sweep tree, read by the duke figure scripts --------
-export DUKE_SWEEP_ROOT="${DUKE_SWEEP_ROOT:-outputs/duke_sweeps_fixed}"
+export DUKE_SWEEP_ROOT="${DUKE_SWEEP_ROOT:-outputs/duke_sweeps}"
 
 echo "=============================================================="
 echo " jaxon figure reproduction (Path A — from processed data)"

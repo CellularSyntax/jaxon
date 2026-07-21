@@ -73,3 +73,9 @@ manuscript/main_iop.pdf
 
 # --- Zenodo data deposit (heavy; distributed via Zenodo, not git) ---
 jaxon_data_archive_v1.tar.gz
+
+# --- excluded from the public GitHub mirror ---
+manuscript/
+reference_code/
+submission/
+softwarex/

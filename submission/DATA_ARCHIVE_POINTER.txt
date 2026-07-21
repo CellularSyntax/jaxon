@@ -1,6 +1,0 @@
-jaxon_data_archive_v1.tar.gz (457 MB) — the lean processed-data bundle for
-manuscript reproduction — is produced separately (see DATA_MANIFEST.md for
-contents). It is not stored inside the repository to keep the submission folder
-light. Deposit it as the companion Zenodo data record and fill the resulting DOI
-into the manuscript \data{} block. The archive is available as a saved artifact
-in this project.

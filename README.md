@@ -123,12 +123,27 @@ paper from processed data, see **[REPRODUCE.md](REPRODUCE.md)**.
 The processed data (golgi lead fields + all sweep / validation / phenomena
 outputs) is archived on Zenodo; `REPRODUCE.md` documents two paths — regenerating
 every figure from that processed data (fast, CPU-only), or re-running the full
-simulation pipeline from scratch (slow, GPU). A one-command driver regenerates
-all main and named-supplementary figures:
+simulation pipeline from scratch (slow, GPU).
+
+The driver reads all inputs from `outputs/` (in particular it needs
+`outputs/duke_sweeps/`, the corrected cohort sweep). The Zenodo archive
+unpacks to `processed_outputs/` and `lead_fields/`, so map `processed_outputs/`
+onto `outputs/` before running. From the repository root:
 
 ```bash
-bash reproduce_figures.sh                       # main + supplementary figures from processed data
+# 1. unpack the Zenodo data archive (jaxon_data_archive_v1.tar.gz)
+tar -xzf jaxon_data_archive_v1.tar.gz
+
+# 2. expose the archive's processed_outputs/ as the repo's outputs/
+ln -s "$(pwd)/processed_outputs" outputs        # symlink (recommended)
+#   - or -  mv processed_outputs outputs          # move it into place
+
+# 3. regenerate all main + named-supplementary figures from processed data
+bash reproduce_figures.sh
 ```
+
+`lead_fields/` is only needed for the from-scratch path (re-running the cohort
+sweeps); see `REPRODUCE.md`.
 
 The raw golgi FEM meshes are **not** bundled — they are golgi outputs, available
 via the golgi platform and the underlying SPARC datasets (swine

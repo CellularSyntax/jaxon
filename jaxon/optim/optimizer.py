@@ -1401,7 +1401,7 @@ def run_joint_optimization(
     result : dict with keys
         'amps'           : [K] best amplitudes (mA)
         'contact_xyz_um' : [K, 3] best contact positions (µm)
-        'history'        : dict of lists {'loss', 'si', 'amps', 'xyz'}
+        'history'        : dict of lists {'loss', 'si', 'amps', 'xyz', 'acts'}
     """
     K        = contact_xyz_init.shape[0]
     n_fibers = fiber_xy_um.shape[0]
@@ -1484,7 +1484,7 @@ def run_joint_optimization(
     st_pos  = opt_pos.init(xyz0)
     amps, xyz = amps0, xyz0
 
-    history   = {"loss": [], "si": [], "amps": [], "xyz": []}
+    history   = {"loss": [], "si": [], "amps": [], "xyz": [], "acts": []}
     best_loss = float("inf")
     best_amps = np.array(amps0)
     best_xyz  = np.array(contact_xyz_init)
@@ -1512,6 +1512,7 @@ def run_joint_optimization(
         history["si"].append(si)
         history["amps"].append(np.array(amps))
         history["xyz"].append(np.array(xyz))
+        history["acts"].append(np.array(acts_val))
         if float(loss_val) < best_loss:
             best_loss = float(loss_val)
             best_amps = np.array(amps)

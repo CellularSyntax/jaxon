@@ -15,9 +15,9 @@ nothing referenced by a paper figure, table, or headline number was affected.
 
 ### Superseded / exploratory sweep outputs (gitignored; ~250 MB)
 Not referenced by any paper figure or number:
-- `outputs/duke_sweeps/` — uncorrected off-by-one sweep, superseded by `duke_sweeps_fixed/`.
+- The uncorrected off-by-one sweep was removed; the corrected sweep it was superseded by now occupies `outputs/duke_sweeps/` (renamed from the interim `duke_sweeps/`).
 - `outputs/duke_sweeps_D14.0/` — 14 um diameter variant (paper spot-checks only 5.7/7.3/10 um).
-- `outputs/duke_sweeps_fixed_rs1,rs2,rs3/` — reseed robustness variants, not in final paper.
+- `outputs/duke_sweeps_rs1,rs2,rs3/` — reseed robustness variants of the corrected sweep, not in final paper.
 - `outputs/duke_sweeps_var/`, `outputs/duke_sweeps_var2/` — exploratory variants.
 - `outputs/duke_sweeps_autodiff/` — autodiff-vs-FD sweep; optimizer validation uses `reviewer_analyses/` instead.
 - `outputs/spike_desync/` — exploratory, not in paper.
@@ -29,7 +29,7 @@ Not referenced by any paper figure or number:
 - `current_manuscript_narrative.md` — superseded narrative draft (moved to Trash).
 
 ## Kept (load-bearing or cited)
-- `outputs/duke_sweeps_fixed/` — cohort analysis (Fig 3, tab:duke-cohort, all penalty statistics).
+- `outputs/duke_sweeps/` — corrected cohort analysis (Fig 3, tab:duke-cohort, all penalty statistics).
 - `outputs/{mrg,sweeney,sundt,rattay}_validation/` — Fig 1 + validation tables.
 - `outputs/scaling/` — Fig 1e, tab:scaling.
 - `outputs/{dc_block,depol_block,ap_collision}{,_rattay,_sundt,_sweeney}/` — Fig 2.

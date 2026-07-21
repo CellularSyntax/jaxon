@@ -12,7 +12,12 @@ There are **two reproduction paths**:
   Zenodo bundle) already contains every simulation/sweep result as JSON. The
   figure scripts just read that JSON and render. This regenerates every main
   figure and the named supplementary figures in minutes on a laptop; **no GPU,
-  no NEURON/pyfibers compile required.** Run `./reproduce_figures.sh`.
+  no NEURON/pyfibers compile required.** If starting from the Zenodo archive,
+  unpack it at the repository root — its top-level `outputs/` and `duke_Ves/`
+  directories match the repo layout, so a single
+  `tar -xzf jaxon_data_archive_v1.tar.gz` puts everything in place (the
+  gradient-check figure reads a raw lead-field bundle from `duke_Ves/`). Then
+  run `./reproduce_figures.sh`.
 - **Path B — from scratch (slow, needs a GPU).** Re-run the upstream
   simulation, validation, scaling, and FEM-sweep scripts that *produce*
   `outputs/`, then run the Path-A figure scripts. This re-derives the JSON and
@@ -304,7 +309,7 @@ These feed a paper figure/number and must be present for reproduction:
 - `outputs/{dc_block,depol_block,ap_collision}{,_rattay,_sundt,_sweeney}/` — Fig 2
 - `outputs/khz_block{,_rattay,_sundt,_sweeney}/` — figS_khz_block
 - `outputs/reviewer_analyses/` — optimizer validation inputs, neuron_pop proxy validation
-- `duke_Ves/` — raw golgi FEM meshes (feeds figA_* anatomy and the fig_optimizer_validation gradient check; excluded from the lean Zenodo bundle)
+- `duke_Ves/` — per-nerve lead-field bundles (nerve_xsec.json, electrode_config.json, paths_Ve.npz; feeds figA_* anatomy and the fig_optimizer_validation gradient check; included in the Zenodo bundle. The raw ~13 GB FEM meshes are NOT bundled — see the golgi platform / SPARC.)
 
 Diameter spot-check trees `outputs/duke_sweeps_D7.3` and `_D10.0` are cited in the
 Discussion (human penalty 0.066 at 7.3 µm, 0.054 at 10 µm) but are secondary.

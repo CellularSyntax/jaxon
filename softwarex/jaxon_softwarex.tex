@@ -153,10 +153,25 @@ The package is structured by concern:
 \end{itemize}
 
 The coupled solver integrates the double-cable equation by backward Euler; each time step is a
-$2\times2$ block-tridiagonal system in the interleaved intracellular and periaxonal unknowns,
+$2\times2$ block-tridiagonal system in the interleaved intracellular and periaxonal unknowns
+(Fig.~\ref{fig:solver}),
 solved directly by a JAX-compatible block-Thomas sweep (verified to
 $5.6\times10^{-11}$~mV against a dense LU reference), with back-substitution via
-\texttt{jax.lax.associative\_scan} for $O(\log n)$ depth. Because every operation is a JAX
+\texttt{jax.lax.associative\_scan} for $O(\log n)$ depth.
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{figures/jaxon_solver.png}
+\caption{The coupled solver. Left: the double-cable circuit \emph{jaxon} integrates---each
+compartment couples an intracellular node ($V_i$), a periaxonal space ($V_{px}$), and the
+externally imposed extracellular potential ($V_e$, supplied by \emph{golgi} FEM lead fields),
+through the axolemmal ($C_m, g_m$) and myelin ($c_{my}, g_{my}$) admittances and the axial
+conductances ($g_a$, $g_{px}$). Right: each backward-Euler step is a block-tridiagonal system in
+the interleaved $(V_i, V_{px})$ unknowns, whose $2\times2$ diagonal blocks are solved directly by
+a JAX-compatible block-Thomas sweep (verified to $5.6\times10^{-11}$~mV against a dense LU
+reference).}
+\label{fig:solver}
+\end{figure}
+ Because every operation is a JAX
 primitive, the same forward pass is (i) batched over fibers with \texttt{jax.vmap} for
 population-scale throughput and (ii) differentiated with reverse-mode autodiff (or a packed
 finite-difference gradient) for stimulus optimization. For the cohort application, per-contact
@@ -178,6 +193,19 @@ scales to $N=100{,}000$ fibers on one GPU.}
 \label{fig:arch}
 \end{figure}
 
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{figures/jaxon_models.png}
+\caption{The four fiber models integrated in \emph{jaxon}, grouped by class. For each model,
+left: the single-node membrane action potential, with \emph{jaxon} (orange) overlaid on the
+pyfibers-wrapped NEURON reference (blue); right: the spatiotemporal $V_m(\text{position},
+\text{time})$ propagation. The myelinated MRG and Sweeney axons (a, b) show fast saltatory
+propagation---here two counter-propagating spikes meeting and annihilating in a characteristic
+collision---while the unmyelinated Sundt and Rattay C-fibers (c, d) propagate slowly and
+continuously. All curves are \emph{jaxon} output; the NEURON overlay is the validation reference.}
+\label{fig:models}
+\end{figure}
+
 \subsection{Software functionalities}
 \label{sec:func}
 
@@ -187,7 +215,8 @@ scales to $N=100{,}000$ fibers on one GPU.}
   \item \textbf{Canonical fiber models.} Four published axon models---myelinated
         MRG~\cite{mcintyre} (with both the original and interpolated parameter tables) and
         Sweeney~\cite{sweeney}, and unmyelinated Sundt~\cite{sundt} and Rattay~\cite{rattay}
-        C-fibers---reimplemented as pure-JAX channels and morphologies.
+        C-fibers---reimplemented as pure-JAX channels and morphologies
+        (Fig.~\ref{fig:models}).
   \item \textbf{Coupled extracellular solver.} A backward-Euler integrator for the two-state
         $(V_i, V_{px})$ double-cable equation---the principled equivalent of NEURON's
         \texttt{extracellular} mechanism rather than the single-cable activating-function
@@ -214,80 +243,121 @@ scales to $N=100{,}000$ fibers on one GPU.}
 
 \subsection{Sample code}
 
-The library exposes the forward model and the optimizers directly; a minimal selectivity
-optimization is a short script:
+The library exposes the model-building, forward-solve, loss, and optimization functions
+directly, so a study is assembled from a few calls: build one or more fibers with
+\texttt{jaxfibers.fibers} (returning a Jaxley \texttt{Cell} and a geometry dataclass); assemble
+the per-fiber static parameters and initial states with \texttt{stack\_fiber\_statics} /
+\texttt{initial\_states\_batch}; run the batched coupled solve with \texttt{batch\_integrate\_m\_max};
+and score or optimize with \texttt{jaxfibers.optim} (\texttt{selectivity\_index},
+\texttt{run\_rect\_optimization}). Section~\ref{sec:examples} gives three worked, runnable
+examples following this progression.
+
+\section{Illustrative examples}
+\label{sec:examples}
+
+The three examples below show the typical usage progression---validating one fiber against
+NEURON, simulating a population in a single batched pass, and optimizing a multi-contact stimulus
+by differentiating through that pass. All are runnable from the released package; the
+corresponding end-to-end scripts live in \texttt{experiments\_v2/}.
+
+\paragraph{Example 1 --- build a fiber and compute an activation threshold.}
+A single model fiber is built, placed in an extracellular field, and its activation threshold is
+obtained by the same bisection used for the NEURON comparison. This is the unit that the
+validation suite runs across $943$ configurations.
 
 {\footnotesize
 \begin{verbatim}
-import jax
-from jaxfibers.fibers import build_mrg
-from jaxfibers.stim import load_lead_fields, batch_forward
-from jaxfibers.optim import selectivity_index, optimize_amplitudes
+import numpy as np
+from jaxfibers.fibers import mrg
+from jaxfibers.stim.batch_solve import (build_fiber_statics,
+                                        initial_states_batch,
+                                        batch_integrate_m_max)
+from jaxfibers.stim.extracellular import (point_source_potentials_mV,
+                                          rectangular_waveform)
 
-# 1. build a population of MRG fibers for one nerve
-pop = build_mrg(diameter_um=5.7, n_fibers=1000)
+dt = 0.005                              # ms
 
-# 2. per-contact FEM lead fields (golgi) + target fascicle mask
-Ve, target_mask = load_lead_fields("duke_Ves/human_sub-50_sam-2")
+# Build an MRG fiber (Jaxley Cell + geometry metadata).
+cell, geom = mrg.build_mrg(diameter=10.0, temperature=37.0)
 
-# 3. optimize the 12 contact amplitudes for on-target selectivity,
-#    differentiating through the batched cable solve
-amps = optimize_amplitudes(pop, Ve, target_mask,
-                           objective=selectivity_index,
-                           n_steps=90)
+# Static point-source profile (unit current) 1 mm above the fiber,
+# times a rectangular pulse -> the [T, n_comp] extracellular sequence.
+t_grid = np.arange(0.0, 2.0, dt)
+profile = point_source_potentials_mV(mrg.section_centers_um(geom),
+                                     src_y_um=1000.0, i0_mA=-1.0)   # mV per mA
+wave    = rectangular_waveform(t_grid, delay_ms=0.1, pw_ms=0.1, amp=0.5)  # mA
+Ve_seq  = wave[:, None] * profile[None, :]        # [T, n_comp]
 
-# 4. re-score the optimized stimulus on the full population
-acts = batch_forward(pop, Ve, amps)
-print("population selectivity:", selectivity_index(acts, target_mask))
+# Integrate the coupled (V_i, V_px) cable equation; batch_integrate_m_max
+# returns the peak Na m-gate, the proxy jaxon uses to decide firing.
+fs = build_fiber_statics(geom, dt=dt)
+s0 = initial_states_batch([geom])
+# ... scale `amp` by bisection until the fiber just fires -> threshold.
 \end{verbatim}
 }
 
-\section{Illustrative examples}
+\paragraph{Example 2 --- simulate a whole population in one batched pass.}
+The same forward model, stacked over $N$ fibers with \texttt{jax.vmap}, simulates an entire
+population in a single call. This is the operation that runs at a geometric-mean
+${\sim}820\times$ speedup over serial NEURON at $N=100{,}000$ fibers, and that makes
+population-scale re-scoring cheap.
 
-Figure~\ref{fig:validation} summarizes the validation and scaling of \emph{jaxon} against the
-NEURON reference. Across $943$ activation-threshold configurations (multiple diameters, pulse
-shapes, and pulse widths spanning the four models), $99.6\,\%$ agree with pyfibers-wrapped
-NEURON within $1\,\%$, and conduction velocity matches to machine precision. The same forward
-model, batched with \texttt{jax.vmap}, scales from single-fiber parity with NEURON to a
-geometric-mean ${\sim}820\times$ speedup at $N=100{,}000$ fibers on a single GPU (${\sim}200$--$300\times$
-at the ${\sim}1000$-fiber scale typical of one nerve).
+{\footnotesize
+\begin{verbatim}
+from jaxfibers.stim.batch_solve import (stack_fiber_statics,
+                                        initial_states_batch,
+                                        batch_integrate_m_max)
+from jaxfibers.optim.losses import activation_proxy_batch, selectivity_index
 
-Figure~\ref{fig:selectivity} shows the capability that motivates the differentiable design:
-using per-contact FEM lead fields over a $12$-contact cuff, \emph{jaxon} optimizes the contact
-amplitudes for target-fascicle selectivity by differentiating through the batched cable solve,
-then re-scores the optimized stimulus on the full fiber population. Running the optimization on
-one representative fiber per fascicle and then deploying to the whole population reveals a
-species-dependent selectivity penalty; re-scoring on the full population---cheap in
-\emph{jaxon}---recovers most of it. The companion paper~\cite{companion} develops this result
-across a cohort of $29$ histology-segmented swine and human vagus nerves.
+# A population of fibers seeded across the nerve cross-section.
+geoms = [mrg.build_mrg(diameter=5.7)[1] for _ in range(n_fibers)]
+node_idx = [mrg.node_indices(g) for g in geoms]
 
-\begin{figure}[htbp]
-\centering
-\includegraphics[width=\linewidth]{figures/jaxon_validation.png}
-\caption{Validation and throughput. \emph{jaxon} (solid) versus pyfibers-wrapped NEURON
-(dashed) on activation thresholds and conduction velocity across the four fiber models, and the
-\texttt{vmap}-batched CPU/GPU scaling benchmark. $99.6\,\%$ of $943$ threshold configurations
-agree within $1\,\%$; the geometric-mean speedup reaches ${\sim}820\times$ at $N=100{,}000$
-fibers on one GPU.}
-\label{fig:validation}
-\end{figure}
+fs_batch = stack_fiber_statics(geoms, dt=dt)       # [n_fibers, n_comp, ...]
+s0_batch = initial_states_batch(geoms)
 
-\begin{figure}[htbp]
-\centering
-\includegraphics[width=\linewidth]{figures/jaxon_selectivity.png}
-\caption{Differentiable selectivity optimization on a histology-segmented vagus nerve. Using
-\emph{golgi} per-contact lead fields over a $12$-contact cuff, \emph{jaxon} optimizes the
-contact amplitudes for target-fascicle selectivity through the batched cable solve and re-scores
-the result on the full fiber population. The optimized field, the recruited on- versus
-off-target fibers, and the resulting deployment penalty are shown for a representative nerve
-pair; the cohort analysis is developed in the companion paper~\cite{companion}.}
-\label{fig:selectivity}
-\end{figure}
+# Ve_seq_batch: [n_fibers, T, n_comp] -- per-fiber extracellular sequence,
+# here from the golgi FEM per-contact lead fields under a chosen stimulus.
+m_max = batch_integrate_m_max(fs_batch, s0_batch, Ve_seq_batch, dt=dt)
 
-Both examples are reproducible from the released code: the validation and scaling figures
-regenerate from the archived outputs with a single driver script (\texttt{reproduce\_figures.sh}),
-and \texttt{REPRODUCE.md} documents the full path from raw simulation to every figure and
-reported number.
+# Recruitment per fiber, then the population selectivity index.
+acts = activation_proxy_batch(m_max, node_idx)
+si   = selectivity_index(acts, target_mask)        # SI in [-1, 1]
+\end{verbatim}
+}
+
+\paragraph{Example 3 --- optimize a multi-contact stimulus by gradient descent.}
+Because the batched forward pass is differentiable, the per-contact amplitudes of a cuff are
+optimized directly against the selectivity objective. \texttt{run\_rect\_optimization} drives an
+Adam loop through the exact cable solve, using the packed finite-difference gradient
+($K{+}1$ configurations per forward pass); an autodiff variant
+(\texttt{run\_rect\_optimization\_autodiff}) differentiates through the ODE scan for arbitrary
+waveforms.
+
+{\footnotesize
+\begin{verbatim}
+from jaxfibers.optim.optimizer import run_rect_optimization
+
+# Ve_unit: [K, n_fibers, n_comp] -- unit lead field of each of the K contacts.
+# pulse_mask: [T] -- the rectangular time course shared by all contacts.
+amps, history = run_rect_optimization(
+    fs_batch, s0_batch, Ve_unit, pulse_mask,
+    node_indices=node_idx, target_mask=target_mask,
+    dt=dt, n_steps=90, lr=8e-2,
+    amp_clip=(-2.5, 2.5),          # per-contact amplitude bounds (mA)
+)
+
+# Re-score the optimized stimulus on the FULL population (cheap in jaxon):
+Ve_opt = jnp.einsum("k,knc->nc", amps, Ve_unit)[:, None, :] * pulse_mask[None, :, None]
+m_max  = batch_integrate_m_max(fs_batch, s0_batch, Ve_opt, dt=dt)
+print("population SI:", selectivity_index(activation_proxy_batch(m_max, node_idx),
+                                          target_mask))
+\end{verbatim}
+}
+
+All three examples are reproducible from the released code; \texttt{REPRODUCE.md} documents the
+full path from a fiber build to every figure and reported number in the companion
+study~\cite{companion}.
 
 \section{Impact}
 
@@ -377,8 +447,8 @@ Medicine and Biology Society, 1987, pp.\ 1577--1578.
 ganglia in an unmyelinated sensory neuron: a modeling study, Journal of Neurophysiology 114
 (2015) 3140--3153.
 
-\bibitem{rattay} F. Rattay, M. Aberham, Modeling axon membranes for functional electrical
-stimulation, IEEE Transactions on Biomedical Engineering 40 (1993) 1201--1209.
+\bibitem{rattay} F. Rattay, Analysis of models for extracellular fiber stimulation, IEEE
+Transactions on Biomedical Engineering 36 (1989) 676--682.
 
 \bibitem{neuron} M.L. Hines, N.T. Carnevale, The NEURON simulation environment, Neural
 Computation 9 (1997) 1179--1209.

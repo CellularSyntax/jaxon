@@ -285,11 +285,10 @@ export DUKE_SWEEP_ROOT=outputs/duke_sweeps
 > `manuscript/figures/supp/figS_density.{png,svg}` (deployment penalty vs
 > fiber-sampling density, per nerve) was committed as a rendered asset; no script
 > in `experiments_v2/` writes a file named `figS_density`. The closest scripted
-> equivalents that render the same sparse-sampling-density data (and *do* honor
-> `DUKE_SWEEP_ROOT`) are:
+> equivalent that renders the same sparse-sampling-density data (and *does* honor
+> `DUKE_SWEEP_ROOT`) is:
 >
 > ```bash
-> DUKE_SWEEP_ROOT=$SW python -m experiments_v2.figures_sparse_main       # -> manuscript/figures/main/fig5_sparse_main.{png,svg}
 > DUKE_SWEEP_ROOT=$SW python -m experiments_v2.figures_sparse_sampling   # -> manuscript/figures/duke/sparse_sampling/fig_sparse_{si_strips,gap}.png
 > ```
 >

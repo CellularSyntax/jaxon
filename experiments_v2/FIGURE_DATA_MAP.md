@@ -17,7 +17,7 @@ sweep), passed to the figure scripts via `DUKE_SWEEP_ROOT=outputs/duke_sweeps`.
 
 | Fig | Script | Input data |
 |-----|--------|-----------|
-| figS_density | `figures_duke_main.py` (secondary output) | `outputs/duke_sweeps/` |
+| figS_density | (no in-repo scripted regenerator; not produced by `reproduce_figures.sh`) | `outputs/duke_sweeps/` |
 | figS_khz_block | `figures_phenomena_supp_khz.py` | `outputs/khz_block{,_rattay,_sundt,_sweeney}/data_*.json` |
 | figS_optimizer_validation | `fig_optimizer_validation.py` | `outputs/duke_sweeps/` + `outputs/reviewer_analyses/reanalysis_summary.json` |
 

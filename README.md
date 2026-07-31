@@ -115,8 +115,6 @@ Outputs land in `outputs/<experiment>/`. Heavier sweeps are wired for SLURM unde
 `slurm/` — see `slurm/submit_all.sh`. To reproduce every figure and number in the
 paper from processed data, see **[REPRODUCE.md](REPRODUCE.md)**.
 
-> **State of the project:** see [AUDIT.md](AUDIT.md) for the full status report and
-> known gaps, and [CHANGELOG.md](CHANGELOG.md) for chronological changes.
 
 ## Reproducing the paper
 
@@ -208,8 +206,7 @@ jaxon/
 - **MRG / Sweeney conduction velocity:** machine precision (1e-12 %) across all diameters.
 - **Scaling vs single-thread NEURON:** ~200–300× at N = 1000 fibers, geometric-mean
   ~820× at N = 100,000 on one A100. The value here is *accuracy* and
-  *differentiability*, not raw forward speed against fitted surrogates (see
-  [AUDIT.md](AUDIT.md) §4.1).
+  *differentiability*, not raw forward speed against fitted surrogates.
 
 ## Caveats
 

@@ -170,8 +170,6 @@ via the golgi platform and the underlying SPARC datasets (swine
 ```text
 jaxon/
 ├── README.md               this file
-├── AUDIT.md                state-of-the-project + roadmap
-├── CHANGELOG.md            chronological changes
 ├── REPRODUCE.md            step-by-step paper reproduction
 ├── reproduce_figures.sh    one-command figure driver (processed data)
 ├── environment.yml         pinned conda env

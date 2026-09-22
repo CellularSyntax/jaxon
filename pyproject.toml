@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jaxon"
+version = "1.0.0"
+description = "Differentiable, GPU-native simulator for peripheral-nerve fiber models"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+  { name = "David Lung" },
+  { name = "Max Haberbusch", email = "max.haberbusch@meduniwien.ac.at" },
+]
+keywords = [
+  "peripheral nerve stimulation", "fiber model", "differentiable simulation",
+  "JAX", "GPU", "neuromodulation", "selectivity optimization",
+]
+classifiers = [
+  "Programming Language :: Python :: 3.11",
+  "License :: OSI Approved :: MIT License",
+  "Intended Audience :: Science/Research",
+  "Topic :: Scientific/Engineering",
+  "Operating System :: POSIX :: Linux",
+  "Operating System :: MacOS",
+]
+# CPU by default (mirrors requirements.txt). For GPU, install jax[cuda12]==0.6.2
+# instead of jax[cpu] (see requirements_gpu.txt).
+dependencies = [
+  "jax[cpu]==0.6.2",
+  "jaxley==0.13.0",
+  "numpy==2.2.6",
+  "scipy==1.15.3",
+  "optax==0.2.8",
+  "matplotlib==3.10.9",
+  "pandas==2.3.3",
+  "tqdm",
+]
+
+[project.optional-dependencies]
+# NEURON + PyFibers are needed ONLY for the validation reference, not for using jaxon.
+reference = ["neuron==9.0.1", "pyfibers==0.8.5"]
+dev = ["pytest>=7"]
+
+[project.urls]
+Homepage = "https://github.com/CellularSyntax/jaxon"
+Repository = "https://github.com/CellularSyntax/jaxon"
+
+[tool.setuptools.packages.find]
+include = ["jaxon*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

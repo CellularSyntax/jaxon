@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/jaxon_logo.png" alt="jaxon" width="320">
+  <img src="https://raw.githubusercontent.com/CellularSyntax/jaxon/main/docs/jaxon_logo.png" alt="jaxon" width="320">
 </p>
 
 <p align="center">

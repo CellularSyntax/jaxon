@@ -3,8 +3,8 @@ requires = ["setuptools>=64", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "jaxon"
-version = "1.0.0"
+name = "jaxon-nerve"
+version = "1.0.1"
 description = "Differentiable, GPU-native simulator for peripheral-nerve fiber models"
 readme = "README.md"
 requires-python = ">=3.11"
